@@ -9,7 +9,9 @@ import { artFontVars } from '../../fonts'
 export const metadata: Metadata = { title: 'Mockup lab', robots: { index: false, follow: false } }
 
 export async function generateStaticParams() {
-  return mockupJobs().map((j) => ({ slug: j.slug, side: j.side }))
+  // Dev-only generator route: prerender a single page in production builds (Cache Components needs ≥1).
+  const jobs = mockupJobs().map((j) => ({ slug: j.slug, side: j.side }))
+  return process.env.NODE_ENV === 'production' ? jobs.slice(0, 1) : jobs
 }
 
 export default async function MockupPage({ params }: { params: Promise<{ slug: string; side: string }> }) {
