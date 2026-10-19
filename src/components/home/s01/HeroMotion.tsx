@@ -61,7 +61,7 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
       const stage = root.current
       if (!stage) return
       const q = gsap.utils.selector(stage)
-      const one = <T extends Element = HTMLElement>(s: string) => q(s)[0] as T | undefined
+      const one = <T extends Element = HTMLElement>(s: string) => q(s)[0] as unknown as T | undefined
       const pending = q('[data-reveal="pending"]') as HTMLElement[]
       const mm = gsap.matchMedia()
 

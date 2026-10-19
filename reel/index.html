@@ -272,7 +272,7 @@ function scene3(t) {
   T(s3lines, `rotate(${u * 9}deg) scale(${1 + 0.1 * ((u % 0.5) < 0.1 ? 1 - (u % 0.5) / 0.1 : 0)})`)
   // final door: camera dives into the lav stage
   const dive = expoIn(prog(t, 7.24, 7.5))
-  T(s3g, `scale(${1 + dive * 2.2 + Math.max(0, u) * 0.012})`)
+  T(s3g, `scale(${1 + dive * 3.2 + Math.max(0, u) * 0.012})`)
 }
 
 /* ============ SCENE 4 — drop of the week tee: front → back (7.5–9.5) ============ */

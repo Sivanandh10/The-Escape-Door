@@ -9,7 +9,7 @@ import { waLink } from '@/lib/whatsapp'
 import { useCart } from '@/lib/cart'
 import { prefersReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
-import { AddButton } from './AddButton'
+import { AddToCartButton } from '@/components/shop/AddToCartButton'
 
 function Chips({
   label,
@@ -144,7 +144,9 @@ export function DropBuy({ product }: { product: Product }) {
         </div>
       )}
 
-      <AddButton product={product} variant={variant} size={size ?? undefined} onBeforeAdd={guard} onAdded={() => setAdded(true)} />
+      <div data-cursor="ADD" data-cursor-jp="カート">
+        <AddToCartButton product={product} variant={variant} size={size} onNeedSize={guard} onAdded={() => setAdded(true)} scale="lg" block />
+      </div>
 
       <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
         <Link

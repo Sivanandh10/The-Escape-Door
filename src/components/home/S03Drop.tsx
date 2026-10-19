@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import type { Product } from '@/lib/types'
 import { getCollection } from '@/lib/data/repo'
-import { productPriceLabel } from '@/lib/pricing'
+import { PriceTag } from '@/components/shop/PriceTag'
 import { Mascot } from '@/components/brand'
 import { TitleRows } from './s03/TitleRows'
 import { DropStage } from './s03/DropStage'
@@ -94,10 +94,7 @@ export default async function S03Drop({ product }: { product?: Product | null })
                       </span>
                     )}
                   </div>
-                  <p className="shrink-0 -rotate-3 border-[3px] border-ink bg-volt px-3 py-1.5 font-mono text-[clamp(20px,2vw,26px)] font-bold leading-none shadow-hard-sm">
-                    <span className="sr-only">Price: </span>
-                    {productPriceLabel(product)}
-                  </p>
+                  <PriceTag product={product} size="lg" sticker rotate={-3} className="shrink-0" />
                 </div>
                 <p className="mt-4 max-w-[46ch] text-[15px] leading-[1.55] text-ink/80">
                   {lead(product.description)}

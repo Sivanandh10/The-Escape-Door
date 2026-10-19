@@ -1,7 +1,7 @@
 // /fests — The Fandom Partner arc (SITEMAP §2.7). Owner: P5.
 // Static: every read is a 'use cache' repo function. Event JSON-LD only for confirmed + dated events.
 import Link from 'next/link'
-import { ArrowDown, ArrowRight, Instagram } from 'lucide-react'
+import { ArrowDown, ArrowRight, Camera } from 'lucide-react'
 import { Ticker } from '@/components/fx/Ticker'
 import { Panel } from '@/components/fx/Panel'
 import { Reveal } from '@/components/motion/Reveal'
@@ -267,7 +267,7 @@ export default async function FestsPage() {
               </p>
             )}
             <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="focus-ring label inline-flex min-h-11 items-center gap-2 underline decoration-2 underline-offset-4 hover:text-door">
-              <Instagram aria-hidden="true" className="size-4" />
+              <Camera aria-hidden="true" className="size-4" />
               Follow @escapedoor.in for live updates
             </a>
           </div>

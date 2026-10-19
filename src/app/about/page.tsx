@@ -2,7 +2,7 @@
 // ONLY facts we have: Instagram bio lines, the notebook's design-library sizes, fest history and pop-up
 // cities from data. "Who's behind the door" stays hidden until the owner supplies names/city/year.
 import Link from 'next/link'
-import { ArrowRight, Instagram } from 'lucide-react'
+import { ArrowRight, Camera } from 'lucide-react'
 import { Badge } from '@/components/brand'
 import { ArcMotif } from '@/components/fx/ArcMotif'
 import { Panel } from '@/components/fx/Panel'
@@ -72,7 +72,7 @@ export default async function AboutPage() {
                 <div>
                   <p className="font-display text-[26px] uppercase leading-none">The Escape Door</p>
                   <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="focus-ring label mt-1 inline-flex min-h-8 items-center gap-1.5 hover:text-door">
-                    <Instagram aria-hidden="true" className="size-3.5" />
+                    <Camera aria-hidden="true" className="size-3.5" />
                     @escapedoor.in
                   </a>
                 </div>

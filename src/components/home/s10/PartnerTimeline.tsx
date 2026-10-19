@@ -89,7 +89,7 @@ export function PartnerTimeline({ items }: { items: Partnership[] }) {
         <span aria-hidden="true" className="absolute bottom-0 left-[18px] top-0 w-[9px] lg:left-[calc(50%-3px)]">
           <span data-ink className="block h-full w-full bg-ink" />
         </span>
-        <span aria-hidden="true" className="absolute left-[22.5px] top-0 lg:left-1/2">
+        <span aria-hidden="true" className="absolute left-[22.5px] top-0 motion-reduce:hidden lg:left-1/2">
           <span data-tip className="block size-5 rounded-full border-[3px] border-ink bg-volt" style={{ transform: 'translate3d(-50%,0,0)' }} />
         </span>
 

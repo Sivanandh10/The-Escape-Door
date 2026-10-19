@@ -160,8 +160,8 @@ export function ForgeStage() {
           </div>
 
           {/* callout: back zone */}
-          <div data-callout className="absolute right-[-3%] top-[12%] flex items-center gap-2 sm:right-[-10%]" aria-hidden="true">
-            <span className="h-[3px] w-6 bg-ink sm:w-10" />
+          <div data-callout className="absolute left-[-4%] top-[44%] flex flex-row-reverse items-center gap-2 sm:left-[-12%]" aria-hidden="true">
+            <span className="h-[3px] w-6 bg-ink sm:w-12" />
             <span className="border-[3px] border-ink bg-volt px-2 py-1 font-mono text-[11px] font-bold leading-tight text-ink shadow-hard-sm sm:text-xs">
               BACK
               <br />

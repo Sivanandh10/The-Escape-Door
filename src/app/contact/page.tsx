@@ -1,7 +1,7 @@
 // /contact — Contact The Escape Door (SITEMAP §2.11, CONTRACTS §10.7). Owner: P5.
 // No address or phone is published until confirmed. WhatsApp shows only when NEXT_PUBLIC_WHATSAPP_NUMBER is set.
 import Link from 'next/link'
-import { ArrowUpRight, Instagram, MessageCircle, Store } from 'lucide-react'
+import { ArrowUpRight, Camera, MessageCircle, Store } from 'lucide-react'
 import JsonLd from '@/components/seo/JsonLd'
 import { Reveal } from '@/components/motion/Reveal'
 import { PageHero } from '@/components/content/PageHero'
@@ -29,7 +29,7 @@ export default function ContactPage() {
     hasWa
       ? { icon: MessageCircle, k: 'Fastest', t: 'WhatsApp', d: 'Orders, custom requests and quick questions.', href: waLink('Hi The Escape Door!'), cta: 'Open chat', tone: 'bg-volt', ext: true }
       : { icon: MessageCircle, k: 'Orders', t: 'WhatsApp', d: 'Our order number is being set up. Until then, DM us on Instagram or use the form.', href: '', cta: '', tone: 'bg-volt', ext: true },
-    { icon: Instagram, k: 'Drops & DMs', t: '@escapedoor.in', d: 'New designs, stall dates and DMs to personalise a design.', href: INSTAGRAM_URL, cta: 'Open Instagram', tone: 'bg-lav', ext: true },
+    { icon: Camera, k: 'Drops & DMs', t: '@escapedoor.in', d: 'New designs, stall dates and DMs to personalise a design.', href: INSTAGRAM_URL, cta: 'Open Instagram', tone: 'bg-lav', ext: true },
     { icon: Store, k: 'In person', t: 'Fest stalls', d: 'Meet us at our next college fest stall.', href: '/fests#live', cta: 'See upcoming stalls', tone: 'bg-pink', ext: false },
   ]
 

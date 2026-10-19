@@ -92,7 +92,7 @@ function Ticket({ event, index, reminded, onReminded }: { event: FestEvent; inde
               aria-hidden={labelSaysTbc || undefined}
               className="mt-3 inline-block -rotate-3 border-[3px] border-hype px-2 py-0.5 font-mono text-[12px] font-bold uppercase tracking-[0.12em] text-hype"
             >
-              Dates to be confirmed
+              Dates TBC
             </span>
           )}
 
