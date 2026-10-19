@@ -1,0 +1,63 @@
+/* Admin-only styles (P4a). Imported by AdminShell; every rule is scoped to the admin shell. */
+
+/* The root layout renders the public header/footer for every route — hide them inside the admin. */
+html:has([data-admin-shell]) .ted-header,
+html:has([data-admin-shell]) footer[aria-labelledby="footer-title"] {
+  display: none !important;
+}
+html:has([data-admin-shell]) { --header-h: 0px; }
+
+/* hazard tape for the demo banner */
+.admin-tape {
+  background-image: repeating-linear-gradient(-45deg, var(--color-ink) 0 10px, transparent 10px 20px);
+}
+
+/* page-title slam (entrance) */
+@keyframes admin-slam {
+  0% { transform: translate3d(0, 18px, 0) scale(1.06); opacity: 0; }
+  55% { transform: translate3d(0, -2px, 0) scale(0.995); opacity: 1; }
+  70% { transform: translate3d(-2px, 0, 0); }
+  85% { transform: translate3d(2px, 0, 0); }
+  100% { transform: none; opacity: 1; }
+}
+@keyframes admin-rise {
+  from { transform: translate3d(0, 14px, 0); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+[data-admin-shell] .admin-slam { animation: admin-slam 520ms var(--ease-slam, cubic-bezier(0.34, 1.56, 0.64, 1)) both; }
+[data-admin-shell] .admin-rise { animation: admin-rise 480ms var(--ease-expo, cubic-bezier(0.16, 1, 0.3, 1)) both; animation-delay: var(--d, 0ms); }
+
+/* shred strips falling out of the shredder slot (#69) */
+@keyframes admin-strip-fall {
+  0% { transform: translate3d(0, -100%, 0) rotate(0deg); opacity: 1; }
+  60% { opacity: 1; }
+  100% { transform: translate3d(var(--sx, 0px), 120px, 0) rotate(var(--sr, 0deg)); opacity: 0; }
+}
+@keyframes admin-slip-feed {
+  0% { transform: translate3d(0, 0, 0); }
+  100% { transform: translate3d(0, 105%, 0); }
+}
+.admin-slip-feed { animation: admin-slip-feed 380ms cubic-bezier(0.55, 0, 0.75, 0.2) forwards; }
+.admin-strip { animation: admin-strip-fall 620ms cubic-bezier(0.3, 0.1, 0.6, 1) forwards; animation-delay: var(--d, 0ms); }
+
+/* login: shake on error */
+@keyframes admin-shake {
+  0%, 100% { transform: none; }
+  20% { transform: translate3d(-8px, 0, 0) rotate(-0.6deg); }
+  40% { transform: translate3d(7px, 0, 0) rotate(0.5deg); }
+  60% { transform: translate3d(-5px, 0, 0); }
+  80% { transform: translate3d(3px, 0, 0); }
+}
+.admin-shake { animation: admin-shake 360ms cubic-bezier(0.36, 0.07, 0.19, 0.97) both; }
+
+/* recharts: kill default focus outline on svg surface, keep keyboard focus elsewhere */
+[data-admin-shell] .recharts-surface:focus { outline: none; }
+[data-admin-shell] .recharts-wrapper:focus-visible { outline: 3px solid var(--color-door); outline-offset: 3px; }
+
+@media (prefers-reduced-motion: reduce) {
+  [data-admin-shell] .admin-slam,
+  [data-admin-shell] .admin-rise,
+  .admin-strip,
+  .admin-slip-feed,
+  .admin-shake { animation: none !important; }
+}

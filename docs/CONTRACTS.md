@@ -126,3 +126,30 @@ Fest QR links: `/?src=thomso` etc. — `initAnalytics` stores `src` for the sess
 11. **Netlify cost:** functions only where needed; images via `next/image` from `/public` (Supabase-hosted product photos use `unoptimized` or remotePatterns — F2 configures `next.config.ts` images: `qualities: [60, 75, 85]`, remotePatterns for `*.supabase.co`). F2 owns `next.config.ts`.
 12. **Preloader** ≤ 2 s, once per session, skipped for reduced motion and bots (`navigator.webdriver` false-positives are fine for QA — add `?nopreload` to skip in screenshots).
 13. **Live site:** https://the-escape-door.netlify.app (Netlify, auto-deploys every push to `main` of github.com/Sivanandh10/The-Escape-Door). `SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || process.env.URL (Netlify build var) || 'https://the-escape-door.netlify.app'` (dev: localhost only if NODE_ENV=development and nothing else set). Never push a commit that fails `next build`.
+
+## 12. Admin kit (owner: P4a — `src/components/admin/**` except `crud/**`) — AS BUILT
+Import from the barrel `@/components/admin` (or the individual files). Server helpers from `@/components/admin/server`, auth actions from `@/components/admin/actions`.
+**Shell is automatic:** `src/app/admin/layout.tsx` wraps every `/admin/*` page in `<AdminShell>` (sidebar, demo banner, mobile sheet, owner gate, noindex, hides the public header/footer). Pages render only `<AdminPage>` + content — never AdminShell themselves.
+
+**Mode / auth**
+- `useAdmin() → { demo: boolean; email: string|null }` (client). `demo` = Supabase env missing → read seed (`@/lib/data/seed`), **disable writes** and show `DEMO_WRITE_NOTE` (exported string) as tooltip/inline note.
+- Server (pages/actions, inside `<Suspense>`): `getAdminContext() → { demo, session }` · `requireAdmin()` (redirects to /admin/login when signed-out / not owner; passes in demo) · `adminDb()` → cookie-bound Supabase client (RLS `is_admin()`) or `null` in demo. Re-check in every Server Action (`requireAdmin()`), then `updateTag(TAGS.x)` from `@/lib/data/repo`.
+- Browser writes: `supabaseBrowser()` (RLS applies to the signed-in owner). `src/proxy.ts` matcher = `/admin` + `/admin/:path*` only; sets `x-ted-path` request header + `X-Robots-Tag: noindex`.
+
+**Layout**
+- `<AdminPage title no? jp? kicker? description? actions? toolbar? className?>` — page header (the page's single H1; wrap the accent word in `<em>`), `no` = chapter "04" (see `ADMIN_NAV` in `nav.ts`: 01 dashboard, 02 analytics, 03 qr, 04 leads, 05 orders, 06 products, 07 collections, 08 events, 09 instagram, 10 settings). Children are spaced `space-y-6/8`.
+- `<AdminPanel title? jp? action? tone?='ink'|'paper'|'volt'|'lav'|'door' shadow?='none'|'door'|'volt'|'paper' id? index? className? bodyClassName?>` — section card (H2 title), staggered rise entrance by `index`.
+
+**Data**
+- `<DataTable<T> rows columns rowKey caption loading? error? onRetry? empty? search?={placeholder?, text:(row)=>string} toolbar? onRowClick? rowActions?=(row)=>ReactNode pageSize?=25 initialSort?={id,dir} selectedKey? dense? className?>` (client — props are functions, so use it from a `'use client'` component).
+  `DataTableColumn<T> = { id, header, cell:(row)=>ReactNode, sortValue?:(row)=>string|number|null, align?, className?, hideOnMobile?, mobileLabel? }`. Built-in: client search, sortable headers (aria-sort), pagination, skeleton (loading), ErrorState (error + retry), EmptyState (empty / no search match), row exit animation (removed rows slide out — pairs with ConfirmShred), phone card layout < 768px (first visible column = card title), Enter/Space on rows when `onRowClick`.
+- `<StatCard label value:number|null format?='int'|'inr'|'pct'(0..1)|'compact' jp? delta?(fraction vs prev) hint? tone?='ink'|'volt'|'lav'|'pink'|'door' icon?(element) index?>` — #17 count-up on view; `formatStat(v, format)`.
+
+**States**
+- `<EmptyState title body? action? mood?='work' sfx?='シーン…' compact?>` (server-safe, mascot Kado) · `<AdminSkeleton variant?='table'|'cards'|'chart' rows?>` · `<ErrorState title? message? onRetry? retrying?>` (client).
+
+**Destructive (#69 + undo)**
+- `<ConfirmShred itemLabel onConfirm onCommit? onUndo? undoMs?=6000 label?='Delete' variant?='icon'|'button' confirmText? disabled? disabledReason?>` — trash button → "Shred this?" slip → shred animation → `onConfirm()` (remove optimistically) → sonner toast with **Undo** → `onCommit()` after the window (also flushed on pagehide). If `onCommit` throws: `onUndo()` + error toast. In demo pass `disabled disabledReason={DEMO_WRITE_NOTE}`.
+- `shredWithUndo({ itemLabel, onConfirm, onCommit?, onUndo?, undoMs? })` — same flow without the popover (bulk deletes).
+
+**Class helpers (server+client)**: `adminBtn({ variant?='primary'|'door'|'ghost'|'danger'|'quiet', size?='md'|'sm', className? })` · `adminInput` (inputs/selects/textareas; `aria-invalid` → red) · `adminLabel` · `adminPill(tone?='volt'|'lav'|'pink'|'door'|'hype'|'paper'|'muted')` (status chips; suggested lead status: new=volt, contacted=lav, converted=door, closed=muted, spam=hype).

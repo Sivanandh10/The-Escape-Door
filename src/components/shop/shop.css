@@ -1,0 +1,83 @@
+/* Shop component styles (owner: P1 shop). Imported by the shop components; global but namespaced .ted-* */
+
+/* ── WishlistButton ─────────────────────────────────────────────────────── */
+@keyframes ted-wish-pop { 0% { transform: scale(.6) rotate(-12deg) } 55% { transform: scale(1.35) rotate(6deg) } 100% { transform: scale(1) rotate(0) } }
+.ted-wish-heart { transition: transform 160ms var(--ease-hover) }
+.ted-wish-pop { animation: ted-wish-pop 320ms var(--ease-slam) both }
+@media (hover: hover) { .ted-wish:hover .ted-wish-heart { transform: scale(1.12) } }
+
+/* ── AddToCartButton (#66) ──────────────────────────────────────────────── */
+.ted-atc { --atc-bg: var(--color-volt); --atc-fg: var(--color-ink); --atc-shadow: var(--color-ink);
+  background: var(--atc-bg); color: var(--atc-fg); box-shadow: 4px 4px 0 0 var(--atc-shadow);
+  transition: translate 140ms var(--ease-hover), box-shadow 140ms var(--ease-hover), background-color 180ms var(--ease-hover), color 180ms var(--ease-hover);
+}
+.ted-atc[data-tone="ink"] { --atc-bg: var(--color-ink); --atc-fg: var(--color-paper); --atc-shadow: var(--color-volt); border-color: var(--color-paper) }
+.ted-atc[data-tone="paper"] { --atc-bg: var(--color-paper); --atc-fg: var(--color-ink) }
+@media (hover: hover) {
+  .ted-atc:not([aria-disabled="true"]):hover { translate: -2px -2px; box-shadow: 6px 6px 0 0 var(--atc-shadow) }
+}
+.ted-atc:not([aria-disabled="true"]):active { translate: 3px 3px; box-shadow: 0 0 0 0 var(--atc-shadow); transition-duration: 60ms }
+.ted-atc[data-state="added"] { --atc-bg: var(--color-ink); --atc-fg: var(--color-volt); --atc-shadow: var(--color-volt) }
+.ted-atc[data-tone="ink"][data-state="added"] { --atc-bg: var(--color-volt); --atc-fg: var(--color-ink); --atc-shadow: var(--color-ink) }
+.ted-atc[data-state="need"] { --atc-bg: var(--color-pink); --atc-fg: var(--color-ink); animation: ted-atc-shake 360ms linear both }
+.ted-atc[aria-disabled="true"] { --atc-bg: var(--color-tone-2); --atc-fg: var(--color-tone-4); box-shadow: none; cursor: not-allowed }
+
+/* label morph: all labels stacked in one grid cell → stable width; the active one slides in */
+.ted-atc-labels { display: grid; overflow: hidden; }
+.ted-atc-labels > span { grid-area: 1 / 1; display: block; text-align: center; transform: translateY(110%); opacity: 0;
+  transition: transform 260ms var(--ease-slam), opacity 120ms linear; }
+.ted-atc-labels > span[data-on] { transform: translateY(0); opacity: 1 }
+.ted-atc-labels > span[data-past] { transform: translateY(-110%); opacity: 0; transition-timing-function: var(--ease-exit, ease-in) }
+
+.ted-atc-sfx { position: absolute; right: -10px; top: -14px; pointer-events: none; z-index: 2;
+  animation: ted-atc-sfx 1300ms var(--ease-slam) both; transform-origin: 30% 80%; }
+@keyframes ted-atc-sfx {
+  0% { transform: scale(.2) rotate(-14deg); opacity: 0 }
+  14% { transform: scale(1.18) rotate(4deg); opacity: 1 }
+  24% { transform: scale(1) rotate(0); }
+  80% { transform: scale(1) translateY(-4px); opacity: 1 }
+  100% { transform: scale(.9) translateY(-14px); opacity: 0 }
+}
+@keyframes ted-atc-shake { 0%,100% { transform: translateX(0) } 20% { transform: translateX(-5px) } 40% { transform: translateX(5px) } 60% { transform: translateX(-3px) } 80% { transform: translateX(2px) } }
+
+/* the flying thumbnail (appended to <body>) */
+.ted-fly { position: fixed; left: 0; top: 0; z-index: 120; pointer-events: none; border: 3px solid var(--color-ink);
+  box-shadow: 4px 4px 0 0 var(--color-ink); overflow: hidden; will-change: transform, opacity; contain: layout paint; }
+.ted-fly img { width: 100%; height: 100%; object-fit: cover; display: block }
+.ted-fly-ink { position: fixed; z-index: 121; pointer-events: none; width: 54px; height: 54px; margin: -27px 0 0 -27px; left: 0; top: 0;
+  border-radius: 50%; background: radial-gradient(circle, var(--color-volt) 0 34%, transparent 36%), repeating-conic-gradient(var(--color-ink) 0 6deg, transparent 6deg 20deg); }
+
+/* ── ProductCard ────────────────────────────────────────────────────────── */
+.ted-card { transition: translate 180ms var(--ease-hover), box-shadow 180ms var(--ease-hover); }
+.ted-card-img { transition: opacity 360ms var(--ease-hover), transform 700ms var(--ease-expo); }
+.ted-card-back { opacity: 0 }
+@media (hover: hover) {
+  .ted-card:hover { translate: -3px -3px; box-shadow: 9px 9px 0 0 var(--color-ink) }
+  .ted-card:hover .ted-card-img { transform: scale(1.045) }
+  .ted-card[data-has-back]:hover .ted-card-back { opacity: 1 }
+  .ted-card[data-has-back]:hover .ted-card-front { opacity: 0 }
+  .ted-card:hover .ted-card-flip { transform: rotate(0) scale(1); opacity: 1 }
+}
+.ted-card:focus-within .ted-card-back { opacity: 1 }
+.ted-card[data-has-back]:focus-within .ted-card-front { opacity: 0 }
+.ted-card-flip { transform: rotate(-6deg) scale(.85); opacity: 0; transition: transform 240ms var(--ease-slam), opacity 160ms linear }
+.ted-card:focus-within .ted-card-flip { transform: rotate(0) scale(1); opacity: 1 }
+.ted-card-link::after { content: ""; position: absolute; inset: 0; z-index: 1 }
+
+@media (prefers-reduced-motion: reduce) {
+  .ted-wish-pop, .ted-atc[data-state="need"], .ted-atc-sfx { animation: none }
+  .ted-atc-labels > span { transition: none }
+  .ted-card, .ted-card-img, .ted-card-flip { transition: opacity 150ms linear }
+  .ted-card:hover .ted-card-img { transform: none }
+}
+
+/* ── Filters: dual range slider (two stacked inputs; only thumbs take pointer events) ── */
+.ted-range { -webkit-appearance: none; appearance: none; background: transparent; pointer-events: none; margin: 0; height: 100% }
+.ted-range::-webkit-slider-runnable-track { background: transparent; height: 100% }
+.ted-range::-moz-range-track { background: transparent }
+.ted-range::-webkit-slider-thumb { -webkit-appearance: none; pointer-events: auto; width: 22px; height: 22px; margin-top: 11px; background: var(--color-paper);
+  border: 3px solid var(--color-ink); box-shadow: 2px 2px 0 0 var(--color-ink); cursor: grab; transform: rotate(45deg) }
+.ted-range::-moz-range-thumb { pointer-events: auto; width: 16px; height: 16px; background: var(--color-paper); border: 3px solid var(--color-ink); border-radius: 0; cursor: grab; transform: rotate(45deg) }
+.ted-range:focus-visible::-webkit-slider-thumb { outline: 3px solid var(--color-door); outline-offset: 2px; background: var(--color-volt) }
+.ted-range:focus-visible::-moz-range-thumb { outline: 3px solid var(--color-door); background: var(--color-volt) }
+.ted-range:active::-webkit-slider-thumb { cursor: grabbing; background: var(--color-volt) }

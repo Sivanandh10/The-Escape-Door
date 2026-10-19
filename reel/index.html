@@ -1,0 +1,494 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>The Escape Door — launch reel 9:16</title>
+<meta name="viewport" content="width=1080, height=1920">
+<link rel="stylesheet" href="assets/fonts.css">
+<style>
+  /* Motion Studio Rules: no CSS transitions/animations anywhere — every frame comes from window.seek(t). */
+  :root{
+    --ink:#0B0B0F; --paper:#F4EFE6; --volt:#FFE14D; --hype-y:#FFE600; --lav:#C9B8FF; --door:#6D3BFF;
+    --pink:#FFB8DE; --hype:#FF2D3D; --tone1:#1A1A20; --tone2:#2B2B33; --tone3:#6E6E78; --tone4:#B9B5AC;
+  }
+  *{box-sizing:border-box;margin:0;padding:0;transition:none!important;animation:none!important}
+  html,body{width:1080px;height:1920px;overflow:hidden;background:var(--ink)}
+  #stage{position:absolute;left:0;top:0;width:1080px;height:1920px;overflow:hidden;background:var(--ink);font-family:'DM Sans',sans-serif;color:var(--paper)}
+  #cam{position:absolute;inset:0}
+  .scene{position:absolute;inset:0;overflow:hidden;display:none}
+  .abs{position:absolute}
+  .anton{font-family:'Anton',sans-serif;font-weight:400;line-height:.86;letter-spacing:-.01em;text-transform:uppercase}
+  .mono{font-family:'JetBrains Mono',monospace;font-weight:700;letter-spacing:.14em;text-transform:uppercase}
+  .jp{font-family:'Noto Sans JP',sans-serif;font-weight:900}
+  .sfx{font-family:'Dela Gothic One',sans-serif}
+  .bang{font-family:'Bangers',sans-serif;letter-spacing:.02em}
+  .tone{background-image:url(assets/textures/screentone-mid.svg);background-size:18px 18px}
+  .tone-l{background-image:url(assets/textures/screentone-light.svg);background-size:22px 22px}
+  .tone-d{background-image:url(assets/textures/screentone-dense.svg);background-size:14px 14px}
+  .crop{position:absolute;overflow:hidden}
+  .crop img{position:absolute;display:block;max-width:none}
+  .stroke{paint-order:stroke fill}
+  .hl{position:relative;display:inline-block;z-index:0}
+  .hl::before{content:"";position:absolute;left:-.08em;right:-.08em;top:.06em;bottom:.02em;background:var(--volt);transform:rotate(-2deg);z-index:-1}
+  .tag{background:var(--paper);color:var(--ink);border:8px solid var(--ink);box-shadow:8px 8px 0 var(--ink);padding:10px 18px 6px}
+  .leaf{position:absolute;top:0;height:100%;backface-visibility:hidden}
+  .outline{color:transparent;-webkit-text-stroke:3px var(--ink)}
+  .band{position:absolute;left:-200px;width:1480px;height:124px;overflow:hidden;border-top:8px solid var(--ink);border-bottom:8px solid var(--ink)}
+  .band .run{position:absolute;top:14px;white-space:nowrap;font-size:84px}
+</style>
+</head>
+<body>
+<div id="stage"><div id="cam"></div></div>
+<script>
+/* ============================================================
+   THE ESCAPE DOOR — launch reel. Deterministic: window.seek(t).
+   Pure function of time; seeded PRNG; closed-form springs.
+   ============================================================ */
+const W = 1080, H = 1920, DUR = 15
+const $cam = document.getElementById('cam')
+
+// ---------- math ----------
+const clamp = (x, a = 0, b = 1) => Math.min(b, Math.max(a, x))
+const prog = (t, a, b) => clamp((t - a) / (b - a))
+const lerp = (a, b, p) => a + (b - a) * p
+function spring(t, w = 14, z = 0.62) {           // closed-form damped spring 0 -> 1
+  if (t <= 0) return 0
+  if (z >= 1) return 1 - Math.exp(-w * t) * (1 + w * t)
+  const wd = w * Math.sqrt(1 - z * z)
+  return 1 - Math.exp(-z * w * t) * (Math.cos(wd * t) + (z * w / wd) * Math.sin(wd * t))
+}
+const SNAP = [22, 0.45], CARD = [14, 0.62], TYPE = [11, 1]
+const sp = (t, k) => spring(t, k[0], k[1])
+const expoOut = p => p >= 1 ? 1 : 1 - Math.pow(2, -10 * p)
+const expoIn = p => p <= 0 ? 0 : Math.pow(2, 10 * p - 10)
+const p3io = p => p < .5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2
+function mulberry32(a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296 } }
+
+// ---------- dom helpers ----------
+function el(tag, cls, css, parent, html) {
+  const e = document.createElement(tag)
+  if (cls) e.className = cls
+  if (css) Object.assign(e.style, css)
+  if (html != null) e.innerHTML = html
+  ;(parent || $cam).appendChild(e)
+  return e
+}
+const px = n => n + 'px'
+function box(cls, x, y, w, h, parent, css, html) { return el('div', cls, Object.assign({ left: px(x), top: px(y), width: px(w), height: px(h) }, css || {}), parent, html) }
+function T(e, s) { e.style.transform = s }
+function show(e, on) { e.style.display = on ? 'block' : 'none' }
+// cover-fit a crop rect of a 1200x1500 mockup into a w x h box
+function crop(parent, src, c, w, h, x = 0, y = 0, css) {
+  const b = box('crop', x, y, w, h, parent, css)
+  const s = Math.max(w / c[2], h / c[3])
+  const img = el('img', '', { width: px(1200 * s), height: px(1500 * s), left: px(w / 2 - (c[0] + c[2] / 2) * s), top: px(h / 2 - (c[1] + c[3] / 2) * s) }, b)
+  img.src = 'assets/mockups/' + src + '.webp'
+  return b
+}
+// seeded radial speed lines (SVG)
+function speedLines(seed, n, r0, R, color, cx = 540, cy = 960) {
+  const r = mulberry32(seed); let p = ''
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + r() * 0.08, w = 0.004 + r() * 0.014, ri = r0 * (0.75 + r() * 0.6)
+    const x1 = cx + Math.cos(a - w) * R, y1 = cy + Math.sin(a - w) * R, x2 = cx + Math.cos(a + w) * R, y2 = cy + Math.sin(a + w) * R
+    p += `<polygon points="${cx + Math.cos(a) * ri},${cy + Math.sin(a) * ri} ${x1},${y1} ${x2},${y2}"/>`
+  }
+  return `<svg width="1080" height="1920" viewBox="0 0 1080 1920" style="position:absolute;left:0;top:0;overflow:visible"><g fill="${color}">${p}</g></svg>`
+}
+function starburst(seed, n, r1, r2, fill, stroke, sw) {
+  const r = mulberry32(seed); let pts = []
+  for (let i = 0; i < n * 2; i++) { const a = i / (n * 2) * Math.PI * 2; const rr = (i % 2 ? r1 : r2) * (0.85 + r() * 0.3); pts.push((Math.cos(a) * rr).toFixed(1) + ',' + (Math.sin(a) * rr).toFixed(1)) }
+  const m = r2 * 1.3
+  return `<svg width="${m * 2}" height="${m * 2}" viewBox="${-m} ${-m} ${m * 2} ${m * 2}" style="overflow:visible"><polygon points="${pts.join(' ')}" fill="${fill}" stroke="${stroke}" stroke-width="${sw}" stroke-linejoin="round"/></svg>`
+}
+// 2-frame impact shake (frame-quantised, deterministic)
+const HITS = [{ t: 0.5, a: 26 }, { t: 2.0, a: 10 }, { t: 2.5, a: 10 }, { t: 3.0, a: 12 }, { t: 9.5, a: 14 }, { t: 10.0, a: 22 }, { t: 13.0, a: 28 }, { t: 13.12, a: 12 }]
+function shake(t) {
+  let x = 0, y = 0
+  for (const h of HITS) { const f = Math.floor((t - h.t) * 30 + 1e-4); if (f === 0) { x += h.a; y -= h.a * .6 } else if (f === 1) { x -= h.a * .8; y += h.a * .45 } else if (f === 2) { x += h.a * .25 } }
+  return [x, y]
+}
+
+/* ============ SCENE 1 — HOOK: door, ドン!, light floods out (0–2.0) ============ */
+const s1 = box('scene', 0, 0, W, H, $cam, { background: 'var(--ink)' })
+const s1tone = box('abs tone', 0, 0, W, H, s1, { opacity: .18 })
+const s1lines = box('abs', 0, 0, W, H, s1, {}, speedLines(7, 90, 430, 1500, '#2B2B33', 540, 975))
+const s1g = box('abs', 0, 0, W, H, s1, { transformOrigin: '540px 975px' })     // camera group
+const DX = 270, DY = 560, DW = 540, DH = 830                                       // door frame
+const frame = box('abs', DX - 34, DY - 34, DW + 68, DH + 34, s1g, { background: 'var(--door)', border: '10px solid var(--ink)', boxShadow: '0 0 0 6px var(--door)' })
+const opening = box('abs', DX, DY, DW, DH, s1g, { background: 'var(--volt)', overflow: 'hidden', perspective: '1500px', border: '8px solid var(--ink)' })
+const s1light = box('abs', -DX, -DY, W, H, opening, {}, speedLines(11, 70, 60, 1400, 'rgba(11,11,15,.22)', 540, 975))
+const s1dots = box('abs tone-l', 0, 0, DW, DH, opening, { opacity: .35 })
+const lw = DW / 2 - 8
+function doorLeaf(parent, left, w, h, color, origin, knobSide) {
+  const l = box('leaf', left, 0, w, h, parent, { background: color, border: '8px solid var(--ink)', transformOrigin: origin })
+  box('abs', 30, 40, w - 76, h * .42, l, { border: '7px solid var(--ink)' })
+  box('abs', 30, h * .42 + 76, w - 76, h * .42, l, { border: '7px solid var(--ink)' })
+  box('abs', knobSide === 'r' ? w - 50 : 12, h * .5 - 14, 28, 28, l, { background: 'var(--volt)', border: '6px solid var(--ink)', borderRadius: '50%' })
+  return l
+}
+const leafL = doorLeaf(opening, 0, lw, DH - 16, 'var(--paper)', '0 50%', 'r')
+const leafR = doorLeaf(opening, lw, lw, DH - 16, 'var(--paper)', '100% 50%', 'l')
+// ゴゴゴ rumble
+const gogo = [0, 1, 2].map(i => box('abs sfx', 820 + i * 34, 420 + i * 150, 160, 160, s1g, { fontSize: '128px', color: 'var(--lav)', WebkitTextStroke: '6px var(--ink)', paintOrder: 'stroke fill', textShadow: '8px 8px 0 #000' }, 'ゴ'))
+// ドン! on a red burst
+const donWrap = box('abs', 40, 470, 520, 400, s1g, { transformOrigin: '260px 200px' })
+const donBurst = box('abs', -130, -190, 780, 780, donWrap, {}, starburst(3, 14, 230, 330, 'var(--hype)', '#0B0B0F', 12))
+const don = box('abs sfx', 30, 90, 520, 240, donWrap, { fontSize: '196px', color: 'var(--paper)', WebkitTextStroke: '14px var(--ink)', paintOrder: 'stroke fill', textShadow: '10px 10px 0 var(--ink)', transform: 'skewX(-8deg)', whiteSpace: 'nowrap' }, 'ドン!')
+// headline type
+const h1a = box('abs anton', 0, 270, W, 200, s1g, { fontSize: '196px', textAlign: 'center', color: 'var(--paper)', whiteSpace: 'nowrap' })
+const h1w = ['ANIME', 'MERCH'].map((w, i) => el('span', '', { display: 'inline-block', margin: '0 18px', transformOrigin: '50% 80%' }, h1a, w))
+const h1b = box('abs anton', 0, 1420, W, 150, s1g, { fontSize: '92px', textAlign: 'center', color: 'var(--paper)', lineHeight: '1', whiteSpace: 'nowrap' })
+const h1bw = ['DRAWN', 'LIKE', 'A', 'LIVING', '<span class="hl" style="color:var(--ink)">MANGA</span>'].map(w => el('span', '', { display: 'inline-block', margin: '0 12px', transformOrigin: '50% 100%' }, h1b, w))
+
+function scene1(t) {
+  show(s1, t < 2.06)
+  if (t >= 2.06) return
+  // light rays drift
+  T(s1lines, `rotate(${t * 6}deg) scale(${1 + 0.25 * Math.exp(-Math.max(0, t - 0.5) * 6) * (t >= 0.5 ? 1 : 0)})`)
+  s1lines.style.transformOrigin = '540px 975px'
+  // rumble ゴゴゴ before the slam, blown away after
+  gogo.forEach((g, i) => {
+    const f = Math.floor(t * 30), jx = ((f * 7 + i * 3) % 5 - 2) * 3, jy = ((f * 5 + i * 11) % 5 - 2) * 3
+    const inn = sp(t - i * 0.06, SNAP), out = expoIn(prog(t, 0.5, 0.8))
+    T(g, `translate(${jx + out * 420}px,${jy - out * 200}px) scale(${inn * (1 - out * .4)}) rotate(${-8 + i * 6}deg)`)
+  })
+  // ドン!
+  const d = sp(t - 0.5, SNAP)
+  donWrap.style.display = t >= 0.5 ? 'block' : 'none'
+  T(donWrap, `rotate(-9deg) scale(${lerp(2.6, 1, d)})`)
+  T(donBurst, `rotate(${(t - 0.5) * 14}deg) scale(${1 + 0.12 * Math.exp(-(t - 0.5) * 8)})`)
+  // door leaves swing open after the hit
+  const o = sp(t - 0.62, [9, 0.58])
+  T(leafL, `rotateY(${-104 * o}deg)`); T(leafR, `rotateY(${104 * o}deg)`)
+  T(s1light, `rotate(${-t * 10}deg) scale(${0.6 + 0.6 * o})`); s1light.style.transformOrigin = '540px 975px'
+  // headline words: hook in the first 0.4 s
+  h1w.forEach((w, i) => { const k = sp(t - 0.04 - i * 0.14, SNAP); T(w, `translateY(${(1 - k) * 160}px) scale(${lerp(1.5, 1, k)})`); w.style.opacity = k > 0.02 ? 1 : 0 })
+  h1bw.forEach((w, i) => { const k = sp(t - 0.95 - i * 0.07, CARD); T(w, `translateY(${(1 - k) * 120}px) rotate(${(1 - k) * 8}deg)`); w.style.opacity = k > 0.02 ? 1 : 0 })
+  // camera: push through the doorway into the light
+  const push = expoIn(prog(t, 1.3, 2.0))
+  T(s1g, `scale(${1 + push * 7})`)
+}
+
+/* ============ SCENE 2 — manga page assembles (2.0–4.5) ============ */
+const s2 = box('scene', 0, 0, W, H, $cam, { background: 'var(--volt)' })
+const s2tone = box('abs tone-l', 0, 0, W, H, s2, { opacity: .16 })
+const s2page = box('abs', 0, 0, W, H, s2, { transformOrigin: '0 1920px' })
+const yTop = x => 700 - 90 * (x - 60) / 960, yMid = x => 1112 - 40 * (x - 60) / 960, yBot = x => 1150 - 40 * (x - 60) / 960
+const PANELS = [
+  { pts: [[60, 250], [1020, 250], [1020, yTop(1020)], [60, yTop(60)]], src: 'flame-breath-ribbon-oversized-t-shirt-back', c: [110, 330, 980, 520], label: 'OVERSIZED TEES', lx: 90, ly: 520, from: [0, -900], rot: -6 },
+  { pts: [[60, yTop(60) + 18], [560, yTop(560) + 18], [500, yMid(500)], [60, yMid(60)]], src: 'violet-smoke-hoodie-back', c: [160, 440, 880, 860], label: 'HOODIES', lx: 84, ly: 735, from: [-900, 0], rot: 8 },
+  { pts: [[578, yTop(578) + 18], [1020, yTop(1020) + 18], [1020, yMid(1020)], [518, yMid(518)]], src: 'talisman-strip-polaroid-prints-front', c: [150, 300, 900, 900], label: 'POLAROIDS', lx: 640, ly: 690, from: [900, 0], rot: -8 },
+  { pts: [[60, yBot(60)], [640, yBot(640)], [700, 1560], [60, 1560]], src: 'tide-glow-led-cosplay-katana-front', c: [80, 470, 1080, 820], label: 'COSPLAY & PROPS', lx: 84, ly: 1430, from: [-900, 500], rot: 6 },
+  { pts: [[658, yBot(658)], [1020, yBot(1020)], [1020, 1560], [718, 1560]], src: 'ink-blade-poster-front', c: [230, 380, 640, 900], label: 'POSTERS', lx: 740, ly: 1430, from: [900, 500], rot: -6 },
+]
+PANELS.forEach((p, i) => {
+  const xs = p.pts.map(q => q[0]), ys = p.pts.map(q => q[1])
+  const x0 = Math.min(...xs), y0 = Math.min(...ys), x1 = Math.max(...xs), y1 = Math.max(...ys), w = x1 - x0, h = y1 - y0
+  const poly = p.pts.map(q => `${q[0] - x0}px ${q[1] - y0}px`).join(',')
+  const g = box('abs', x0, y0, w, h, s2page, { transformOrigin: '50% 50%' })
+  box('abs', 14, 14, w, h, g, { background: 'var(--ink)', clipPath: `polygon(${poly})` })           // hard shadow
+  box('abs', 0, 0, w, h, g, { background: 'var(--ink)', clipPath: `polygon(${poly})` })             // ink border
+  // inner polygon inset ~10px (approx by scaling about centroid)
+  const cx = w / 2, cy = h / 2, sx = (w - 22) / w, sy = (h - 22) / h
+  const inner = p.pts.map(q => `${(q[0] - x0 - cx) * sx + cx}px ${(q[1] - y0 - cy) * sy + cy}px`).join(',')
+  const im = crop(g, p.src, p.c, w, h, 0, 0, { clipPath: `polygon(${inner})` })
+  const lab = box('abs anton tag', p.lx - x0, p.ly - y0, 0, 0, g, { width: 'auto', height: 'auto', fontSize: '58px', whiteSpace: 'nowrap', transformOrigin: '0 100%' }, p.label)
+  p.g = g; p.lab = lab; p.img = im
+})
+const s2cap = box('abs', 0, 900, W, 300, s2page, { textAlign: 'center' })
+const s2capIn = el('div', 'anton', { display: 'inline-block', background: 'var(--paper)', color: 'var(--ink)', border: '10px solid var(--ink)', boxShadow: '14px 14px 0 var(--ink)', padding: '20px 36px 12px', fontSize: '112px', lineHeight: '.9', transformOrigin: '50% 50%' }, s2cap, 'EVERY <span class="hl">ARC.</span><br>EVERY PANEL.')
+function scene2(t) {
+  const u = t - 2
+  show(s2, t >= 1.96 && t < 4.55)
+  if (!(t >= 1.96 && t < 4.55)) return
+  PANELS.forEach((p, i) => {
+    const k = sp(u - i * 0.25, CARD)
+    T(p.g, `translate(${p.from[0] * (1 - k)}px,${p.from[1] * (1 - k)}px) rotate(${p.rot * (1 - k)}deg)`)
+    p.g.style.visibility = u - i * 0.25 >= 0 ? 'visible' : 'hidden'
+    const kl = sp(u - i * 0.25 - 0.16, SNAP)
+    T(p.lab, `rotate(-3deg) scale(${kl})`)
+    // idle: slow parallax drift of the art inside each panel
+    T(p.img.firstChild, `translate(${Math.sin(u * 1.3 + i) * 8}px,${-u * 10}px) scale(1.04)`)
+  })
+  const kc = sp(u - 1.32, SNAP)
+  s2cap.style.visibility = u >= 1.32 ? 'visible' : 'hidden'
+  T(s2capIn, `rotate(-4deg) scale(${lerp(2.2, 1, kc)})`)
+  // camera push + page turn exit
+  const turn = expoIn(prog(t, 4.2, 4.52))
+  T(s2page, `translateX(${-1400 * turn}px) rotate(${-14 * turn}deg) scale(${1 + u * 0.018})`)
+  s2tone.style.opacity = .16
+}
+
+/* ============ SCENE 3 — arc doors flip, one per beat (4.5–7.5) ============ */
+const ARCS = [
+  { name: ['JUJUTSU', 'KAISEN'], jp: '呪術廻戦', a: '#4B2BFF', b: '#A78BFF', fg: 'var(--ink)', art: 'cursed-static-oversized-t-shirt-back' },
+  { name: ['ATTACK', 'ON TITAN'], jp: '進撃の巨人', a: '#A39780', b: '#C8102E', fg: 'var(--paper)', art: 'beyond-the-wall-oversized-t-shirt-back' },
+  { name: ['DEMON', 'SLAYER'], jp: '鬼滅の刃', a: '#FF6A13', b: '#12A5A0', fg: 'var(--ink)', art: 'flame-breath-ribbon-oversized-t-shirt-back' },
+  { name: ['ONE', 'PIECE'], jp: 'ワンピース', a: '#1C6FE0', b: '#F2C230', fg: 'var(--ink)', art: 'open-sea-chart-oversized-t-shirt-back' },
+  { name: ['NARUTO', ''], jp: 'ナルト', a: '#FF7A00', b: '#1B2A4A', fg: 'var(--paper)', art: 'spiral-wind-oversized-t-shirt-back' },
+  { name: ['BEYOND', 'ANIME'], jp: 'その先へ', a: '#FFB8DE', b: '#F4EFE6', fg: 'var(--ink)', art: 'sparkle-era-t-shirt-back', artC: [330, 400, 500, 640] },
+]
+const s3 = box('scene', 0, 0, W, H, $cam, { background: ARCS[0].a })
+const s3bgs = ARCS.map((a, i) => box('abs', 0, 0, W, H, s3, { background: a.a }))
+const s3tone = box('abs tone', 0, 0, W, H, s3, { opacity: .14 })
+const s3lines = box('abs', 0, 0, W, H, s3, { opacity: .5, transformOrigin: '540px 920px' }, speedLines(21, 70, 520, 1500, 'rgba(11,11,15,.35)', 540, 920))
+const s3g = box('abs', 0, 0, W, H, s3, { transformOrigin: '540px 925px' })
+const FX = 150, FY = 300, FW = 780, FH = 1250
+box('abs', FX - 30, FY - 30, FW + 60, FH + 30, s3g, { background: 'var(--ink)', boxShadow: '18px 18px 0 rgba(11,11,15,.55)' })
+const s3open = box('abs', FX, FY, FW, FH, s3g, { perspective: '1800px', background: 'var(--lav)', overflow: 'visible' })
+const s3lav = box('abs tone-l', 0, 0, FW, FH, s3open, { opacity: .25 })
+const s3doors = ARCS.map((a, i) => {
+  const d = box('leaf', 0, 0, FW, FH, s3open, { background: a.b, border: '10px solid var(--ink)', transformOrigin: '0 50%', overflow: 'hidden', zIndex: String(10 - i) })
+  box('abs tone', 0, 0, FW, FH, d, { opacity: .16 })
+  box('abs mono', 52, 46, 400, 40, d, { fontSize: '30px', color: a.fg }, `ARC 0${i + 1} / 06`)
+  const art = crop(d, a.art, a.artC || [436, 416, 400, 568], 470, 610, 46, 100, { border: '9px solid var(--ink)', boxShadow: '12px 12px 0 var(--ink)', transform: `rotate(${i % 2 ? 2 : -2}deg)` })
+  box('abs jp', FW - 220, 96, 170, 900, d, { fontSize: '132px', color: a.fg, writingMode: 'vertical-rl', lineHeight: '1', letterSpacing: '.02em' }, a.jp)
+  const nm = box('abs anton', 52, FH - 520, FW - 120, 420, d, { fontSize: a.name[1] ? '196px' : '236px', color: a.fg, display: 'flex', flexDirection: 'column', justifyContent: 'flex-end' }, a.name.filter(Boolean).map(s => `<div>${s}</div>`).join(''))
+  box('abs', FW - 72, FH * .52, 34, 34, d, { background: 'var(--volt)', border: '7px solid var(--ink)', borderRadius: '50%' })
+  return { d, nm }
+})
+function scene3(t) {
+  show(s3, t >= 4.15 && t < 7.62)
+  if (!(t >= 4.15 && t < 7.62)) return
+  const u = t - 4.5
+  const idx = clamp(Math.floor(u / 0.5), 0, 5)
+  // background: current arc colour, next one wipes in diagonally while the leaf swings
+  s3bgs.forEach((b, i) => {
+    if (i === 0) { b.style.clipPath = 'none'; return }
+    const w = p3io(prog(u, (i - 1) * 0.5 + 0.32, (i - 1) * 0.5 + 0.52))
+    const x = lerp(-700, 1080 + 700, w)
+    b.style.clipPath = `polygon(0 0, ${x}px 0, ${x - 700}px 1920px, 0 1920px)`
+    b.style.display = w > 0 ? 'block' : 'none'
+  })
+  s3doors.forEach((o, i) => {
+    const local = u - i * 0.5
+    const open = i === 5 ? p3io(prog(local, 0.1, 0.3)) : expoIn(prog(local, 0.3, 0.5))
+    const arrive = i === 0 ? 1 : sp(local, [16, 0.5])
+    T(o.d, `rotateY(${-112 * open}deg) scale(${i === 0 ? 1 : lerp(0.94, 1, arrive)})`)
+    o.d.style.display = local < 0.52 && local > -0.55 ? 'block' : 'none'
+    T(o.nm, `translateY(${(1 - sp(local + 0.04, TYPE)) * 80}px)`)
+  })
+  T(s3lines, `rotate(${u * 9}deg) scale(${1 + 0.1 * ((u % 0.5) < 0.1 ? 1 - (u % 0.5) / 0.1 : 0)})`)
+  // final door: camera dives into the lav stage
+  const dive = expoIn(prog(t, 7.24, 7.5))
+  T(s3g, `scale(${1 + dive * 2.2 + Math.max(0, u) * 0.012})`)
+}
+
+/* ============ SCENE 4 — drop of the week tee: front → back (7.5–9.5) ============ */
+const s4 = box('scene', 0, 0, W, H, $cam, { background: 'var(--lav)' })
+const s4rows = [0, 1, 2, 3, 4, 5, 6].map(i => box('abs anton outline', 0, 150 + i * 255, 4000, 250, s4, { fontSize: '236px', whiteSpace: 'nowrap', opacity: .32 }, 'CURSED STATIC ✦ CURSED STATIC ✦ CURSED STATIC ✦ CURSED STATIC ✦ '))
+const s4title = box('abs', 70, 250, 940, 250, s4, { overflow: 'hidden' })
+const s4tA = box('abs anton', 0, 0, 940, 170, s4title, { fontSize: '166px', color: 'var(--ink)', whiteSpace: 'nowrap' }, 'CURSED STATIC')
+const s4tB = box('abs', 0, 168, 940, 80, s4title, { display: 'flex', gap: '22px', alignItems: 'center' }, '<span class="jp" style="font-size:58px;color:var(--ink)">呪いのノイズ</span><span class="mono" style="font-size:26px;color:var(--paper);background:var(--ink);padding:8px 14px">DROP OF THE WEEK</span>')
+const CW = 700, CH = 714, CXp = 190, CYp = 540
+const s4card = box('abs', CXp, CYp, CW, CH, s4, { transformOrigin: '50% 50%' })
+const s4shadow = box('abs', 18, 18, CW, CH, s4card, { background: 'var(--ink)' })
+const TEE = [110, 280, 980, 1000]
+const s4front = crop(s4card, 'cursed-static-oversized-t-shirt-front', TEE, CW, CH, 0, 0, { border: '10px solid var(--ink)', background: 'var(--lav)' })
+const s4back = crop(s4card, 'cursed-static-oversized-t-shirt-back', TEE, CW, CH, 0, 0, { border: '10px solid var(--ink)', background: 'var(--lav)' })
+const s4shade = box('abs', 0, 0, CW, CH, s4card, { background: 'var(--ink)' })
+const s4stk = box('abs mono', CW - 250, -20, 250, 150, s4card, { background: 'var(--volt)', color: 'var(--ink)', border: '8px solid var(--ink)', boxShadow: '8px 8px 0 var(--ink)', fontSize: '25px', lineHeight: '1.25', padding: '18px 16px', transform: 'rotate(6deg)' }, 'ORIGINAL<br>FAN-ART<br><span class="jp" style="font-size:30px;letter-spacing:0">新作</span>')
+// callouts with leader lines (#64)
+const s4svg = el('div', 'abs', { left: 0, top: 0, width: '1080px', height: '1920px' }, s4)
+s4svg.innerHTML = `<svg width="1080" height="1920" style="position:absolute;left:0;top:0;overflow:visible" fill="none" stroke="#0B0B0F" stroke-width="7" stroke-linecap="square">
+  <path id="ld1" d="M650 690 L760 610 L1000 610"/><circle id="dt1" cx="650" cy="690" r="14" fill="#FFE14D" stroke-width="6"/>
+  <path id="ld2" d="M540 1000 L330 1290 L80 1290"/><circle id="dt2" cx="540" cy="1000" r="14" fill="#FFE14D" stroke-width="6"/>
+</svg>`
+const ld1 = s4svg.querySelector('#ld1'), ld2 = s4svg.querySelector('#ld2'), dt1 = s4svg.querySelector('#dt1'), dt2 = s4svg.querySelector('#dt2')
+const L1 = 376, L2 = 640
+ld1.style.strokeDasharray = L1; ld2.style.strokeDasharray = L2
+const s4c1 = box('abs tag mono', 640, 520, 0, 0, s4, { width: 'auto', height: 'auto', fontSize: '30px', whiteSpace: 'nowrap', lineHeight: '1.2', transformOrigin: '0 100%' }, 'FRONT · 4×4 IN<br><span style="font-size:22px">CHEST MARK</span>')
+const s4c2 = box('abs tag mono', 64, 1300, 0, 0, s4, { width: 'auto', height: 'auto', fontSize: '34px', whiteSpace: 'nowrap', lineHeight: '1.2', transformOrigin: '0 0' }, 'BACK PRINT · 12×15 IN<br><span style="font-size:24px">OVERSIZED · DROP-SHOULDER</span>')
+const s4pill = box('abs anton', 640, 1395, 0, 0, s4, { width: 'auto', height: 'auto', fontSize: '104px', background: 'var(--volt)', color: 'var(--ink)', border: '10px solid var(--ink)', boxShadow: '12px 12px 0 var(--ink)', padding: '18px 30px 8px', whiteSpace: 'nowrap', transformOrigin: '50% 50%' }, '<span class="mono" style="font-size:30px;display:block;letter-spacing:.14em">OVERSIZED TEE</span><span style="font-family:\'JetBrains Mono\';font-weight:700;font-size:96px">₹800</span>')
+function scene4(t) {
+  show(s4, t >= 7.48 && t < 9.52)
+  if (!(t >= 7.48 && t < 9.52)) return
+  const u = t - 7.5
+  s4rows.forEach((r, i) => { const dir = i % 2 ? 1 : -1; T(r, `translateX(${-900 + dir * (u + 2) * 170}px)`) })
+  // title rises from its mask (big type: critically damped)
+  T(s4tA, `translateY(${(1 - sp(u - 0.05, TYPE)) * 180}px)`)
+  T(s4tB, `translateY(${(1 - sp(u - 0.18, TYPE)) * 100}px)`)
+  // card entrance
+  const k = sp(u, CARD)
+  // turntable: front → back with a spring (slight overshoot = weight)
+  const th = 180 * sp(u - 0.8, [12, 0.62])
+  const c = Math.cos(th * Math.PI / 180)
+  const back = th > 90
+  show(s4front, !back); show(s4back, back)
+  T(s4card, `translateY(${(1 - k) * 1100}px) rotate(${(1 - k) * 10 - 1.5 + Math.sin(u * 2) * 0.6}deg) scaleX(${Math.max(0.02, Math.abs(c))}) scale(${1 + 0.06 * Math.sin(Math.PI * clamp(th / 180))})`)
+  s4shade.style.opacity = (Math.sin(clamp(th / 180) * Math.PI) * 0.55).toFixed(3)
+  s4shadow.style.display = Math.abs(c) > 0.3 ? 'block' : 'none'
+  // callout 1 while front shows, callout 2 after flip
+  const c1 = prog(u, 0.32, 0.55) * (1 - prog(u, 0.78, 0.86))
+  ld1.style.strokeDashoffset = L1 * (1 - p3io(c1)); dt1.style.display = c1 > 0 ? 'block' : 'none'
+  T(s4c1, `scale(${sp(u - 0.5, SNAP) * (1 - prog(u, 0.78, 0.86))}) rotate(-2deg)`)
+  const c2 = prog(u, 1.15, 1.4)
+  ld2.style.strokeDashoffset = L2 * (1 - p3io(c2)); dt2.style.display = c2 > 0 ? 'block' : 'none'
+  T(s4c2, `scale(${sp(u - 1.36, SNAP)}) rotate(2deg)`)
+  T(s4pill, `rotate(-5deg) scale(${lerp(0, 1, sp(u - 1.5, SNAP))})`)
+}
+
+/* ============ SCENE 5 — polaroid burst + "3 FOR ₹100" (9.5–11.5) ============ */
+const s5 = box('scene', 0, 0, W, H, $cam, { background: 'var(--ink)' })
+const s5tone = box('abs tone', 0, 0, W, H, s5, { opacity: .5, filter: 'invert(1)', mixBlendMode: 'normal' })
+s5tone.style.opacity = .06
+const s5lines = box('abs', 0, 0, W, H, s5, { transformOrigin: '540px 960px' }, speedLines(33, 110, 300, 1600, 'rgba(244,239,230,.13)', 540, 960))
+const POLS = [
+  { src: 'cursed-static-oversized-t-shirt-back', c: [450, 500, 370, 370], cap: 'cursed static' },
+  { src: 'spiral-wind-oversized-t-shirt-back', c: [450, 500, 370, 370], cap: 'spiral wind' },
+  { src: 'flame-breath-ribbon-oversized-t-shirt-back', c: [450, 500, 370, 370], cap: 'flame ribbon' },
+  { src: 'beyond-the-wall-oversized-t-shirt-back', c: [450, 500, 370, 370], cap: 'beyond the wall' },
+  { src: 'open-sea-chart-oversized-t-shirt-back', c: [450, 500, 370, 370], cap: 'open sea chart' },
+  { src: 'sparkle-era-t-shirt-back', c: [360, 430, 470, 470], cap: 'sparkle era' },
+  { src: 'violet-smoke-hoodie-back', c: [420, 740, 380, 380], cap: 'violet smoke' },
+]
+const rP = mulberry32(2024)
+const POS = [[205, 470], [545, 365], [880, 490], [180, 1560], [540, 1680], [895, 1575], [40, 1010]]
+POLS.forEach((p, i) => {
+  const g = box('abs', 0, 0, 300, 360, s5, { transformOrigin: '50% 50%' })
+  box('abs', 0, 0, 300, 360, g, { background: 'var(--paper)', border: '6px solid var(--ink)', boxShadow: '10px 10px 0 rgba(0,0,0,.6)' })
+  crop(g, p.src, p.c, 252, 252, 24, 24, { border: '5px solid var(--ink)' })
+  box('abs mono', 0, 292, 300, 50, g, { fontSize: '22px', color: 'var(--ink)', textAlign: 'center', letterSpacing: '.06em', textTransform: 'lowercase' }, p.cap)
+  p.g = g; p.x = POS[i][0]; p.y = POS[i][1]; p.r = (rP() - .5) * 28; p.d = i * 0.045; p.f = rP() * 6.28
+})
+const s5pill = box('abs', 40, 800, 1000, 300, s5, { transformOrigin: '50% 50%' })
+const s5pillIn = box('abs anton', 0, 0, 1000, 300, s5pill, { background: 'var(--volt)', color: 'var(--ink)', border: '12px solid var(--ink)', borderRadius: '150px', boxShadow: '16px 16px 0 var(--lav)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '210px', paddingTop: '18px', whiteSpace: 'nowrap' }, '3 FOR <span style="font-family:\'JetBrains Mono\';font-weight:700;font-size:150px;margin:0 6px 0 30px;position:relative;top:-6px">₹</span>100')
+const s5sub = box('abs mono', 0, 1135, W, 60, s5, { fontSize: '34px', textAlign: 'center', color: 'var(--paper)', whiteSpace: 'pre' })
+const SUB = 'POLAROID PRINTS · MIX ANY ARC'
+const s5chipA = box('abs mono', 80, 1215, 0, 0, s5, { width: 'auto', height: 'auto', background: 'var(--lav)', color: 'var(--ink)', border: '7px solid var(--ink)', fontSize: '32px', padding: '14px 20px', whiteSpace: 'nowrap', boxShadow: '8px 8px 0 var(--paper)' }, 'BOOKMARKS · 4 FOR ₹100')
+const s5chipB = box('abs mono', 480, 1300, 0, 0, s5, { width: 'auto', height: 'auto', background: 'var(--pink)', color: 'var(--ink)', border: '7px solid var(--ink)', fontSize: '32px', padding: '14px 20px', whiteSpace: 'nowrap', boxShadow: '8px 8px 0 var(--paper)' }, 'BADGES · 5 FOR ₹200')
+function scene5(t) {
+  show(s5, t >= 9.28 && t < 11.62)
+  if (!(t >= 9.28 && t < 11.62)) return
+  const u = t - 9.5
+  // diagonal ink wipe in (scene 4 → 5)
+  const wi = p3io(prog(t, 9.28, 9.5)); const wx = lerp(1080 + 900, -900, wi)
+  s5.style.clipPath = wi < 1 ? `polygon(${wx}px 0, 2200px 0, 2200px 1920px, ${wx + 900}px 1920px)` : 'none'
+  T(s5lines, `rotate(${u * 8}deg) scale(${0.5 + 0.7 * expoOut(prog(u, 0, 0.6))})`)
+  const leave = expoIn(prog(t, 11.28, 11.55))
+  POLS.forEach((p, i) => {
+    const k = sp(u - p.d, [12, 0.58])
+    const fx = Math.sin(u * 1.6 + p.f) * 10, fy = Math.cos(u * 1.3 + p.f) * 12
+    const x = lerp(540, p.x, k) + fx, y = lerp(960, p.y, k) + fy - leave * (1500 + i * 120)
+    T(p.g, `translate(${x - 150}px,${y - 180}px) rotate(${p.r * k + leave * (i % 2 ? 30 : -30)}deg) scale(${lerp(0.2, 1, k)})`)
+    p.g.style.visibility = u - p.d >= 0 ? 'visible' : 'hidden'
+  })
+  const kp = sp(u - 0.5, SNAP)
+  s5pill.style.visibility = u >= 0.5 ? 'visible' : 'hidden'
+  T(s5pill, `translateY(${-leave * 1700}px) rotate(${-6 + leave * -20}deg) scale(${lerp(2.4, 1, kp)})`)
+  const n = Math.floor(clamp((u - 0.78) / 0.4) * SUB.length)
+  s5sub.textContent = SUB.slice(0, n) + (n > 0 && n < SUB.length ? '▌' : '')
+  T(s5sub, `translateY(${-leave * 1600}px)`)
+  T(s5chipA, `translateY(${-leave * 1800}px) rotate(-4deg) scale(${sp(u - 1.0, SNAP)})`)
+  T(s5chipB, `translateY(${-leave * 1900}px) rotate(3deg) scale(${sp(u - 1.12, SNAP)})`)
+}
+
+/* ============ SCENE 6 — Fandom Partner tickers (11.5–13.0) ============ */
+const s6 = box('scene', 0, 0, W, H, $cam, { background: 'var(--door)' })
+const s6tone = box('abs tone', 0, 0, W, H, s6, { opacity: .14 })
+const s6h = box('abs', 70, 250, 940, 420, s6, { overflow: 'hidden' })
+const s6a = box('abs anton', 0, 0, 940, 200, s6h, { fontSize: '200px', color: 'var(--paper)', whiteSpace: 'nowrap' }, 'FANDOM')
+const s6b = box('abs anton', 0, 190, 940, 220, s6h, { fontSize: '200px', color: 'var(--ink)', whiteSpace: 'nowrap' }, '<span class="hl">PARTNER</span>')
+const s6stat = box('abs', 70, 660, 940, 230, s6, { display: 'flex', alignItems: 'flex-end', gap: '26px' })
+const s6num = el('div', 'anton', { fontSize: '230px', color: 'var(--volt)', WebkitTextStroke: '10px var(--ink)', paintOrder: 'stroke fill', textShadow: '10px 10px 0 var(--ink)', lineHeight: '.86' }, s6stat, '3×')
+const s6lbl = el('div', 'mono', { fontSize: '34px', lineHeight: '1.35', color: 'var(--paper)', paddingBottom: '14px' }, s6stat, 'AT THOMSO<br>IIT ROORKEE')
+const BANDS = [
+  { y: 960, rot: -3, bg: 'var(--volt)', fg: 'var(--ink)', txt: "FLUXUS 2024 · IIT INDORE ✦ IGNUS'25 · IIT JODHPUR ✦ ZEITGEIST 2026 · IIT ROPAR ✦ ", dir: -1 },
+  { y: 1110, rot: 2.5, bg: 'var(--ink)', fg: 'var(--paper)', txt: 'BLITHCHRON 2026 · IIT GANDHINAGAR ✦ ABHIVYAKTI 2025 ✦ ', dir: 1 },
+  { y: 1260, rot: -2, bg: 'var(--lav)', fg: 'var(--ink)', txt: 'COSCON ✦ ALCHER CON · ALCHERINGA ✦ COS-MATSURI ✦ ', dir: -1 },
+  { y: 1410, rot: 3, bg: 'var(--paper)', fg: 'var(--ink)', txt: 'POP-UPS ✦ SURAT ✦ BHOPAL ✦ KOLKATA ✦ KOLHAPUR ✦ ', dir: 1 },
+]
+BANDS.forEach((b, i) => {
+  b.el = box('band', -200, b.y, 1480, 124, s6, { background: b.bg })
+  b.run = el('div', 'run anton', { color: b.fg }, b.el, (b.txt).repeat(4))
+})
+function scene6(t) {
+  show(s6, t >= 11.28 && t < 13.1)
+  if (!(t >= 11.28 && t < 13.1)) return
+  const u = t - 11.5
+  const wi = p3io(prog(t, 11.28, 11.5))
+  s6.style.clipPath = wi < 1 ? `circle(${wi * 1300}px at 540px 1900px)` : 'none'
+  T(s6a, `translateY(${(1 - sp(u - 0.0, TYPE)) * 220}px)`)
+  T(s6b, `translateY(${(1 - sp(u - 0.1, TYPE)) * 230}px)`)
+  const kn = sp(u - 0.3, SNAP)
+  T(s6num, `scale(${lerp(0, 1, kn)}) rotate(-4deg)`); s6num.style.transformOrigin = '0 100%'
+  const cnt = 1 + Math.floor(clamp((u - 0.3) / 0.3) * 2.999)
+  s6num.textContent = cnt + '×'
+  T(s6lbl, `translateX(${(1 - sp(u - 0.42, CARD)) * -60}px)`); s6lbl.style.opacity = u > 0.42 ? 1 : 0
+  BANDS.forEach((b, i) => {
+    const k = sp(u - 0.12 - i * 0.09, [13, 0.7])
+    T(b.el, `translateX(${(1 - k) * 1500 * (i % 2 ? 1 : -1)}px) rotate(${b.rot}deg)`)
+    T(b.run, `translateX(${b.dir < 0 ? -(u + 1) * 260 : -1400 + (u + 1) * 260}px)`)
+  })
+}
+
+/* ============ SCENE 7 — door slams shut, wordmark, CTA (12.75–15) ============ */
+const s7 = box('scene', 0, 0, W, H, $cam, { background: 'transparent', perspective: '2200px' })
+const s7L = box('abs', 0, 0, 540, H, s7, { background: 'var(--ink)', borderRight: '6px solid var(--door)', transformOrigin: '0 50%' })
+const s7R = box('abs', 540, 0, 540, H, s7, { background: 'var(--ink)', borderLeft: '6px solid var(--door)', transformOrigin: '100% 50%' })
+;[s7L, s7R].forEach((l, i) => {
+  box('abs', 50, 140, 440, 760, l, { border: '10px solid var(--tone2)' })
+  box('abs', 50, 1000, 440, 760, l, { border: '10px solid var(--tone2)' })
+  box('abs tone', 0, 0, 540, H, l, { opacity: .05, filter: 'invert(1)' })
+})
+const s7lines = box('abs', 0, 0, W, H, s7, { transformOrigin: '540px 800px' }, speedLines(77, 90, 360, 1500, '#1D1D24', 540, 800))
+const s7ban = box('abs sfx', 600, 250, 460, 220, s7, { fontSize: '150px', color: 'var(--hype)', WebkitTextStroke: '12px var(--ink)', paintOrder: 'stroke fill', textShadow: '8px 8px 0 var(--paper)', whiteSpace: 'nowrap', transformOrigin: '50% 50%' }, 'バン!')
+const s7splat = box('abs', 90, 330, 900, 900, s7, { background: 'var(--volt)', WebkitMask: 'url(assets/textures/splat-2.svg) center/contain no-repeat', mask: 'url(assets/textures/splat-2.svg) center/contain no-repeat', transformOrigin: '50% 50%' })
+const s7wm = el('img', 'abs', { left: '130px', top: '400px', width: '820px', height: '694px', transformOrigin: '50% 50%' }, s7)
+s7wm.src = 'assets/brand/wordmark.svg'
+const s7cta = box('abs anton', 0, 1170, W, 200, s7, { textAlign: 'center' })
+const s7ctaIn = el('div', '', { display: 'inline-block', background: 'var(--volt)', color: 'var(--ink)', border: '10px solid var(--ink)', boxShadow: '12px 12px 0 var(--door)', fontSize: '124px', padding: '20px 44px 8px', transformOrigin: '50% 50%' }, s7cta, 'PICK YOUR ARC')
+const s7url = box('abs mono', 0, 1410, W, 80, s7, { fontSize: '66px', textAlign: 'center', color: 'var(--paper)', letterSpacing: '.04em', textTransform: 'none', whiteSpace: 'pre' })
+const URL_ = 'escapedoor.in'
+const s7sub = box('abs mono', 0, 1505, W, 50, s7, { fontSize: '28px', textAlign: 'center', color: 'var(--tone4)' }, 'ANIME MERCH · CUSTOM-MADE · INDIA')
+function scene7(t) {
+  show(s7, t >= 12.72)
+  if (t < 12.72) return
+  const u = t - 13
+  // leaves slam shut (spring with a hard stop at the frame = no overshoot past closed)
+  const k = Math.min(1, expoIn(prog(t, 12.72, 13.0)))
+  T(s7L, `rotateY(${-100 * (1 - k)}deg)`); T(s7R, `rotateY(${100 * (1 - k)}deg)`)
+  const after = t >= 13
+  ;[s7lines, s7ban, s7splat, s7wm, s7cta, s7url, s7sub].forEach(e => e.style.visibility = after ? 'visible' : 'hidden')
+  if (!after) return
+  T(s7lines, `rotate(${u * 5}deg) scale(${1 + 0.3 * Math.exp(-u * 6)})`)
+  const kb = sp(u, SNAP), bOut = expoIn(prog(u, 0.55, 0.8))
+  T(s7ban, `rotate(${8 - bOut * 10}deg) scale(${lerp(2, 1, kb) * (1 - bOut)})`)
+  T(s7splat, `rotate(${-12}deg) scale(${sp(u - 0.06, [16, 0.55]) * (1 + 0.012 * Math.sin(u * 3))})`)
+  const kw = sp(u - 0.12, SNAP)
+  T(s7wm, `rotate(${lerp(-14, -2, kw)}deg) scale(${lerp(1.9, 1, kw) * (kw > 0.01 ? 1 : 0) * (1 + 0.015 * Math.sin(Math.max(0, u - 0.6) * 4))})`)
+  s7wm.style.visibility = u >= 0.12 ? 'visible' : 'hidden'
+  const kc = sp(u - 0.5, SNAP)
+  s7cta.style.visibility = u >= 0.5 ? 'visible' : 'hidden'
+  T(s7ctaIn, `rotate(-3deg) scale(${lerp(2.1, 1, kc)})`)
+  const n = Math.floor(clamp((u - 0.75) / 0.36) * URL_.length)
+  const caret = n < URL_.length || Math.floor(t * 2.5) % 2 === 0
+  s7url.textContent = URL_.slice(0, n) + (u >= 0.75 && caret ? '▌' : ' ')
+  s7sub.style.visibility = u >= 1.15 ? 'visible' : 'hidden'
+  T(s7sub, `translateY(${(1 - sp(u - 1.15, TYPE)) * 40}px)`)
+}
+
+/* ============ master ============ */
+function seek(t) {
+  t = clamp(t, 0, DUR)
+  scene1(t); scene2(t); scene3(t); scene4(t); scene5(t); scene6(t); scene7(t)
+  const [sx, sy] = shake(t)
+  T($cam, `translate(${sx}px,${sy}px)`)
+}
+window.seek = seek
+window.DURATION = DUR
+window.ready = (async () => {
+  await document.fonts.ready
+  await Promise.all(['Anton', 'Bangers', 'Dela Gothic One', 'JetBrains Mono', 'DM Sans', 'Noto Sans JP'].map(f => document.fonts.load(`900 64px "${f}"`, 'ドン呪A₹').catch(() => null)))
+  await Promise.all([...document.images].map(i => i.decode().catch(() => null)))
+  seek(0)
+  return true
+})()
+// preview: ?t=3.2 freezes a frame; ?play plays in real time (preview only, never used for render)
+const q = new URLSearchParams(location.search)
+if (q.has('t')) window.ready.then(() => seek(parseFloat(q.get('t'))))
+if (q.has('play')) window.ready.then(() => { const t0 = performance.now(); const loop = () => { seek(((performance.now() - t0) / 1000) % DUR); requestAnimationFrame(loop) }; loop() })
+</script>
+</body>
+</html>

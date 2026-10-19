@@ -1,0 +1,43 @@
+/* #70 receipt print + stamp for /checkout-success. Owner: P2. */
+.paper {
+  /* zig-zag tear along the bottom edge */
+  --tooth: 14px;
+  -webkit-mask:
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth)) no-repeat,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth) repeat-x;
+  mask:
+    linear-gradient(#000 0 0) top / 100% calc(100% - var(--tooth)) no-repeat,
+    conic-gradient(from -45deg at bottom, #0000, #000 1deg 89deg, #0000 90deg) bottom / var(--tooth) var(--tooth) repeat-x;
+  padding-bottom: calc(var(--tooth) + 18px);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .print {
+    animation: print 1.6s steps(24, end) 0.35s both;
+  }
+  .stamp {
+    animation: stamp 0.42s cubic-bezier(0.34, 1.9, 0.5, 1) 2.05s both;
+  }
+  .stampIdle {
+    animation: stamp 0.42s cubic-bezier(0.34, 1.9, 0.5, 1) 0.2s both;
+  }
+  .slot {
+    animation: hum 0.12s steps(2, end) 0.35s 13 both;
+  }
+}
+
+@keyframes print {
+  from { clip-path: inset(0 0 100% 0); transform: translateY(-28px); }
+  to { clip-path: inset(0 0 0 0); transform: translateY(0); }
+}
+@keyframes stamp {
+  0% { opacity: 0; transform: rotate(-14deg) scale(2.2); }
+  100% { opacity: 1; transform: rotate(-14deg) scale(1); }
+}
+@keyframes hum {
+  50% { transform: translateX(1px); }
+}
+
+.stamp, .stampIdle {
+  transform: rotate(-14deg);
+}

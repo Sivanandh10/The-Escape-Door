@@ -1,0 +1,131 @@
+/* S00 preloader. Hidden unless the inline gate added html.ted-pl before first paint. Owner: S00 agent. */
+.s00 { display: none; }
+
+html.ted-pl { overflow: hidden; scrollbar-gutter: stable; }
+html.ted-pl .s00 {
+  display: block;
+  position: fixed;
+  inset: 0;
+  z-index: 150; /* above the sticky header (80), below the custom cursor (200) */
+  color: var(--color-paper);
+  cursor: progress;
+  touch-action: none;
+  overscroll-behavior: contain;
+  /* failsafe: if JS never boots, get out of the way after 4 s */
+  animation: s00-failsafe 0s linear 4s forwards;
+}
+html.ted-pl .s00[data-state="run"] { animation: none; }
+@keyframes s00-failsafe { to { visibility: hidden; pointer-events: none; } }
+
+/* ── door leaves (#03) ─────────────────────────────────────────────── */
+.s00-stage { position: absolute; inset: 0; perspective: 1400px; perspective-origin: 50% 50%; overflow: hidden; }
+.s00-leaf {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50.5%;
+  background: var(--color-ink);
+  backface-visibility: hidden;
+  will-change: transform;
+}
+.s00-leaf-l { left: 0; transform-origin: 0% 50%; }
+.s00-leaf-r { right: 0; transform-origin: 100% 50%; }
+/* screentone shading, heavier toward the hinge, fading at the seam where the light leaks */
+.s00-leaf::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: radial-gradient(circle at center, var(--color-tone-2) 34%, transparent 38%);
+  background-size: 7px 7px;
+  -webkit-mask-image: linear-gradient(var(--s00-dir), #000 0%, rgb(0 0 0 / 0.55) 45%, transparent 85%);
+  mask-image: linear-gradient(var(--s00-dir), #000 0%, rgb(0 0 0 / 0.55) 45%, transparent 85%);
+}
+.s00-leaf-l { --s00-dir: to right; }
+.s00-leaf-r { --s00-dir: to left; }
+/* inner panel frame of each leaf — manga panel borders */
+.s00-leaf::after {
+  content: '';
+  position: absolute;
+  inset: clamp(10px, 1.6vw, 22px);
+  border: 2px solid var(--color-tone-2);
+}
+.s00-leaf-l::after { right: 6px; }
+.s00-leaf-r::after { left: 6px; }
+.s00-seam { position: absolute; top: 0; bottom: 0; width: 4px; background: var(--color-paper); }
+.s00-leaf-l .s00-seam { right: 0; }
+.s00-leaf-r .s00-seam { left: 0; }
+.s00-knob {
+  position: absolute;
+  top: 50%;
+  width: 14px;
+  height: 14px;
+  margin-top: -7px;
+  border-radius: 999px;
+  background: var(--color-volt);
+  border: 3px solid var(--color-ink);
+  box-shadow: 0 0 0 2px var(--color-paper);
+}
+.s00-leaf-l .s00-knob { right: 16px; }
+.s00-leaf-r .s00-knob { left: 16px; }
+
+/* light spill through the opening gap — halftone, not glow */
+.s00-spill {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 70vw;
+  margin-left: -35vw;
+  background-image: radial-gradient(circle at center, var(--color-volt) 42%, transparent 46%);
+  background-size: 9px 9px;
+  -webkit-mask-image: linear-gradient(to right, transparent, #000 35%, #000 65%, transparent);
+  mask-image: linear-gradient(to right, transparent, #000 35%, #000 65%, transparent);
+  transform: scaleX(0);
+  opacity: 0;
+}
+
+/* ── content ───────────────────────────────────────────────────────── */
+.s00-content { position: absolute; inset: 0; display: grid; grid-template-rows: auto 1fr auto; }
+.s00-mark { position: relative; width: min(64vw, 50vh, 560px); aspect-ratio: 520 / 440; }
+@media (max-width: 640px) { .s00-mark { width: min(84vw, 46vh); } }
+
+/* manga numerals: Anton with a halftone fill + ink-outlined echo (#06) */
+.s00-num {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  line-height: 0.8;
+  letter-spacing: -0.01em;
+  font-size: clamp(96px, 17vh, 200px);
+  color: transparent;
+  -webkit-text-stroke: 2px var(--color-volt);
+  background-image: radial-gradient(circle at center, var(--color-volt) 46%, transparent 50%);
+  background-size: 6px 6px;
+  -webkit-background-clip: text;
+  background-clip: text;
+  min-width: 2.15ch;
+}
+.s00-num-shadow {
+  position: absolute;
+  inset: 0;
+  transform: translate(0.05em, 0.05em);
+  color: var(--color-tone-2);
+  -webkit-text-stroke: 0;
+  background: none;
+  z-index: -1;
+}
+
+/* wordmark pre-states (GSAP draws them in) */
+html.ted-pl .s00-mark [data-draw] { stroke-dasharray: 1 1; stroke-dashoffset: 1; }
+html.ted-pl .s00-mark [data-fill],
+html.ted-pl .s00-mark [data-shadow],
+html.ted-pl .s00-mark [data-pop] { opacity: 0; }
+html.ted-pl .s00-mark [data-panel] { clip-path: inset(0 100% 0 0); }
+html.ted-pl .s00-don,
+html.ted-pl .s00-burst { opacity: 0; }
+html.ted-pl .s00-kado { transform: translateY(110%); }
+html.ted-pl .s00-bar-fill { transform: scaleX(0); }
+
+/* impact frame: two frames of inverted ink */
+.s00-flash { position: absolute; inset: 0; background: var(--color-paper); mix-blend-mode: difference; opacity: 0; pointer-events: none; }
+
+.s00-skip { cursor: pointer; }

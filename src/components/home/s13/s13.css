@@ -1,0 +1,53 @@
+/* S13 Instagram strip — #28 inner zoom, panel frames. Owner: s13. */
+.s13-frame {
+  box-shadow: 6px 6px 0 0 var(--color-paper);
+  transition:
+    translate 220ms var(--ease-hover, cubic-bezier(0.2, 0.8, 0.2, 1)),
+    box-shadow 220ms var(--ease-hover, cubic-bezier(0.2, 0.8, 0.2, 1));
+}
+.s13-zoom {
+  transition: transform 800ms cubic-bezier(0.2, 0.8, 0.2, 1);
+  will-change: transform;
+}
+.s13-alt {
+  opacity: 0;
+  transition: opacity 500ms ease;
+}
+@media (hover: hover) and (pointer: fine) {
+  .s13-frame:hover {
+    translate: -3px -3px;
+    box-shadow: 9px 9px 0 0 var(--color-volt);
+  }
+  .s13-frame:hover .s13-zoom { transform: scale(1.08); }
+  .s13-frame:hover .s13-alt { opacity: 1; }
+}
+.s13-frame:focus-visible {
+  outline: 3px solid var(--color-volt);
+  outline-offset: 4px;
+}
+.s13-frame:focus-visible .s13-zoom { transform: scale(1.08); }
+.s13-frame:focus-visible .s13-alt { opacity: 1; }
+
+/* horizontal strip: native swipe + snap, no scrollbar chrome */
+.s13-strip {
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+  -webkit-overflow-scrolling: touch;
+}
+.s13-strip::-webkit-scrollbar { display: none; }
+.s13-strip > * { scroll-snap-align: start; }
+
+/* speed-line burst for the "new drops" frame (lines, not a soft gradient) */
+.s13-burst {
+  background: repeating-conic-gradient(from 0deg at 50% 60%, var(--burst, #0b0b0f) 0deg 2.2deg, transparent 2.2deg 9deg);
+  -webkit-mask-image: radial-gradient(circle at 50% 60%, transparent 18%, #000 46%);
+  mask-image: radial-gradient(circle at 50% 60%, transparent 18%, #000 46%);
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .s13-bob { animation: s13-bob 3s ease-in-out infinite; }
+  .s13-blink { animation: s13-blink 1.6s steps(2) infinite; }
+}
+@keyframes s13-bob { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
+@keyframes s13-blink { 50% { opacity: 0.2; } }

@@ -1,0 +1,23 @@
+// Admin kit barrel (P4a) — documented in docs/CONTRACTS.md §12.
+// Each module carries its own 'use client' directive where needed; importing the barrel from a server
+// page is fine (client components render as client references).
+export { AdminShell } from './AdminShell'
+export type { AdminShellProps } from './AdminShell'
+export { AdminProvider, useAdmin, DEMO_WRITE_NOTE } from './AdminContext'
+export type { AdminContextValue } from './AdminContext'
+export { AdminPage, AdminPanel } from './AdminPage'
+export type { AdminPageProps, AdminPanelProps, AdminPanelTone } from './AdminPage'
+export { DataTable } from './DataTable'
+export type { DataTableColumn, DataTableProps } from './DataTable'
+export { StatCard, formatStat } from './StatCard'
+export type { StatCardProps, StatFormat, StatTone } from './StatCard'
+export { EmptyState, AdminSkeleton } from './EmptyState'
+export type { EmptyStateProps } from './EmptyState'
+export { ErrorState } from './ErrorState'
+export type { ErrorStateProps } from './ErrorState'
+export { ConfirmShred, shredWithUndo } from './ConfirmShred'
+export type { ConfirmShredProps, ShredOptions } from './ConfirmShred'
+export { adminBtn, adminInput, adminLabel, adminPill } from './ui'
+export type { AdminBtnVariant, AdminBtnSize, PillTone } from './ui'
+export { ADMIN_NAV, ADMIN_NAV_FLAT, adminNavFor } from './nav'
+export type { AdminNavItem, AdminNavGroup } from './nav'

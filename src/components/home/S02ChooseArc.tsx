@@ -1,36 +1,68 @@
-// STUB by F1 so the home page composes. Owner: S02 section agent (replace freely).
-import Link from 'next/link'
-import type { Collection } from '@/lib/types'
+// S02 CHOOSE YOUR ARC — a corridor of collection doors (#10 #11 #18 #41 #31 #34). Owner: S02.
+// Server shell: derives per-arc counts / "from ₹X" / peek mockup from the catalogue (repo is
+// 'use cache', so the home page stays static) and hands plain data to the client corridor.
+import type { Collection, Product } from '@/lib/types'
+import { getProducts } from '@/lib/data/repo'
+import { formatINR, variantBounds } from '@/lib/pricing'
+import { readableOn } from '@/components/layout/nav'
+import { ArcCorridor } from './s02/ArcCorridor'
+import type { ArcDoorData } from './s02/types'
 
-export default function S02ChooseArc({ collections = [] }: { collections?: Collection[] }) {
-  return (
-    <section id="choose-arc" aria-labelledby="choose-arc-title" className="section-y border-t-4 border-ink bg-paper text-ink grain">
-      <div className="container-x">
-        <p className="label text-tone-3">Chapter 02 · Choose your arc</p>
-        <h2 id="choose-arc-title" className="h-display mt-4 max-w-[16ch] text-h2">
-          Pick your <em>arc</em>: Jujutsu Kaisen, One Piece, Naruto and more
-        </h2>
-        <span lang="ja" aria-hidden="true" className="jp-sub mt-4 block">
-          物語を選べ
-        </span>
-        <ul className="mt-10 grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-6">
-          {collections.map((c) => (
-            <li key={c.slug}>
-              <Link
-                href={`/arc/${c.slug}`}
-                data-cursor="OPEN"
-                className="press flex min-h-40 flex-col justify-between border-4 border-ink bg-ink p-3 text-paper shadow-hard"
-                style={{ borderLeftColor: c.accentA, borderLeftWidth: 14 }}
-              >
-                <span lang="ja" className="font-jp text-[12px] font-bold tracking-[0.2em] opacity-70">
-                  {c.jp}
-                </span>
-                <span className="font-display text-[26px] uppercase leading-[0.9]">{c.name}</span>
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
-    </section>
-  )
+const PEEK_TYPES: string[] = ['tshirt', 'hoodie']
+
+function lowestPrice(p: Product): number | null {
+  if (p.priceOnRequest) return null
+  const lows = p.variants
+    .map(variantBounds)
+    .filter((b): b is [number, number] => b !== null)
+    .map((b) => b[0])
+  if (lows.length) return Math.min(...lows)
+  return p.priceFrom
+}
+
+function pickPeek(list: Product[]): ArcDoorData['peek'] {
+  const apparel = list.filter((p) => PEEK_TYPES.includes(p.type))
+  const best = apparel.find((p) => p.featured) ?? apparel[0] ?? list.find((p) => p.featured) ?? list[0]
+  if (!best) return null
+  const img = best.images.find((i) => i.side === 'back') ?? best.images[0]
+  if (!img) return null
+  // every generated mockup ships a 600px variant (API.md, F3)
+  const src = img.src.startsWith('/mockups/') ? img.src.replace(/\.webp$/, '-600.webp') : img.src
+  return { src, alt: img.alt, name: best.designTitle || best.name }
+}
+
+function toDoorData(collections: Collection[], products: Product[]): ArcDoorData[] {
+  return [...collections]
+    .sort((a, b) => a.order - b.order)
+    .map((c, i) => {
+      const list = products.filter((p) => p.collection === c.slug)
+      const prices = list.map(lowestPrice).filter((n): n is number => n !== null)
+      return {
+        slug: c.slug,
+        name: c.name,
+        jp: c.jp,
+        group: c.group,
+        accentA: c.accentA,
+        accentB: c.accentB,
+        motif: c.motif,
+        tagline: c.tagline,
+        count: list.length,
+        fromLabel: prices.length ? `from ${formatINR(Math.min(...prices))}` : null,
+        peek: pickPeek(list),
+        index: i,
+        fgA: readableOn(c.accentA),
+      }
+    })
+}
+
+export default async function S02ChooseArc({
+  collections = [],
+  products,
+}: {
+  collections?: Collection[]
+  /** optional — fetched from the cached repo when page.tsx doesn't pass it */
+  products?: Product[]
+}) {
+  const all = products ?? (await getProducts())
+  return <ArcCorridor doors={toDoorData(collections, all)} />
 }
