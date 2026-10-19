@@ -12,7 +12,8 @@ import { readableOn } from '@/components/layout/nav'
 import { cn } from '@/lib/utils'
 import WallBoard, { type WallItem } from './s06/WallBoard'
 import { hand } from './s06/hand'
-import styles from './s06/wall.module.css'
+import './s06/wall.css'
+import { styles } from './s06/classes'
 
 type Slot = { d: [number, number, number]; m: [number, number, number] | null }
 type SlotKey = 'poster' | 'polE' | 'polA' | 'badgeA' | 'polB' | 'note' | 'polC' | 'bookmark' | 'polD' | 'stickerA' | 'stickerB' | 'badgeB'

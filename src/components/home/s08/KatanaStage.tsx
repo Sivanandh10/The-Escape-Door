@@ -256,7 +256,7 @@ export default function KatanaStage({ basic, led }: { basic: KatanaPick | null; 
               <div aria-live="polite" className="overflow-hidden">
                 <div ref={title}>
                   <p className="label text-volt">{mode === 'led' ? 'LED cosplay katana' : 'Basic cosplay katana'}</p>
-                  <p className="mt-1 font-display text-[clamp(40px,7vw,88px)] uppercase leading-[0.86]">
+                  <p className="mt-1 pb-[0.08em] font-display text-[clamp(40px,7vw,88px)] uppercase leading-none tracking-[0.01em]">
                     <span className="s08-price">{current.price}</span>
                   </p>
                 </div>

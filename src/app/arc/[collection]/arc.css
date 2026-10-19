@@ -1,0 +1,48 @@
+/* /arc/[collection] hero choreography (owner: P1 shop). Transform-only so the H1 (LCP) paints at once. */
+.arc-hero-name > span {
+  display: block;
+  animation: arc-slam 620ms var(--ease-slam) both;
+  animation-delay: calc(var(--i, 0) * 90ms + 80ms);
+  transform-origin: 0 100%;
+}
+.arc-hero-jp {
+  animation: arc-rise 900ms var(--ease-expo) 260ms both;
+}
+.arc-hero-panel {
+  animation: arc-panel 520ms var(--ease-slam) 360ms both;
+}
+.arc-hero-sfx {
+  animation: arc-stamp 420ms var(--ease-slam) 700ms both;
+}
+.arc-hero-motif {
+  animation: arc-zoom 1400ms var(--ease-expo) both;
+}
+@keyframes arc-slam {
+  from { transform: translate3d(0, 0.35em, 0) scale(1.08) skewX(-6deg); }
+  to { transform: none; }
+}
+@keyframes arc-rise {
+  from { transform: translate3d(0, 18%, 0); }
+  to { transform: none; }
+}
+@keyframes arc-panel {
+  from { transform: translate3d(0, 24px, 0) rotate(-2.5deg); }
+  to { transform: rotate(var(--r, -1deg)); }
+}
+@keyframes arc-stamp {
+  from { transform: scale(1.6) rotate(-18deg); opacity: 0; }
+  to { transform: none; opacity: 1; }
+}
+@keyframes arc-zoom {
+  from { transform: scale(1.12); }
+  to { transform: none; }
+}
+.arc-hero-panel { transform: rotate(var(--r, -1deg)); }
+
+@media (prefers-reduced-motion: reduce) {
+  .arc-hero-name > span,
+  .arc-hero-jp,
+  .arc-hero-panel,
+  .arc-hero-sfx,
+  .arc-hero-motif { animation: none; }
+}

@@ -9,7 +9,8 @@ import { Flip } from 'gsap/Flip'
 import { useGSAP } from '@gsap/react'
 import { prefersReducedMotion, registerGsap } from '@/lib/motion'
 import { Screentone } from '@/components/fx/Screentone'
-import styles from './squad.module.css'
+import './squad.css'
+import { styles } from './classes'
 
 registerGsap()
 

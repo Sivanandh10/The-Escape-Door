@@ -1,8 +1,8 @@
 /* S06 Polaroid & sticker wall. --k scales every item (mobile/tablet 0.68 → desktop 1). */
 
-.wrap { position: relative; margin-top: clamp(40px, 6vw, 72px); }
+.wl-wrap { position: relative; margin-top: clamp(40px, 6vw, 72px); }
 
-.board {
+.wl-board {
   --k: 0.68;
   position: relative;
   height: 600px;
@@ -14,12 +14,12 @@
   user-select: none;
   -webkit-user-select: none;
 }
-@media (min-width: 640px) { .board { height: 560px; } }
-@media (min-width: 1024px) { .board { --k: 1; height: 660px; box-shadow: 12px 12px 0 var(--color-door); } }
+@media (min-width: 640px) { .wl-board { height: 560px; } }
+@media (min-width: 1024px) { .wl-board { --k: 1; height: 660px; box-shadow: 12px 12px 0 var(--color-door); } }
 
-.layer { position: absolute; inset: 0; }
+.wl-layer { position: absolute; inset: 0; }
 
-.hint {
+.wl-hint {
   position: absolute;
   left: 12px;
   bottom: 12px;
@@ -31,69 +31,69 @@
   color: var(--color-tone-4);
   pointer-events: none;
 }
-.hintJp { font-family: var(--font-jp); letter-spacing: 0.24em; margin-left: 8px; opacity: 0.7; }
-.hintKeys { display: none; }
-.board:focus-within .hintKeys { display: inline; }
-.board:focus-within .hintDrag { display: none; }
+.wl-hintJp { font-family: var(--font-jp); letter-spacing: 0.24em; margin-left: 8px; opacity: 0.7; }
+.wl-hintKeys { display: none; }
+.wl-board:focus-within .wl-hintKeys { display: inline; }
+.wl-board:focus-within .wl-hintDrag { display: none; }
 
 /* slot = initial position (percent of the board) */
-.slot {
+.wl-slot {
   position: absolute;
   left: var(--xs);
   top: var(--ys);
 }
-.slot[data-mobile='hide'] { display: none; }
+.wl-slot[data-mobile='hide'] { display: none; }
 @media (min-width: 640px) {
-  .slot { left: var(--x); top: var(--y); }
-  .slot[data-mobile='hide'] { display: block; }
+  .wl-slot { left: var(--x); top: var(--y); }
+  .wl-slot[data-mobile='hide'] { display: block; }
 }
 
-.drag {
+.wl-drag {
   position: relative;
   cursor: grab;
   touch-action: none;
   outline: none;
 }
-.drag:active { cursor: grabbing; }
-.drag:focus-visible .rot { outline: 3px solid var(--color-volt); outline-offset: 6px; }
+.wl-drag:active { cursor: grabbing; }
+.wl-drag:focus-visible .wl-rot { outline: 3px solid var(--color-volt); outline-offset: 6px; }
 
-.rot { transform: rotate(var(--rs, var(--r))); }
-@media (min-width: 640px) { .rot { transform: rotate(var(--r)); } }
-.float {
+.wl-rot { transform: rotate(var(--rs, var(--r))); }
+@media (min-width: 640px) { .wl-rot { transform: rotate(var(--r)); } }
+.wl-float {
   animation: wall-float var(--fd, 4s) ease-in-out infinite alternate;
   animation-delay: var(--fdl, 0s);
 }
-.drag[data-dragging='true'] .float { animation-play-state: paused; }
+.wl-drag[data-dragging='true'] .wl-float { animation-play-state: paused; }
 @keyframes wall-float {
   from { transform: translateY(-5px); }
   to { transform: translateY(7px); }
 }
 
 /* hard shadow grows when an item is lifted */
-.lift {
+.wl-lift {
   box-shadow: calc(6px * var(--k)) calc(6px * var(--k)) 0 var(--color-ink);
   transition: box-shadow 180ms var(--ease-hover);
 }
-.drag[data-dragging='true'] .lift,
-.drag:focus-visible .lift { box-shadow: calc(16px * var(--k)) calc(18px * var(--k)) 0 color-mix(in oklab, var(--color-ink) 85%, transparent); }
+.wl-drag[data-dragging='true'] .wl-lift,
+.wl-drag:focus-visible .wl-lift { box-shadow: calc(16px * var(--k)) calc(18px * var(--k)) 0 color-mix(in oklab, var(--color-ink) 85%, transparent); }
 
 /* ── item looks ──────────────────────────────────────── */
-.polaroid {
+.wl-polaroid {
   position: relative;
   width: calc(190px * var(--k));
   padding: calc(10px * var(--k)) calc(10px * var(--k)) 0;
   background: #fbf8f1;
   border: 2px solid var(--color-ink);
 }
-.photo {
+.wl-photo {
   position: relative;
   aspect-ratio: 1;
   overflow: hidden;
   border: 2px solid var(--color-ink);
   background: var(--a);
 }
-.photo svg { display: block; width: 100%; height: 100%; }
-.caption {
+.wl-photo svg { display: block; width: 100%; height: 100%; }
+.wl-caption {
   display: block;
   padding: calc(6px * var(--k)) 2px calc(8px * var(--k));
   text-align: center;
@@ -104,7 +104,7 @@
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.tape {
+.wl-tape {
   position: absolute;
   top: calc(-12px * var(--k));
   left: 50%;
@@ -117,7 +117,7 @@
   border-right: 2px dashed color-mix(in oklab, var(--color-ink) 25%, transparent);
 }
 
-.poster {
+.wl-poster {
   position: relative;
   width: calc(180px * var(--k));
   height: calc(240px * var(--k));
@@ -125,9 +125,9 @@
   border: 3px solid var(--color-paper);
   overflow: hidden;
 }
-.posterArt { position: absolute; left: 0; right: 0; top: 0; height: 64%; border-bottom: 3px solid var(--color-paper); }
-.posterArt svg { display: block; width: 100%; height: 100%; }
-.posterTitle {
+.wl-posterArt { position: absolute; left: 0; right: 0; top: 0; height: 64%; border-bottom: 3px solid var(--color-paper); }
+.wl-posterArt svg { display: block; width: 100%; height: 100%; }
+.wl-posterTitle {
   position: absolute;
   left: calc(10px * var(--k));
   right: calc(8px * var(--k));
@@ -138,7 +138,7 @@
   line-height: 0.86;
   color: var(--color-paper);
 }
-.posterSub {
+.wl-posterSub {
   position: absolute;
   left: calc(10px * var(--k));
   bottom: calc(8px * var(--k));
@@ -147,7 +147,7 @@
   letter-spacing: 0.14em;
   color: var(--a);
 }
-.pin {
+.wl-pin {
   position: absolute;
   z-index: 2;
   top: calc(-8px * var(--k));
@@ -161,7 +161,7 @@
   box-shadow: inset -3px -3px 0 color-mix(in oklab, var(--color-ink) 35%, transparent);
 }
 
-.badge {
+.wl-badge {
   position: relative;
   width: calc(112px * var(--k));
   aspect-ratio: 1;
@@ -170,7 +170,7 @@
   overflow: hidden;
   background: var(--a);
 }
-.badge::after {
+.wl-badge::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -178,8 +178,8 @@
   box-shadow: inset 0 0 0 calc(7px * var(--k)) var(--color-paper), inset 0 0 0 calc(10px * var(--k)) var(--color-ink);
   pointer-events: none;
 }
-.badge svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.badgeShine {
+.wl-badge svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wl-badgeShine {
   position: absolute;
   inset: 14%;
   border-radius: 50%;
@@ -188,7 +188,7 @@
   pointer-events: none;
 }
 
-.sticker {
+.wl-sticker {
   display: inline-block;
   padding: calc(8px * var(--k)) calc(16px * var(--k));
   background: var(--a);
@@ -203,9 +203,9 @@
   text-transform: uppercase;
   white-space: nowrap;
 }
-.stickerJp { display: block; font-family: var(--font-jp); font-weight: 900; font-size: 0.32em; letter-spacing: 0.3em; opacity: 0.8; }
+.wl-stickerJp { display: block; font-family: var(--font-jp); font-weight: 900; font-size: 0.32em; letter-spacing: 0.3em; opacity: 0.8; }
 
-.bookmark {
+.wl-bookmark {
   position: relative;
   width: calc(62px * var(--k));
   height: calc(232px * var(--k));
@@ -213,8 +213,8 @@
   border: 3px solid var(--color-ink);
   overflow: hidden;
 }
-.bookmark svg { position: absolute; inset: 0; width: 100%; height: 100%; }
-.bookmarkTitle {
+.wl-bookmark svg { position: absolute; inset: 0; width: 100%; height: 100%; }
+.wl-bookmarkTitle {
   position: absolute;
   left: 50%;
   bottom: calc(10px * var(--k));
@@ -229,7 +229,7 @@
   background: var(--color-ink);
   color: var(--color-paper);
 }
-.tassel {
+.wl-tassel {
   position: absolute;
   top: calc(-40px * var(--k));
   left: 50%;
@@ -239,7 +239,7 @@
   translate: -50% 0;
 }
 
-.note {
+.wl-note {
   position: relative;
   width: calc(156px * var(--k));
   min-height: calc(140px * var(--k));
@@ -251,10 +251,10 @@
   line-height: 0.95;
   text-align: center;
 }
-.noteSmall { display: block; margin-top: calc(6px * var(--k)); font-family: var(--font-mono); font-size: calc(9px * var(--k)); letter-spacing: 0.14em; text-transform: uppercase; }
+.wl-noteSmall { display: block; margin-top: calc(6px * var(--k)); font-family: var(--font-mono); font-size: calc(9px * var(--k)); letter-spacing: 0.14em; text-transform: uppercase; }
 
 /* ── controls ───────────────────────────────────────── */
-.reset {
+.wl-reset {
   position: absolute;
   right: 12px;
   bottom: 12px;
@@ -275,15 +275,15 @@
   box-shadow: 4px 4px 0 var(--color-volt);
   transition: translate 160ms var(--ease-hover), box-shadow 160ms var(--ease-hover), opacity 200ms;
 }
-.reset:hover { translate: -2px -2px; box-shadow: 6px 6px 0 var(--color-volt); }
-.reset:active { translate: 3px 3px; box-shadow: 0 0 0 var(--color-volt); }
-.reset:focus-visible { outline: 3px solid var(--color-volt); outline-offset: 3px; }
-.reset[aria-disabled='true'] { opacity: 0.45; cursor: default; }
-.resetIcon { transition: rotate 400ms var(--ease-punch); }
-.reset:not([aria-disabled='true']):hover .resetIcon { rotate: -120deg; }
+.wl-reset:hover { translate: -2px -2px; box-shadow: 6px 6px 0 var(--color-volt); }
+.wl-reset:active { translate: 3px 3px; box-shadow: 0 0 0 var(--color-volt); }
+.wl-reset:focus-visible { outline: 3px solid var(--color-volt); outline-offset: 3px; }
+.wl-reset[aria-disabled='true'] { opacity: 0.45; cursor: default; }
+.wl-resetIcon { transition: rotate 400ms var(--ease-punch); }
+.wl-reset:not([aria-disabled='true']):hover .wl-resetIcon { rotate: -120deg; }
 
 /* #52 tilted pill CTA overlapping the board corner */
-.pill {
+.wl-pill {
   position: absolute;
   z-index: 70;
   right: -6px;
@@ -300,19 +300,19 @@
   rotate: -12deg;
   transition: rotate 400ms cubic-bezier(0.34, 1.56, 0.64, 1), scale 400ms cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 200ms;
 }
-.pill:hover { rotate: -6deg; scale: 1.05; box-shadow: 9px 9px 0 var(--color-ink); }
-.pill:active { scale: 0.97; box-shadow: 2px 2px 0 var(--color-ink); }
-.pill:focus-visible { outline: 3px solid var(--color-door); outline-offset: 4px; }
-.pillBig { font-family: var(--font-display); text-transform: uppercase; font-size: 34px; line-height: 0.95; white-space: nowrap; }
-.pillSmall { font-family: var(--font-mono); font-weight: 700; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; }
+.wl-pill:hover { rotate: -6deg; scale: 1.05; box-shadow: 9px 9px 0 var(--color-ink); }
+.wl-pill:active { scale: 0.97; box-shadow: 2px 2px 0 var(--color-ink); }
+.wl-pill:focus-visible { outline: 3px solid var(--color-door); outline-offset: 4px; }
+.wl-pillBig { font-family: var(--font-display); text-transform: uppercase; font-size: 34px; line-height: 0.95; white-space: nowrap; }
+.wl-pillSmall { font-family: var(--font-mono); font-weight: 700; font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; }
 @media (min-width: 1024px) {
-  .pill { right: -22px; top: -48px; padding: 14px 36px 16px; }
-  .pillBig { font-size: 52px; }
-  .pillSmall { font-size: 12px; }
+  .wl-pill { right: -22px; top: -48px; padding: 14px 36px 16px; }
+  .wl-pillBig { font-size: 52px; }
+  .wl-pillSmall { font-size: 12px; }
 }
 
-.minis { display: flex; flex-wrap: wrap; gap: 14px 18px; margin-top: 40px; }
-.mini {
+.wl-minis { display: flex; flex-wrap: wrap; gap: 14px 18px; margin-top: 40px; }
+.wl-mini {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -330,14 +330,14 @@
   text-transform: uppercase;
   transition: rotate 400ms cubic-bezier(0.34, 1.56, 0.64, 1), translate 160ms var(--ease-hover), box-shadow 160ms var(--ease-hover);
 }
-.mini:nth-child(odd) { rotate: -2deg; }
-.mini:nth-child(even) { rotate: 2deg; }
-.mini:hover { rotate: 0deg; translate: -2px -2px; box-shadow: 6px 6px 0 var(--color-ink); }
-.mini:active { translate: 3px 3px; box-shadow: 0 0 0 var(--color-ink); }
-.mini:focus-visible { outline: 3px solid var(--color-door); outline-offset: 3px; }
-.miniPrice { background: var(--color-ink); color: var(--color-volt); padding: 4px 8px; }
+.wl-mini:nth-child(odd) { rotate: -2deg; }
+.wl-mini:nth-child(even) { rotate: 2deg; }
+.wl-mini:hover { rotate: 0deg; translate: -2px -2px; box-shadow: 6px 6px 0 var(--color-ink); }
+.wl-mini:active { translate: 3px 3px; box-shadow: 0 0 0 var(--color-ink); }
+.wl-mini:focus-visible { outline: 3px solid var(--color-door); outline-offset: 3px; }
+.wl-miniPrice { background: var(--color-ink); color: var(--color-volt); padding: 4px 8px; }
 
 @media (prefers-reduced-motion: reduce) {
-  .float { animation: none; }
-  .pill, .mini, .reset, .resetIcon, .lift { transition-duration: 1ms; }
+  .wl-float { animation: none; }
+  .wl-pill, .wl-mini, .wl-reset, .wl-resetIcon, .wl-lift { transition-duration: 1ms; }
 }

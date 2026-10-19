@@ -32,8 +32,10 @@ const OFF: Record<string, { xPercent: number; yPercent: number; rotation: number
 }
 
 function waitForPreloader(cb: () => void): () => void {
+  // the preloader only runs when its gate script added html.ted-pl (first visit, no ?nopreload, not a bot)
+  const html = document.documentElement
   const pre = document.querySelector<HTMLElement>('[data-preloader]')
-  if (!pre || pre.dataset.state === 'done' || pre.hidden) {
+  if (!html.classList.contains('ted-pl') || html.dataset.preloader === 'done' || !pre || pre.dataset.state === 'done' || pre.hidden) {
     cb()
     return () => {}
   }
@@ -121,32 +123,32 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
             intro.fromTo(knock, { rotation: 0 }, { rotation: -1.6, duration: 0.07, ease: 'power2.out', yoyo: true, repeat: 3 }, 0.72)
           }
 
-          // H1: line-by-line volt ink-bar wipe over the (always-visible) server text
+          // H1: line-by-line volt ink-bar wipe OVER the (always-visible, never-moved) server text.
+          // No line masks and no line offsets: the glyphs (line-height 0.86) never get clipped and the LCP text
+          // is painted at its final position from the first frame.
           const h1 = one('[data-hero-h1]')
-          let h1Played = false
+          let introStarted = false
+          let h1Tl: gsap.core.Timeline | null = null
           if (h1) {
             SplitText.create(h1, {
               type: 'lines',
-              mask: 'lines',
               linesClass: 'hero-line',
               autoSplit: true,
               aria: 'auto',
               onSplit(self) {
-                if (h1Played) return
-                const t = gsap.timeline({
-                  onComplete: () => {
-                    h1Played = true
-                    bars.forEach((b) => b.remove())
-                  },
-                })
+                if (h1Tl) return // play once; later re-splits (resize) just re-wrap the text
                 const bars = self.lines.map((line) => {
-                  const host = (line.parentElement ?? line) as HTMLElement
+                  const host = line as HTMLElement
                   host.style.position = 'relative'
+                  host.style.width = 'fit-content' // bar hugs the words, not the whole column
                   const b = document.createElement('span')
                   b.setAttribute('aria-hidden', 'true')
                   Object.assign(b.style, {
                     position: 'absolute',
-                    inset: '0.04em -0.04em 0.02em',
+                    left: '-0.04em',
+                    top: '0.02em',
+                    height: '0.84em',
+                    width: 'calc(100% + 0.08em)',
                     background: 'var(--color-volt)',
                     transformOrigin: '0% 50%',
                     transform: 'scaleX(0)',
@@ -156,14 +158,15 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
                   host.appendChild(b)
                   return b
                 })
-                self.lines.forEach((line, i) => {
+                const t = gsap.timeline({ paused: true, delay: 0.1, onComplete: () => bars.forEach((b) => b.remove()) })
+                bars.forEach((bar, i) => {
                   const at = i * 0.085
-                  t.to(bars[i], { scaleX: 1, duration: 0.24, ease: 'power3.in' }, at)
-                  t.set(bars[i], { transformOrigin: '100% 50%' }, at + 0.24)
-                  t.fromTo(line, { yPercent: 55 }, { yPercent: 0, duration: 0.55, ease: 'expo.out' }, at + 0.24)
-                  t.to(bars[i], { scaleX: 0, duration: 0.42, ease: 'expo.out' }, at + 0.27)
+                  t.to(bar, { scaleX: 1, duration: 0.22, ease: 'power3.in' }, at)
+                  t.set(bar, { transformOrigin: '100% 50%' }, at + 0.22)
+                  t.to(bar, { scaleX: 0, duration: 0.42, ease: 'expo.out' }, at + 0.25)
                 })
-                intro.add(t, 0.1)
+                h1Tl = t
+                if (introStarted) t.play()
               },
             })
           }
@@ -185,8 +188,10 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
           })
 
           const stopWait = waitForPreloader(() => {
+            introStarted = true
             intro.play()
             idle.play()
+            h1Tl?.play()
           })
 
           // ── SCROLL ──────────────────────────────────────────────────────────
@@ -223,6 +228,8 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
             tl.set({}, {}, 1) // normalise the timeline to 0..1
 
             if (cueBox) tl.to(cueBox, { autoAlpha: 0, y: -16, duration: 0.08 }, 0)
+            const caption = one('[data-caption]')
+            if (caption) tl.to(caption, { autoAlpha: 0, y: -12, duration: 0.06 }, PHASE.expand[0])
             tl.fromTo(leaf, { rotationY: 0 }, { rotationY: 13, duration: c1 - c0, ease: 'power1.in' }, c0)
             if (gogo) tl.fromTo(gogo, { x: 0 }, { x: 4, duration: 0.015, repeat: 7, yoyo: true }, c0)
             tl.to(leaf, { rotationY: 104, duration: o1 - o0, ease: 'power2.inOut' }, o0)

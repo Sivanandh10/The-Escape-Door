@@ -9,7 +9,8 @@ import { useGSAP } from '@gsap/react'
 import { RotateCcw } from 'lucide-react'
 import { prefersReducedMotion, registerGsap } from '@/lib/motion'
 import { clamp } from '@/lib/utils'
-import styles from './wall.module.css'
+import './wall.css'
+import { styles } from './classes'
 
 registerGsap()
 

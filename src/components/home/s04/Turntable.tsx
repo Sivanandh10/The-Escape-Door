@@ -35,7 +35,7 @@ interface Callout {
 }
 // Facts from the owner's notebook only (front 4×4 in, back 12×15 in, oversized drop-shoulder).
 const CALLOUTS: Callout[] = [
-  { n: 1, face: 'front', x: 65, y: 24, side: 'right', title: 'Front print', value: '4×4 in', count: [4, 4] },
+  { n: 1, face: 'front', x: 70, y: 27, side: 'right', title: 'Front print', value: '4×4 in', count: [4, 4] },
   { n: 2, face: 'front', x: 18, y: 21, side: 'left', title: 'Oversized', value: 'Drop-shoulder' },
   { n: 3, face: 'back', x: 50, y: 45, side: 'right', title: 'Back print', value: '12×15 in', count: [12, 15] },
   { n: 2, face: 'back', x: 18, y: 21, side: 'left', title: 'Oversized', value: 'Drop-shoulder' },
@@ -294,15 +294,15 @@ export function Turntable({ product, intro }: { product: Product; intro: ReactNo
                     className={cn('absolute top-0 h-[3px] bg-volt', c.side === 'right' ? 'origin-left' : 'origin-right')}
                     style={
                       c.side === 'right'
-                        ? { left: `${c.x}%`, width: `calc(${100 - c.x}% + 28px)` }
-                        : { right: `${100 - c.x}%`, width: `calc(${c.x}% + 28px)` }
+                        ? { left: `${c.x}%`, width: `calc(${100 - c.x}% + 12px)` }
+                        : { right: `${100 - c.x}%`, width: `calc(${c.x}% + 12px)` }
                     }
                   />
                   <span
                     data-label
                     className={cn(
-                      'absolute top-0 block w-[clamp(120px,11vw,170px)] -translate-y-1/2 border-[3px] border-ink bg-paper px-3 py-2 text-ink shadow-hard-volt',
-                      c.side === 'right' ? 'left-[calc(100%+28px)]' : 'right-[calc(100%+28px)] text-right',
+                      'absolute top-0 block w-max max-w-[180px] -translate-y-1/2 whitespace-nowrap border-[3px] border-ink bg-paper px-3 py-2 text-ink shadow-hard-volt',
+                      c.side === 'right' ? 'left-[calc(100%+12px)]' : 'right-[calc(100%+12px)] text-right',
                     )}
                   >
                     <span className="label block text-ink/70">

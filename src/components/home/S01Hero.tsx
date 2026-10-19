@@ -164,7 +164,7 @@ export default function S01Hero({ settings }: { settings?: SiteSettings }) {
               <Portal3DGate />
             </div>
             {/* panel caption (manga narration box) */}
-            <p className="label absolute left-4 top-9 z-[1] border-2 border-ink bg-paper px-2 py-1 text-ink lg:left-[57.6%] lg:top-[5.4%]">
+            <p data-caption className="label absolute left-4 top-9 z-[1] border-2 border-ink bg-paper px-2 py-1 text-ink lg:left-[62.2%] lg:top-[5.4%]">
               扉 · The door
             </p>
             {/* the burst the camera lands in → hands over to S02 */}

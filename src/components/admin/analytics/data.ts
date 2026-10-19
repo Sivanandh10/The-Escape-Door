@@ -1,6 +1,7 @@
 // Analytics aggregator (P4a) — server only (reads cookies via the owner's Supabase session).
 // Real mode: scans analytics_events (+ leads) for the range and the previous range under RLS, aggregates in JS.
 // Demo mode (Supabase missing): deterministic seeded sample data, clearly flagged `demo: true` — never real.
+import { connection } from 'next/server'
 import { getAdminContext } from '../server'
 import { supabaseServer } from '@/lib/supabase/server'
 import { getCollections, getEvents, getPartnerships, getProducts } from '@/lib/data/repo'
@@ -362,6 +363,7 @@ async function demoSnapshot(days: number): Promise<AnalyticsSnapshot> {
 
 /** Snapshot for the last `days` days (UTC). Demo data when Supabase is unconfigured. Never throws. */
 export async function getAnalytics(days: number): Promise<AnalyticsSnapshot> {
+  await connection() // request-time: uses Date.now() for the range
   const ctx = await getAdminContext()
   if (ctx.demo) return demoSnapshot(days)
   try {
