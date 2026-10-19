@@ -139,7 +139,7 @@ export function ProductCard({
           />
         )}
 
-        <span className="label pointer-events-none absolute left-2 top-2 z-[2] max-w-[calc(100%-4.5rem)] truncate border-2 border-ink bg-ink px-2 py-1 text-[0.625rem] text-paper">
+        <span className={cn('label pointer-events-none absolute left-2 z-[2] max-w-[calc(100%-4.5rem)] truncate border-2 border-ink bg-ink px-2 py-1 text-[0.625rem] text-paper', multi ? 'top-4' : 'top-2')}>
           {arc}
         </span>
         <WishlistButton
@@ -147,10 +147,10 @@ export function ProductCard({
           name={p.name}
           slug={p.slug}
           size="sm"
-          className="!absolute right-2 top-2 z-[2]"
+          className={cn('!absolute right-2 z-[2]', multi ? 'top-4' : 'top-2')}
         />
         {stock && (
-          <span className={cn('label pointer-events-none absolute left-2 top-10 z-[2] border-2 border-ink px-2 py-1 text-[0.625rem]', stock.cls)}>
+          <span className={cn('label pointer-events-none absolute left-2 z-[2] border-2', multi ? 'top-12' : 'top-10', ' border-ink px-2 py-1 text-[0.625rem]', stock.cls)}>
             {stock.text}
           </span>
         )}
