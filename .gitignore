@@ -39,3 +39,13 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+docs/source/playbook.txt
+
+# project
+qa/
+docs/references/*.png
+.netlify/
+reel/out/
+reel/frames/
+.env*
+!.env.example
