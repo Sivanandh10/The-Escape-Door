@@ -1,6 +1,6 @@
 // /lab/s12 — isolated QA preview for S12 Beyond Anime + S13 Instagram (empty + sample posts). noindex.
 import type { Metadata } from 'next'
-import { getCollection, getInstaPosts, getProducts, getSettings } from '@/lib/data/repo'
+import { getCollection, getInstaPosts, getProducts, getSettings } from '@/lib/data/lab'
 import type { InstaPost } from '@/lib/types'
 import S12Beyond from '@/components/home/S12Beyond'
 import S13Instagram from '@/components/home/S13Instagram'

@@ -3,7 +3,8 @@
 // NEXT_PUBLIC_* are written literally so Next inlines them into client bundles.
 
 export function supabaseUrl(): string {
-  return (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim()
+  // Tolerate a pasted Data API URL (…supabase.co/rest/v1/) or trailing slashes.
+  return (process.env.NEXT_PUBLIC_SUPABASE_URL ?? '').trim().replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '')
 }
 
 /** Public (anon / publishable) key — safe in the browser; RLS applies. */

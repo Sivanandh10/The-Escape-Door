@@ -1,6 +1,6 @@
 // /lab/s07 — isolated preview of home S07 (GSM power levels) + S08 (cosplay & props). Dev QA only; noindex.
 import type { Metadata } from 'next'
-import { getHoodieTiers, getProducts } from '@/lib/data/repo'
+import { getHoodieTiers, getProducts } from '@/lib/data/lab'
 import S07Gsm from '@/components/home/S07Gsm'
 import S08Cosplay from '@/components/home/S08Cosplay'
 

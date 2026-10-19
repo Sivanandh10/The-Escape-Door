@@ -1,7 +1,7 @@
 // /lab/cart — QA bench for the cart drawer, /cart, /wishlist and /checkout-success. noindex. Owner: P2.
 // Query: ?seed=mix|deals|quote|one|empty  &open=1|details  &wish=1  &order=sent|blocked
 import type { Metadata } from 'next'
-import { getProducts } from '@/lib/data/repo'
+import { getProducts } from '@/lib/data/lab'
 import type { CartItem, Product } from '@/lib/types'
 import { LabCart } from './LabCart'
 

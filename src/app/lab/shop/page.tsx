@@ -1,6 +1,6 @@
 // /lab/shop — P1 shop kit preview (ProductCard, AddToCartButton, PriceTag, WishlistButton). noindex.
 import type { Metadata } from 'next'
-import { getProducts } from '@/lib/data/repo'
+import { getProducts } from '@/lib/data/lab'
 import { ProductCard } from '@/components/shop/ProductCard'
 import { AddToCartButton } from '@/components/shop/AddToCartButton'
 import { PriceTag } from '@/components/shop/PriceTag'

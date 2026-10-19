@@ -5,7 +5,7 @@ import { ForgeStudio } from '@/components/forge/ForgeStudio'
 import { StudioSkeleton } from '@/components/forge/StudioSkeleton'
 import { ZoneDiagram } from '@/components/forge/ZoneDiagram'
 import type { ForgeData } from '@/components/forge/model'
-import { getCustomRules, getHoodieTiers, getTeeFits } from '@/lib/data/repo'
+import { getCustomRules, getHoodieTiers, getTeeFits } from '@/lib/data/lab'
 import { apparelCustom } from '@/lib/data/rules'
 
 export const metadata: Metadata = { title: 'Lab · Forge', robots: { index: false, follow: false } }

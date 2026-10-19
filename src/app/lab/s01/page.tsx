@@ -1,7 +1,7 @@
 // /lab/s01 — isolated preview of the S01 hero (dev QA only; noindex). Owner: S01.
 import type { Metadata } from 'next'
 import S01Hero from '@/components/home/S01Hero'
-import { getSettings } from '@/lib/data/repo'
+import { getSettings } from '@/lib/data/lab'
 
 export const metadata: Metadata = {
   title: 'Lab · S01 Hero',

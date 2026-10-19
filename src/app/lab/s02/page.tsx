@@ -1,6 +1,6 @@
 // /lab/s02 — isolated preview of S02 Choose Your Arc. Dev QA only; noindex. Owner: S02.
 import type { Metadata } from 'next'
-import { getCollections, getProducts } from '@/lib/data/repo'
+import { getCollections, getProducts } from '@/lib/data/lab'
 import S02ChooseArc from '@/components/home/S02ChooseArc'
 
 export const metadata: Metadata = {

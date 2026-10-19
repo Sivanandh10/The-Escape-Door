@@ -5,7 +5,7 @@ import { Badge, DoorIcon, INK_SPLATS, MASCOT_MOODS, Mascot, Wordmark } from '@/c
 import { ArcMotif } from '@/components/fx/ArcMotif'
 import { ProductArt } from '@/components/shop/ProductArt'
 import { TeeArt } from '@/components/shop/TeeArt'
-import { getCollections, getProducts } from '@/lib/data/repo'
+import { getCollections, getProducts } from '@/lib/data/lab'
 
 export const metadata: Metadata = {
   title: 'Lab · Brand',

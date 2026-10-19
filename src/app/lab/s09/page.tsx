@@ -1,6 +1,6 @@
 // /lab/s09 — isolated preview of S09 Forge teaser, S10 Partners, S11 Live. Dev QA only; noindex. Owner: S09–S11 agent.
 import type { Metadata } from 'next'
-import { getEvents, getPartnerships } from '@/lib/data/repo'
+import { getEvents, getPartnerships } from '@/lib/data/lab'
 import S09ForgeTeaser from '@/components/home/S09ForgeTeaser'
 import S10Partners from '@/components/home/S10Partners'
 import S11Live from '@/components/home/S11Live'

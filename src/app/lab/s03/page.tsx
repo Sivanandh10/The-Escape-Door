@@ -1,6 +1,6 @@
 // Lab preview for S03 Drop of the Week + S04 Back-Print Reveal (owner: s03-s04-tee). Not indexed.
 import type { Metadata } from 'next'
-import { getDropOfWeek } from '@/lib/data/repo'
+import { getDropOfWeek } from '@/lib/data/lab'
 import S03Drop from '@/components/home/S03Drop'
 import S04BackPrint from '@/components/home/S04BackPrint'
 

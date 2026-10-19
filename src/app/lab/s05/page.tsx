@@ -1,6 +1,6 @@
 // /lab/s05 — isolated preview of S05 Squad grid + S06 Polaroid wall. Dev QA only; noindex. Owner: s05-s06 agent.
 import type { Metadata } from 'next'
-import { getProducts } from '@/lib/data/repo'
+import { getProducts } from '@/lib/data/lab'
 import S05Squad from '@/components/home/S05Squad'
 import S06Wall from '@/components/home/S06Wall'
 
