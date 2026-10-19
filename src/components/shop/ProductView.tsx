@@ -1,20 +1,22 @@
 'use client'
 // ProductView — PDP interactive column + gallery (owner: P1 shop).
-// Gallery: #40 front/back crossfade (buttons + ←/→ keys), click/Enter to zoom (pointer-follow origin).
+// Gallery: <ImageCarousel variant="gallery"> — swipe/arrows/pips/thumbs (Front/Back/Detail), ←/→, zoom.
 // Buy box: variant chips, size chips (+ "ask on WhatsApp" size chart), qty stepper, BundleHint,
 // #66 AddToCartButton, "Buy now on WhatsApp" (adds + opens drawer checkout), wishlist, custom card.
-import { useEffect, useRef, useState, type KeyboardEvent, type PointerEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
-import { Minus, Plus, ZoomIn, ZoomOut, Ruler, Wand2, ArrowRight } from 'lucide-react'
+import { Minus, Plus, Ruler, Wand2, ArrowRight } from 'lucide-react'
 import type { Product } from '@/lib/types'
 import { track } from '@/lib/analytics'
 import { waLink } from '@/lib/whatsapp'
+import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { cn } from '@/lib/utils'
 import { AddToCartButton } from './AddToCartButton'
 import { PriceTag } from './PriceTag'
 import { WishlistButton } from './WishlistButton'
 import { BundleHint } from './BundleHint'
+import { ImageCarousel } from './ImageCarousel'
 import './shop.css'
 
 export interface ProductViewProps {
@@ -25,6 +27,7 @@ export interface ProductViewProps {
 }
 
 export function ProductView({ product: p, collectionName, collectionJp, accent = '#C9B8FF' }: ProductViewProps) {
+  const waNumber = useWhatsappNumber()
   const [variantId, setVariantId] = useState(p.variants[0]?.id ?? '')
   const [size, setSize] = useState<string | null>(null)
   const [qty, setQty] = useState(1)
@@ -38,7 +41,7 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
   }, [p.slug, p.type, p.collection])
 
   const variantName = p.type === 'hoodie' ? 'GSM tier' : p.variants.some((v) => v.attrs?.fit) ? 'Fit' : 'Style'
-  const askSize = waLink(`Hi! Could you share the size chart for “${p.name}” (${variant?.label ?? ''})?`)
+  const askSize = waLink(`Hi! Could you share the size chart for “${p.name}” (${variant?.label ?? ''})?`, waNumber)
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1.15fr_1fr] lg:gap-12">
@@ -187,91 +190,37 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
 }
 
 function Gallery({ product: p, ref, accent }: { product: Product; ref: React.Ref<HTMLDivElement>; accent: string }) {
+  // Every image in order, front first. Front / Back print / Detail thumbs are jump-to-slide shortcuts.
   const front = p.images.find((i) => i.side !== 'back') ?? p.images[0]
-  const back = p.images.find((i) => i.side === 'back' && i !== front)
-  const imgs = [front, back].filter(Boolean) as NonNullable<typeof front>[]
-  const [side, setSide] = useState(0)
-  const [zoom, setZoom] = useState(false)
-  const [origin, setOrigin] = useState('50% 50%')
+  const imgs = front ? [front, ...p.images.filter((i) => i !== front)] : []
   const sample = imgs.some((i) => i.sample)
+  const badge = sample ? (
+    <span className="label pointer-events-none absolute bottom-3 left-3 z-[2] border-2 border-ink bg-paper px-2 py-1 text-[0.625rem] text-ink">
+      SAMPLE — replace with real photo
+    </span>
+  ) : null
 
-  const onKey = (e: KeyboardEvent) => {
-    if (imgs.length < 2) return
-    if (e.key === 'ArrowRight' || e.key === 'ArrowLeft') {
-      e.preventDefault()
-      setSide((s) => (s + 1) % imgs.length)
-    }
-  }
-  const onMove = (e: PointerEvent<HTMLDivElement>) => {
-    if (!zoom) return
-    const r = e.currentTarget.getBoundingClientRect()
-    setOrigin(`${((e.clientX - r.left) / r.width) * 100}% ${((e.clientY - r.top) / r.height) * 100}%`)
-  }
-
-  return (
-    <div className="flex flex-col gap-3">
-      <div
-        ref={ref}
-        className="relative aspect-[4/5] overflow-hidden border-4 border-paper shadow-hard-volt"
-        style={{ backgroundColor: p.colorBlock || accent }}
-        onKeyDown={onKey}
-        onPointerMove={onMove}
-        onPointerLeave={() => setZoom(false)}
-      >
-        {imgs.map((img, i) => (
-          <Image
-            key={img.src}
-            src={img.src}
-            alt={img.alt}
-            fill
-            preload={i === 0}
-            quality={85}
-            sizes="(min-width: 1024px) 55vw, 100vw"
-            aria-hidden={i !== side || undefined}
-            className="object-cover transition-[opacity,transform] duration-[420ms] ease-[var(--ease-hover)] motion-reduce:transition-none"
-            style={{ opacity: i === side ? 1 : 0, transform: zoom && i === side ? 'scale(1.9)' : 'scale(1)', transformOrigin: origin }}
-          />
-        ))}
-        <button
-          type="button"
-          onClick={() => setZoom((z) => !z)}
-          aria-pressed={zoom}
-          aria-label={zoom ? 'Zoom out' : 'Zoom in on the print'}
-          className="absolute inset-0 z-[1] cursor-zoom-in focus-ring aria-pressed:cursor-zoom-out"
-          data-cursor={zoom ? 'OUT' : 'ZOOM'}
-        />
-        <span aria-hidden="true" className="pointer-events-none absolute right-3 top-3 z-[2] grid h-11 w-11 place-items-center border-[3px] border-ink bg-paper text-ink">
-          {zoom ? <ZoomOut className="h-5 w-5" strokeWidth={2.6} /> : <ZoomIn className="h-5 w-5" strokeWidth={2.6} />}
-        </span>
-        {sample && (
-          <span className="label pointer-events-none absolute bottom-3 left-3 z-[2] border-2 border-ink bg-paper px-2 py-1 text-[0.625rem] text-ink">
-            SAMPLE — replace with real photo
-          </span>
-        )}
+  if (imgs.length < 2) {
+    return (
+      <div ref={ref} className="relative aspect-[4/5] overflow-hidden border-4 border-paper shadow-hard-volt" style={{ backgroundColor: p.colorBlock || accent }}>
+        {imgs[0] && <Image src={imgs[0].src} alt={imgs[0].alt} fill preload quality={85} sizes="(min-width: 1024px) 55vw, 100vw" className="object-cover" />}
+        {badge}
       </div>
-      {imgs.length > 1 && (
-        <div role="group" aria-label="Choose view" className="flex gap-2" onKeyDown={onKey}>
-          {imgs.map((img, i) => (
-            <button
-              key={img.src}
-              type="button"
-              aria-pressed={i === side}
-              onClick={() => setSide(i)}
-              className={cn(
-                'press label relative flex min-h-12 items-center gap-3 border-[3px] px-2 py-1.5 text-[0.6875rem] focus-ring',
-                i === side ? 'border-ink bg-volt text-ink shadow-[3px_3px_0_0_var(--color-paper)]' : 'border-paper bg-ink text-paper hover:bg-tone-2',
-              )}
-            >
-              <span className="relative h-12 w-10 overflow-hidden border-2 border-current" style={{ background: p.colorBlock }}>
-                <Image src={img.src} alt="" fill sizes="40px" quality={60} className="object-cover" />
-              </span>
-              {img.side === 'back' ? 'Back print' : 'Front'}
-            </button>
-          ))}
-          <span className="label ml-auto self-center text-[0.5625rem] text-paper/50 max-sm:hidden">← → to flip</span>
-        </div>
-      )}
-    </div>
+    )
+  }
+  return (
+    <ImageCarousel
+      images={imgs}
+      variant="gallery"
+      aspect="4/5"
+      sizes="(min-width: 1024px) 55vw, 100vw"
+      priority
+      label={`${p.name} images`}
+      background={p.colorBlock || accent}
+      stageRef={ref}
+      stageClassName="border-4 border-paper shadow-hard-volt"
+      overlay={badge}
+    />
   )
 }
 

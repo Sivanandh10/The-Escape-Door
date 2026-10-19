@@ -63,12 +63,21 @@
 .ted-card-flip { transform: rotate(-6deg) scale(.85); opacity: 0; transition: transform 240ms var(--ease-slam), opacity 160ms linear }
 .ted-card:focus-within .ted-card-flip { transform: rotate(0) scale(1); opacity: 1 }
 .ted-card-link::after { content: ""; position: absolute; inset: 0; z-index: 1 }
+.ted-card-flip-car { transform: rotate(-6deg) scale(.85); opacity: 0; transition: transform 240ms var(--ease-slam), opacity 160ms linear }
+.ted-card-flip-car[data-on] { transform: rotate(0) scale(1); opacity: 1 }
+
+/* ── ImageCarousel: story-style pip fill (transform only) ── */
+@keyframes ted-car-fill { from { transform: scaleX(0) } to { transform: scaleX(1) } }
+.ted-car-fill { transition: transform 220ms var(--ease-hover) }
+.ted-car-fill-run { animation: ted-car-fill 3500ms linear forwards }
+.ted-car-track { -webkit-overflow-scrolling: touch }
 
 @media (prefers-reduced-motion: reduce) {
   .ted-wish-pop, .ted-atc[data-state="need"], .ted-atc-sfx { animation: none }
   .ted-atc-labels > span { transition: none }
   .ted-card, .ted-card-img, .ted-card-flip { transition: opacity 150ms linear }
   .ted-card:hover .ted-card-img { transform: none }
+  .ted-car-fill, .ted-car-fill-run { animation: none; transition: none }
 }
 
 /* ── Filters: dual range slider (two stacked inputs; only thumbs take pointer events) ── */

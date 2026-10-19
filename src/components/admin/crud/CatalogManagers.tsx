@@ -287,7 +287,7 @@ export function SettingsManager({ initial }: { initial: SiteSettings }) {
     if (error) return toast.error('Could not save settings', { description: error.message })
     setDirty(false)
     void revalidateCatalog(['settings']).catch(() => {})
-    toast.success('Settings saved — live on the next page load')
+    toast.success('Settings saved — live on the site now')
   }
 
   return (
@@ -311,7 +311,7 @@ export function SettingsManager({ initial }: { initial: SiteSettings }) {
             <TextField className="sm:col-span-2" label="Hero title (H1)" value={s.heroTitle} error={errors.heroTitle} maxLength={90} onChange={(heroTitle) => set({ heroTitle })} hint="Keep “anime merch” in it — it's the main keyword." />
             <TextArea className="sm:col-span-2" label="Hero subline" rows={3} maxLength={260} value={s.heroSub} error={errors.heroSub} onChange={(heroSub) => set({ heroSub })} />
             <TagsField className="sm:col-span-2" label="Ticker words" value={s.tickerWords} error={errors.tickerWords} onChange={(tickerWords) => set({ tickerWords })} hint="Enter or comma to add. JP words welcome." />
-            <TextField label="WhatsApp number (display)" mono value={s.whatsapp} error={errors.whatsapp} onChange={(whatsapp) => set({ whatsapp })} placeholder="+91 …" hint="Checkout uses NEXT_PUBLIC_WHATSAPP_NUMBER; keep them in sync." />
+            <TextField label="WhatsApp order number" mono value={s.whatsapp} error={errors.whatsapp} onChange={(whatsapp) => set({ whatsapp })} placeholder="+91 98765 43210" hint="Used for every Buy on WhatsApp button. Include the country code, e.g. +91 98765 43210." />
             <TextField label="Instagram URL" mono value={s.instagram} error={errors.instagram} onChange={(instagram) => set({ instagram })} />
           </div>
         </AdminPanel>

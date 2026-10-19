@@ -13,7 +13,7 @@
 - **Launch reel:** `reel/escape-door-reel-9x16.mp4` (15 s, 1080×1920).
 
 ## Go-live checklist (owner)
-1. **WhatsApp number** → Netlify → Site configuration → Environment variables → `NEXT_PUBLIC_WHATSAPP_NUMBER` = `91XXXXXXXXXX`. Redeploy.
+1. **WhatsApp number** → `/admin/settings` → *WhatsApp order number* (with country code, e.g. `+91 98765 43210`) → Save. Live immediately, no redeploy. (`NEXT_PUBLIC_WHATSAPP_NUMBER` is only a fallback when the setting is empty.)
 2. **Supabase (free):** create a project at supabase.com → SQL editor → run `supabase/migrations/0001_init.sql`, then `supabase/seed.sql`. Add to Netlify env: `NEXT_PUBLIC_SUPABASE_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, `SUPABASE_SERVICE_ROLE_KEY` (server only), `ADMIN_EMAILS=<owner email>`. Redeploy.
 3. **Admin login:** Supabase → Authentication → Users → *Add user* (owner email + password). Then in the SQL editor: `insert into admins (user_id) select id from auth.users where email = '<owner email>';`. Sign in at `/admin/login`.
 4. Optional: `NEXT_PUBLIC_GA4_ID`, `NEXT_PUBLIC_CLARITY_ID`; custom domain (escapedoor.in) in Netlify → Domain management, then set `NEXT_PUBLIC_SITE_URL`.

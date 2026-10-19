@@ -1,5 +1,6 @@
 // Root layout: fonts, metadata, providers and the app shell. Owner: F1.
-// Static under Cache Components: getCollections() is a 'use cache' read (cookie-less); nothing else is async.
+// Static under Cache Components: getCollections()/getSettings() are 'use cache' reads (cookie-less, tagged —
+// admin saves call updateTag so the WhatsApp number etc. update live); nothing else is async.
 import type { Metadata, Viewport } from 'next'
 import { Anton, Bangers, DM_Sans, Dela_Gothic_One, JetBrains_Mono, Noto_Sans_JP } from 'next/font/google'
 import { Providers } from '@/components/Providers'
@@ -9,7 +10,7 @@ import { Footer } from '@/components/layout/Footer'
 import { toNavArcs } from '@/components/layout/nav'
 import JsonLd from '@/components/seo/JsonLd'
 import { orgJsonLd, websiteJsonLd } from '@/lib/seo'
-import { getCollections } from '@/lib/data/repo'
+import { getCollections, getSettings } from '@/lib/data/repo'
 import './globals.css'
 
 // DESIGN §3. JP faces + secondary faces use preload:false (JP glyphs arrive as unicode-range slices).
@@ -58,7 +59,7 @@ export const viewport: Viewport = {
 const JS_FLAG = "document.documentElement.classList.add('js')"
 
 export default async function RootLayout({ children }: LayoutProps<'/'>) {
-  const collections = await getCollections()
+  const [collections, settings] = await Promise.all([getCollections(), getSettings()])
   const arcs = toNavArcs(collections)
   const swatches = collections.map(({ slug, accentA, accentB }) => ({ slug, accentA, accentB }))
 
@@ -73,7 +74,7 @@ export default async function RootLayout({ children }: LayoutProps<'/'>) {
         <script dangerouslySetInnerHTML={{ __html: JS_FLAG }} />
       </head>
       <body className="bg-ink font-body text-paper">
-        <Providers arcs={swatches}>
+        <Providers arcs={swatches} whatsapp={settings.whatsapp}>
           <SkipLink />
           <Header arcs={arcs} />
           <main id="main" tabIndex={-1} className="relative outline-none">

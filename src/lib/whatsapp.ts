@@ -107,22 +107,30 @@ export function buildOrderMessage(input: OrderMessageInput): string {
 }
 
 let warned = false
-/** The shop's WhatsApp number (digits only), or '' when not configured. */
-export function whatsappNumber(): string {
-  return (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
+const digitsOf = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '')
+
+/**
+ * The shop's WhatsApp number (digits only), or '' when not configured.
+ * Runtime source: the admin-managed `settings.whatsapp` value (pass it in — on the server from
+ * repo getSettings(), on the client from useWhatsappNumber()). NEXT_PUBLIC_WHATSAPP_NUMBER is
+ * only the fallback when the setting is empty.
+ */
+export function whatsappNumber(fromSettings?: string | null): string {
+  return digitsOf(fromSettings) || digitsOf(process.env.NEXT_PUBLIC_WHATSAPP_NUMBER)
 }
 
 /**
- * https://wa.me/<number>?text=… — if NEXT_PUBLIC_WHATSAPP_NUMBER is unset, falls back to
- * https://wa.me/?text=… (WhatsApp lets the customer pick the contact) and warns once.
+ * https://wa.me/<number>?text=… — `number` is the settings value (any format; non-digits stripped).
+ * With no number anywhere, falls back to https://wa.me/?text=… (WhatsApp lets the customer pick
+ * the contact) and warns once.
  */
-export function waLink(text: string, number: string = whatsappNumber()): string {
-  const digits = number.replace(/\D/g, '')
+export function waLink(text: string, number?: string | null): string {
+  const digits = whatsappNumber(number)
   const q = `?text=${encodeURIComponent(text)}`
   if (!digits) {
     if (!warned && typeof console !== 'undefined') {
       warned = true
-      console.warn('[whatsapp] NEXT_PUBLIC_WHATSAPP_NUMBER is not set — opening WhatsApp without a recipient.')
+      console.warn('[whatsapp] No WhatsApp number in Admin → Settings — opening WhatsApp without a recipient.')
     }
     return `https://wa.me/${q}`
   }

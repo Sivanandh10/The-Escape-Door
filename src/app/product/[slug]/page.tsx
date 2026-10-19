@@ -11,9 +11,13 @@ import { ProductCard } from '@/components/shop/ProductCard'
 import { primaryCategory } from '@/components/shop/catalog'
 import { Crumbs, SectionHead } from '@/components/shop/ShopSections'
 
+// Build-time list only. Products added in admin later render on demand (cacheComponents: unknown
+// params are allowed) — notFound() fires only when getProduct() returns null.
 export async function generateStaticParams() {
   const all = await getProducts()
-  return all.map((p) => ({ slug: p.slug }))
+  const list = all.map((p) => ({ slug: p.slug }))
+  // Cache Components needs ≥1 param at build; an empty catalogue just prerenders a 404
+  return list.length ? list : [{ slug: 'cursed-static-oversized-t-shirt' }]
 }
 
 const titleCase = (s: string) => s.split('-').map((w) => w[0]?.toUpperCase() + w.slice(1)).join(' ')

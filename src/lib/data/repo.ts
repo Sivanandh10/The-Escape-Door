@@ -1,7 +1,7 @@
 // Server-side data access. Owner: F2. CONTRACTS §4 + §10.1.
 // - Every read is a 'use cache' function (cacheLife + cacheTag) using the cookie-less
 //   publicClient(), so public pages stay static. Admin writes call updateTag('<tag>').
-// - Supabase when configured, otherwise (or on any error / empty table) the seed catalogue.
+// - Supabase when configured (an empty table stays empty), otherwise (or on any error) the seed catalogue.
 // - Never throws to the UI.
 // Do not import from 'use client' files (use props from a Server Component instead).
 import { cacheLife, cacheTag } from 'next/cache'
@@ -103,7 +103,7 @@ function toCustomRule(r: Row): CustomRule {
   return { type: str(r.type) as CustomRule['type'], minQty: num(r.min_qty) ?? 1, unitPrice: num(r.unit_price), note: str(r.note) }
 }
 
-/** select * from <table> where is_published (if present) order by sort_order — or null on any failure. */
+/** select * from <table> where is_published (if present) order by sort_order — or null when unconfigured / on any failure. */
 async function fetchRows(table: string, opts: { published?: boolean; order?: string } = {}): Promise<Row[] | null> {
   const sb = publicClient()
   if (!sb) return null
@@ -112,7 +112,8 @@ async function fetchRows(table: string, opts: { published?: boolean; order?: str
     if (opts.published !== false) q = q.eq('is_published', true)
     if (opts.order) q = q.order(opts.order, { ascending: true })
     const { data, error } = await q
-    if (error || !Array.isArray(data) || data.length === 0) return null
+    // an empty table is a real answer (the owner deleted everything) — only errors fall back to seed
+    if (error || !Array.isArray(data)) return null
     return data as Row[]
   } catch {
     return null
@@ -141,6 +142,7 @@ async function loadCollections(): Promise<Collection[]> {
   return [...list].sort((a, b) => a.order - b.order)
 }
 
+/** Supabase rows, else the seed catalogue (apparel carries front, back + a same-arc detail image). */
 async function loadProducts(): Promise<Product[]> {
   'use cache'
   cacheLife('hours')

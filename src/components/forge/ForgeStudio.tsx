@@ -14,6 +14,7 @@ import { formatINR } from '@/lib/pricing'
 import { track, getAttribution } from '@/lib/analytics'
 import { submitLead } from '@/lib/leads'
 import { waLink } from '@/lib/whatsapp'
+import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { useReducedMotion } from '@/lib/motion'
 import { clamp, cn } from '@/lib/utils'
 import {
@@ -68,6 +69,7 @@ let uid = 0
 const nextId = () => `f${++uid}`
 
 export function ForgeStudio({ data }: { data: ForgeData }) {
+  const waNumber = useWhatsappNumber()
   const params = useSearchParams()
   const reduced = useReducedMotion()
   const [d, setD] = useState<ForgeDraft>(() => initialDraft(data))
@@ -311,7 +313,7 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
     // 3) WhatsApp
     setPhase('opening')
     const text = buildForgeMessage(d, data, { fileUrls, filesPending: pending, fileCount: files.length, ref: getAttribution().src, leadId: lead?.id })
-    const link = waLink(text)
+    const link = waLink(text, waNumber)
     let opened = false
     if (win && !win.closed) {
       try {

@@ -5,10 +5,12 @@ import { useEffect, useState } from 'react'
 import { useCart, useHydrated, useWishlist } from '@/lib/cart'
 import { computeTotals } from '@/lib/pricing'
 import { buildOrderMessage, waLink } from '@/lib/whatsapp'
+import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import type { CartItem } from '@/lib/types'
 import { CHECKOUT_EVENT, saveLastOrder } from '@/components/shop/cart/order'
 
 export function LabCart({ sets, wish }: { sets: Record<string, CartItem[]>; wish: string[] }) {
+  const waNumber = useWhatsappNumber()
   const hydrated = useHydrated()
   const router = useRouter()
   const [msg, setMsg] = useState('')
@@ -18,7 +20,7 @@ export function LabCart({ sets, wish }: { sets: Record<string, CartItem[]>; wish
   const fakeOrder = (opened: boolean) => {
     const items = sets.mix
     const totals = computeTotals(items)
-    const link = waLink(buildOrderMessage({ items, totals, name: 'Lab Tester', city: 'Surat', orderRef: 'TED-LAB01' }))
+    const link = waLink(buildOrderMessage({ items, totals, name: 'Lab Tester', city: 'Surat', orderRef: 'TED-LAB01' }), waNumber)
     saveLastOrder({
       ref: 'TED-LAB01',
       items,

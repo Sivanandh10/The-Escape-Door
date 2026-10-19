@@ -263,7 +263,7 @@ const onRequest = (b: Base, type: ProductType, noun: string, altNoun: string, ta
 // ---------------------------------------------------------------- products
 const JJK = 'jujutsu-kaisen', AOT = 'attack-on-titan', DS = 'demon-slayer', OP = 'one-piece', NAR = 'naruto', BEY = 'beyond-anime'
 
-export const products: Product[] = [
+const baseProducts: Product[] = [
   // ── Jujutsu Kaisen 呪術廻戦
   oversizedTee({ design: 'Cursed Static', jp: '呪いのノイズ', collection: JJK, block: BLOCK.lav, dropOfWeek: true, featured: true, tags: ['jjk', 'drop'],
     line: 'A back print of violet smoke breaking into scan-line static, with the title stacked in tall condensed caps.' }),
@@ -406,6 +406,21 @@ export const products: Product[] = [
   onRequest({ design: 'Margin Notes', collection: BEY, block: BLOCK.lav, inspo: 'bookish', tags: ['bookish'],
     line: 'Fandom stationery — notebooks and paper goods; the set changes with each batch.' }, 'stationery', 'Stationery Set', 'stationery set', ['stationery']),
 ]
+
+/** Apparel gets a 3rd "detail" slide: the companion polaroid/poster art from the same arc (best tag match first). */
+const COMPANION_TYPES: ProductType[] = ['polaroid', 'poster']
+function withDetail(p: Product, all: Product[]): Product {
+  if (p.type !== 'tshirt' && p.type !== 'hoodie') return p
+  const pool = all.filter((q) => q.collection === p.collection && COMPANION_TYPES.includes(q.type) && q.images[0])
+  if (!pool.length) return p
+  const score = (q: Product) => q.tags.filter((t) => p.tags.includes(t) && !['polaroid', 'poster', 'collectible', 'wall'].includes(t)).length * 10 - COMPANION_TYPES.indexOf(q.type)
+  const mate = [...pool].sort((a, b) => score(b) - score(a))[0]
+  const detail: ProductImage = { src: mate.images[0].src, alt: `Companion art from the same arc: ${mate.name}, an original ${inspoLabel(p)} design by The Escape Door`, side: 'detail', sample: true }
+  return { ...p, images: [...p.images, detail] }
+}
+const inspoLabel = (p: Product) => (p.collection === 'beyond-anime' ? 'fan-inspired' : `fan-inspired ${COLLECTION_NAME[p.collection] ?? p.collection}`)
+
+export const products: Product[] = baseProducts.map((p) => withDetail(p, baseProducts))
 
 // ---------------------------------------------------------------- events
 export const events: FestEvent[] = [

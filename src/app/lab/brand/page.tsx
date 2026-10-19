@@ -5,7 +5,7 @@ import { Badge, DoorIcon, INK_SPLATS, MASCOT_MOODS, Mascot, Wordmark } from '@/c
 import { ArcMotif } from '@/components/fx/ArcMotif'
 import { ProductArt } from '@/components/shop/ProductArt'
 import { TeeArt } from '@/components/shop/TeeArt'
-import { collections, products } from '@/lib/data/seed'
+import { getCollections, getProducts } from '@/lib/data/repo'
 
 export const metadata: Metadata = {
   title: 'Lab · Brand',
@@ -43,7 +43,8 @@ const MOOD_NOTE: Record<string, string> = {
   work: 'work · admin',
 }
 
-export default function BrandLab() {
+export default async function BrandLab() {
+  const [collections, products] = await Promise.all([getCollections(), getProducts()])
   return (
     <main className="min-h-dvh bg-paper text-ink">
       <header className="container-x flex flex-wrap items-end justify-between gap-6 py-10">

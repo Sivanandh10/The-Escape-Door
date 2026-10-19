@@ -54,7 +54,8 @@ export const collectionCfg: CrudConfig<AdminCollection> = {
   table: 'collections',
   pk: 'slug',
   order: { column: 'sort_order' },
-  tags: ['collections'],
+  // slug renames cascade to products.collection, and listings join arc names → refresh both
+  tags: ['collections', 'products'],
   label: (c) => c.name,
   setOrder: (c, i) => ({ ...c, order: i }),
   fromRow: (r) => ({

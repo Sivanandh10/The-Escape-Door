@@ -1,5 +1,5 @@
 // /contact — Contact The Escape Door (SITEMAP §2.11, CONTRACTS §10.7). Owner: P5.
-// No address or phone is published until confirmed. WhatsApp shows only when NEXT_PUBLIC_WHATSAPP_NUMBER is set.
+// No address or phone is published until confirmed. WhatsApp shows only when Admin → Settings has a number (settings.whatsapp; env var is a fallback).
 import Link from 'next/link'
 import { ArrowUpRight, Camera, MessageCircle, Store } from 'lucide-react'
 import JsonLd from '@/components/seo/JsonLd'
@@ -11,6 +11,7 @@ import { pageMeta } from '@/components/content/meta'
 import { FAQ } from '@/components/content/faq'
 import { absUrl, INSTAGRAM_URL, ORG_ID, WEBSITE_ID } from '@/lib/seo'
 import { waLink, whatsappNumber } from '@/lib/whatsapp'
+import { getSettings } from '@/lib/data/repo'
 
 export const metadata = pageMeta({
   title: 'Contact The Escape Door',
@@ -21,13 +22,14 @@ export const metadata = pageMeta({
 
 const QUICK = ['oversized-tee-price', 'own-design', 'fest-partner']
 
-export default function ContactPage() {
-  const hasWa = whatsappNumber().length > 0
+export default async function ContactPage() {
+  const wa = whatsappNumber((await getSettings()).whatsapp)
+  const hasWa = wa.length > 0
   const quick = FAQ.filter((f) => QUICK.includes(f.id))
 
   const CHANNELS = [
     hasWa
-      ? { icon: MessageCircle, k: 'Fastest', t: 'WhatsApp', d: 'Orders, custom requests and quick questions.', href: waLink('Hi The Escape Door!'), cta: 'Open chat', tone: 'bg-volt', ext: true }
+      ? { icon: MessageCircle, k: 'Fastest', t: 'WhatsApp', d: 'Orders, custom requests and quick questions.', href: waLink('Hi The Escape Door!', wa), cta: 'Open chat', tone: 'bg-volt', ext: true }
       : { icon: MessageCircle, k: 'Orders', t: 'WhatsApp', d: 'Our order number is being set up. Until then, DM us on Instagram or use the form.', href: '', cta: '', tone: 'bg-volt', ext: true },
     { icon: Camera, k: 'Drops & DMs', t: '@escapedoor.in', d: 'New designs, stall dates and DMs to personalise a design.', href: INSTAGRAM_URL, cta: 'Open Instagram', tone: 'bg-lav', ext: true },
     { icon: Store, k: 'In person', t: 'Fest stalls', d: 'Meet us at our next college fest stall.', href: '/fests#live', cta: 'See upcoming stalls', tone: 'bg-pink', ext: false },

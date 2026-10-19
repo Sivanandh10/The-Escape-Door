@@ -12,6 +12,7 @@ import { InkSplat } from '@/components/fx/InkSplat'
 import { submitLead } from '@/lib/leads'
 import { track } from '@/lib/analytics'
 import { waLink } from '@/lib/whatsapp'
+import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { cn } from '@/lib/utils'
 
 type Variant = 'fest' | 'contact'
@@ -70,6 +71,7 @@ function validate(v: Values, required: Field[]): Partial<Record<Field, string>> 
 }
 
 export function LeadForm({ variant, className, intro }: { variant: Variant; className?: string; intro?: ReactNode }) {
+  const waNumber = useWhatsappNumber()
   const cfg = CONFIG[variant]
   const uid = useId()
   const honeypot = useRef<HTMLInputElement>(null)
@@ -156,7 +158,7 @@ export function LeadForm({ variant, className, intro }: { variant: Variant; clas
               <Mascot mood="cheer" size={96} animate title="" className="ml-auto shrink-0" />
             </div>
             <a
-              href={waLink(waText)}
+              href={waLink(waText, waNumber)}
               target="_blank"
               rel="noopener noreferrer"
               onClick={() => track('whatsapp_click', { from: `${variant}-form-success` })}
@@ -274,7 +276,7 @@ export function LeadForm({ variant, className, intro }: { variant: Variant; clas
                 {status !== 'sending' && <ArrowRight aria-hidden="true" className="size-4" />}
               </button>
               <a
-                href={waLink(waText)}
+                href={waLink(waText, waNumber)}
                 target="_blank"
                 rel="noopener noreferrer"
                 onClick={() => track('whatsapp_click', { from: `${variant}-form` })}

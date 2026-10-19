@@ -1,7 +1,7 @@
 'use client'
 // ProductCard — catalogue panel card (owner: P1 shop).
-// Light #29 tilt (fine pointer only, via F1 <Tilt>) + #28 inner zoom / #40 front→back-print crossfade on
-// hover/focus. Whole card is one link (stretched title link); wishlist + quick add sit above it.
+// Light #29 tilt (fine pointer only, via F1 <Tilt>) + #28 inner zoom. 2+ images → <ImageCarousel variant="card">
+// (plays while hovered on desktop, gentle auto-advance in view on touch); 1 image + back → #40 crossfade. Whole card is one link (stretched title link); wishlist + quick add sit above it.
 // Quick add only for single-variant, size-less items; otherwise a "Choose size / options" link.
 //
 // PUBLIC PROPS (stable — imported by home sections):
@@ -15,7 +15,7 @@
 //   sizes?           next/image sizes (default grid sizes)
 //   tone?            'paper' | 'ink' — info panel surface (default 'paper')
 //   className?
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ArrowUpRight, RotateCcw } from 'lucide-react'
@@ -26,6 +26,7 @@ import { Tilt } from '@/components/motion/Tilt'
 import { PriceTag } from './PriceTag'
 import { WishlistButton } from './WishlistButton'
 import { AddToCartButton } from './AddToCartButton'
+import { ImageCarousel } from './ImageCarousel'
 import './shop.css'
 
 export interface ProductCardProps {
@@ -71,6 +72,10 @@ export function ProductCard({
   const stage = useRef<HTMLDivElement>(null)
   const front = p.images.find((i) => i.side !== 'back') ?? p.images[0]
   const back = p.images.find((i) => i.side === 'back' && i !== front)
+  // 2+ images → the carousel replaces the front→back crossfade (front first, then the rest in order).
+  const multi = p.images.length > 1
+  const slides = multi && front ? [front, ...p.images.filter((i) => i !== front)] : p.images
+  const [slideSide, setSlideSide] = useState<string | undefined>(slides[0]?.side)
   const href = `/product/${p.slug}`
   const H = headingLevel
   const single = p.variants.length === 1 && !p.sizes?.length && !p.priceOnRequest
@@ -80,7 +85,7 @@ export function ProductCard({
 
   const card = (
     <article
-      data-has-back={back ? '' : undefined}
+      data-has-back={back && !multi ? '' : undefined}
       data-product-card={p.slug}
       className={cn(
         'ted-card @container group relative flex h-full flex-col border-[3px] border-ink shadow-hard',
@@ -95,7 +100,19 @@ export function ProductCard({
         style={{ backgroundColor: p.colorBlock || 'var(--color-lav)' }}
         data-cursor="VIEW"
       >
-        {front ? (
+        {multi ? (
+          <ImageCarousel
+            images={slides}
+            variant="card"
+            aspect="4/5"
+            sizes={sizes}
+            priority={priority}
+            href={href}
+            label={`${p.name} images`}
+            className="absolute inset-0"
+            onIndexChange={(_, img) => setSlideSide(img.side)}
+          />
+        ) : front ? (
           <Image
             src={front.src}
             alt={front.alt}
@@ -110,7 +127,7 @@ export function ProductCard({
             <span className="h-display text-5xl text-ink/70">{p.designTitle}</span>
           </div>
         )}
-        {back && (
+        {back && !multi && (
           <Image
             src={back.src}
             alt=""
@@ -138,7 +155,13 @@ export function ProductCard({
           </span>
         )}
         {back && (
-          <span className="ted-card-flip label pointer-events-none absolute bottom-2 left-2 z-[2] inline-flex items-center gap-1 border-2 border-ink bg-volt px-2 py-1 text-[0.625rem] text-ink">
+          <span
+            data-on={multi && slideSide === 'back' ? '' : undefined}
+            className={cn(
+              'label pointer-events-none absolute bottom-2 left-2 z-[2] inline-flex items-center gap-1 border-2 border-ink bg-volt px-2 py-1 text-[0.625rem] text-ink',
+              multi ? 'ted-card-flip-car' : 'ted-card-flip',
+            )}
+          >
             <RotateCcw aria-hidden="true" className="h-3 w-3" strokeWidth={3} /> Back print
           </span>
         )}

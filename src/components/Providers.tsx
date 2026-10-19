@@ -24,6 +24,9 @@ import { Cursor } from '@/components/motion/Cursor'
 import { prefersReducedMotion, registerGsap } from '@/lib/motion'
 import { initAnalytics } from '@/lib/analytics'
 import { ensureHydrated, useCart } from '@/lib/cart'
+import { SiteSettingsProvider } from '@/components/SiteSettingsProvider'
+
+export { useSiteSettings, useWhatsappNumber } from '@/components/SiteSettingsProvider'
 
 const CartDrawer = dynamic(() => import('@/components/shop/CartDrawer'), { ssr: false, loading: () => null })
 
@@ -124,9 +127,11 @@ export interface ProvidersProps {
   children: ReactNode
   /** accent pairs for useArcTheme (from repo getCollections) */
   arcs?: ArcSwatch[]
+  /** settings.whatsapp from repo getSettings() (Admin → Settings) */
+  whatsapp?: string
 }
 
-export function Providers({ children, arcs = [] }: ProvidersProps) {
+export function Providers({ children, arcs = [], whatsapp = '' }: ProvidersProps) {
   const arcTheme = useArcThemeState(arcs)
   const resetArc = arcTheme.set
   const onRoute = useCallback(() => resetArc(null), [resetArc])
@@ -138,6 +143,7 @@ export function Providers({ children, arcs = [] }: ProvidersProps) {
   }, [])
 
   return (
+    <SiteSettingsProvider whatsapp={whatsapp}>
     <ArcThemeContext.Provider value={arcTheme}>
       <MotionConfig reducedMotion="user">
         <SmoothScroll>
@@ -158,6 +164,7 @@ export function Providers({ children, arcs = [] }: ProvidersProps) {
         </SmoothScroll>
       </MotionConfig>
     </ArcThemeContext.Provider>
+    </SiteSettingsProvider>
   )
 }
 

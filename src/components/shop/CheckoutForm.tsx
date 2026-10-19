@@ -12,6 +12,7 @@ import { z } from 'zod'
 import { DoorIcon } from '@/components/brand/DoorIcon'
 import { submitLead } from '@/lib/leads'
 import { buildOrderMessage, waLink } from '@/lib/whatsapp'
+import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { getAttribution, track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import type { CartItem, CartTotals } from '@/lib/types'
@@ -57,6 +58,7 @@ export interface CheckoutFormProps {
 }
 
 export function CheckoutForm({ items, totals, onBack, onSent, className }: CheckoutFormProps) {
+  const waNumber = useWhatsappNumber()
   const router = useRouter()
   const id = useId()
   const formRef = useRef<HTMLFormElement>(null)
@@ -126,7 +128,7 @@ export function CheckoutForm({ items, totals, onBack, onSent, className }: Check
 
       const ref = lead.id ? `TED-${lead.id.replace(/-/g, '').slice(0, 6).toUpperCase()}` : `TED-${Date.now().toString(36).slice(-6).toUpperCase()}`
       const text = buildOrderMessage({ items, totals, name: v.name, city: v.city, note: v.note, orderRef: ref })
-      const link = waLink(text)
+      const link = waLink(text, waNumber)
 
       // 3) send the waiting tab to WhatsApp
       let opened = false

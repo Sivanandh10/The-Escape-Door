@@ -6,6 +6,7 @@ import gsap from 'gsap'
 import type { Product } from '@/lib/types'
 import { variantPriceLabel } from '@/lib/pricing'
 import { waLink } from '@/lib/whatsapp'
+import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { useCart } from '@/lib/cart'
 import { prefersReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
@@ -78,6 +79,7 @@ function Chips({
 }
 
 export function DropBuy({ product }: { product: Product }) {
+  const waNumber = useWhatsappNumber()
   const variants = product.variants
   const [variantId, setVariantId] = useState(variants[0]?.id ?? '')
   const [size, setSize] = useState<string | null>(null)
@@ -132,7 +134,7 @@ export function DropBuy({ product }: { product: Product }) {
               <span className="inline-block -rotate-1 bg-ink px-2 py-0.5 text-volt">Pick a size first — then it&rsquo;s yours.</span>
             ) : (
               <a
-                href={waLink(chartMsg)}
+                href={waLink(chartMsg, waNumber)}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="focus-ring text-ink/75 underline decoration-2 underline-offset-4 can-hover:hover:text-door"
