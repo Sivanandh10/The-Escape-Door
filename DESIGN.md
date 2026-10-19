@@ -3,7 +3,7 @@
 > One idea: **the site is a living manga volume.** Every scroll is a page turn. Every anime collection is a door into its arc. Ink, screentone and paper are the materials; electric yellow is the hype; the purple door-bracket wordmark is the signature.
 
 ## 1. Style (Part 02)
-**Style:** Manga Neo-Brutalist Pop — thick ink panel borders, hard offsets (no soft drop shadows), flat colour blocks, halftone instead of gradients, type as image. One style only; nothing glassy, nothing soft-gradient, no generic glow.
+**Style:** Part 02 **Neo-Brutalism**, manga edition ("Manga Neo-Brutalist Pop"; comic precedent: playbook build prompt 05 "Web-Slinger", p.100) — thick ink panel borders, hard offsets (no soft drop shadows), flat colour blocks, halftone instead of gradients, type as image. One style only; nothing glassy, nothing soft-gradient, no generic glow.
 
 Rules:
 - Every content block lives in a **panel**: 3–6 px ink border, 10–16 px gutter, occasional diagonal gutter (clip-path) — panels never have rounded corners > 4 px.
@@ -60,8 +60,9 @@ Scale (fluid, clamp): display-xl 18vw (hero/footer), h1 clamp(56px, 11vw, 168px)
 - **Ticker bands (#37)**: yellow on ink and ink on lavender, ±3° rotation, e.g. "YOU ARE MY SPECIAL ✦ PICK YOUR ARC ✦ ドン ✦ CUSTOM MADE ✦".
 
 ## 5. Brand marks (recreations — replace with original files)
-1. **Door-bracket wordmark (leads on this site):** a purple "[" bracket shaped like a door frame; inside it, mini manga panels (screentone, speed lines, a tiny door); "THE ESCAPE DOOR" in tall condensed caps beside it. `public/brand/wordmark.svg` + React component.
-2. **Circle badge:** cream circle, chunky retro rust letters "THE ESCAPE DOOR" around/inside, small door glyph. `public/brand/badge.svg`.
+Seen on their Instagram (docs/references/instagram-post-01.png, instagram-post-06.png, instagram-profile-390.png):
+1. **Door-bracket wordmark (leads on this site):** a muted-lavender/purple square panel filled with grey manga-panel collage (screentone, speed lines — original art); a thick **white "[" door-frame bracket with black outline** on the left; "THE / ESCAPE / DOOR" stepped down diagonally (staircase) in **white heavy italic condensed caps with a thick black outline**. Compact variant: white stacked "THE / ESCAPE / DOOR" (as on their purple Thomso'25 post). `public/brand/wordmark.svg` + React component.
+2. **Circle badge (profile picture):** cream/off-white circle, "THE / ESCAPE / DOOR" in **chunky 1970s rounded-serif letters** (Cooper-Black-like, tight, slightly bouncing baseline) with a **rust → orange grainy fill** (≈ `#B8432A` → `#D9622B`). Used as a "cover stamp" (footer, favicon alt, OG). `public/brand/badge.svg`.
 Both marked `<!-- RECREATION — replace with original vector files -->`.
 
 ## 6. Mascot — "Kado" the door-spirit (original)
@@ -71,6 +72,14 @@ Chibi spirit whose head is a little wooden door (purple frame, yellow knob-eye g
 **Punchy manga timing:** fast anticipation → hard impact → hold. Eases: `expo.out`/`power4.out` for entrances (0.6–1.1 s), `back.out(1.7)` for slams, springs (stiffness 400, damping 28) for UI; UI feedback 150–250 ms; nothing floaty. Impact frames: scale 1.06→1 + 2-frame shake + speed-line burst.
 Every section: **entrance** (panel slam / split-text / ink wipe), **idle** (screentone drift, tickers, mascot bob), **exit** (panel slides away like a page turn).
 `prefers-reduced-motion`: Lenis off, no pinning/scrubbing (sections stack normally), no shake, fades ≤ 200 ms, 3D replaced by poster, tickers static.
+
+## 7b. Lead decisions (after research critic)
+- **Hero 3D:** R3F door portal only on ≥ 1024 px, fine pointer, `deviceMemory ≥ 4` (or unknown) and no reduced-motion. Everyone else gets a **CSS-3D door** (perspective + rotateY panels, halftone light spill) driven by the same ScrollTrigger — same story, near-zero cost. Poster/type is the LCP, never the canvas.
+- **Shop signature = #66** storytelling Add-to-cart (door-cart). Product cards get only a light #29 tilt + #28/#40 back-print crossfade. The FYNSEC-style "peel" (card tips forward revealing a screentone plate + sticker) is used **once**, in the home Squad Grid (S05).
+- **Home "Collections index" (#34, Locomotive-style)** lives inside S02 as the mobile / reduced-motion fallback and as a compact list under the doors.
+- **Home FAQ:** S14 "Questions, answered" (GEO answer blocks) before the Instagram strip, matching the FAQPage schema.
+- **Preloader ≤ 2 s**, first visit per session only; skipped for reduced motion and bots.
+- Body face stays **DM Sans** (DESIGN wins over playbook-notes' Space Grotesk proposal).
 
 ## 8. Section list (home) — technique numbers
 | # | Section | Techniques |
@@ -88,6 +97,7 @@ Every section: **entrance** (panel slam / split-text / ink wipe), **idle** (scre
 | 10 | Fandom Partner Arc — fest timeline + "As seen at" ticker | #16 #37 #13 |
 | 11 | Catch Us Live — upcoming stalls + "Remind me" form | #08 #71 |
 | 12 | Beyond Anime — one door for bookish / Swiftie / HP / Pixar | #02 #18 |
+| 14 | Questions, answered — FAQ answer blocks (GEO) | #49 |
 | 13 | Instagram strip + Footer with giant outline "ESCAPE DOOR" | #37 #47 #28 |
 
 Global: #20 Lenis · #31 cursor ("OPEN" on doors, "ADD" on products) · #53 page transition = manga page-turn / ink wipe · #58 halftone · speed lines tied to scroll velocity · #37 tickers · #29 tilt · reduced-motion path.

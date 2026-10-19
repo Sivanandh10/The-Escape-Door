@@ -1,0 +1,11 @@
+// Public API of the product-art system (pure SVG-string builders, deterministic by slug).
+export { artSpec, resolveArc, ARCS, DEFAULT_ARC } from './arcs'
+export { compositionSvg, productArtSvg, subjectFor, sidesFor, MOCKUP_W, MOCKUP_H, SUBJECT_W, SUBJECT_H, APPAREL } from './compose'
+export type { ArtOptions } from './compose'
+export { teeSvg, hoodieSvg, teeSubject, hoodieSubject, GARMENT_W, GARMENT_H } from './garments'
+export type { GarmentInput } from './garments'
+export { motifSvg, MOTIF_CSS } from './motifs'
+export type { MotifOpts } from './motifs'
+export { backPrint, chestMark } from './prints'
+export { rng, hash } from './rng'
+export type { ArtCollection, ArtMotif, ArtProduct, ArtSide, ArtSpec } from './types'

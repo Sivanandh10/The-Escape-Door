@@ -1,0 +1,10 @@
+// Brand marks, mascot and icons (owner: F3). All server-safe SVG components.
+export { Wordmark, WORDMARK_VIEWBOX } from './Wordmark'
+export type { WordmarkProps, WordmarkVariant } from './Wordmark'
+export { Badge, BADGE_CREAM, BADGE_RUST } from './Badge'
+export type { BadgeProps } from './Badge'
+export { Mascot, MASCOT_MOODS } from './Mascot'
+export type { MascotProps, MascotMood } from './Mascot'
+export { DoorIcon } from './DoorIcon'
+export type { DoorIconProps } from './DoorIcon'
+export { INK_SPLATS } from './splats.generated'

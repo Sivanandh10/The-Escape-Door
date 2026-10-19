@@ -29,8 +29,10 @@ The site is built and working with sensible defaults for each of these. Every de
 6. **Sizes & size chart** for regular, oversized and baby tees, and hoodies (S–XXL? chest measurements?).
 7. **Shipping:** pan-India? Charges? Free-shipping threshold? Delivery time? COD available?
 8. **Returns / exchanges** policy (needed for the FAQ and Product schema `hasMerchantReturnPolicy`).
-9. **Stall dates — which year?** VIT Bhopal 21–28 Feb · IIT Ropar 13–15 Mar · IIT Indore 14–16 Mar. The site shows them as *2027 — dates to be confirmed* and emits Event schema only once you tick "confirmed" in /admin.
-10. **Fest history:** confirm the years for Thomso (3×) and the exact wording you're allowed to use ("Official Fandom Partner"?). Fest logos are **not** used — text names only — unless the fests give written permission.
+9. **Stall dates — which year?** VIT Bhopal 21–28 Feb · IIT Ropar 13–15 Mar · IIT Indore 14–16 Mar. The notebook has no year, so the site shows them **without a year, marked "dates to be confirmed"**, and only emits Event schema once you add the year and tick "confirmed" in /admin.
+10. **Fest history:** Instagram shows "Thomso'25 — back for the 3rd time" *and* a Thomso'26 Fandom Partner post — is it 3× or 4×? The site says **3×** (your brief) until you confirm. Also confirm Alcher Con / Alcheringa (not visible on the public Instagram) and the exact wording you're allowed to use ("Fandom Partner"). Fest logos are **not** used — text names only — unless the fests give written permission.
+10b. **Licensed or fan-made?** Are any designs officially licensed? The site assumes **original fan-inspired designs** (codename product names, no character names in titles, disclaimer in the footer).
+10c. **Cash on delivery?** And why are posters ₹200 when the market is ~₹79 — bigger size / thicker paper? (The site will say why once you tell us.)
 11. **Business details** for the footer and Organization schema: legal/business name, city, public email, GSTIN (optional).
 12. **Real product photos.** All product images are original sample mockups marked *sample — replace with real photo*; upload real photos in /admin → Products.
 13. **Customer photos / reviews.** The site shows "[Customer photo / review]" slots only. Send real ones (with permission) and they'll go live.

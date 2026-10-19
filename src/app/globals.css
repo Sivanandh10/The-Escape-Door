@@ -1,26 +1,435 @@
+/* THE ESCAPE DOOR — design system. Owner: F1.
+   "Manga page come alive": ink, paper, screentone, electric-yellow hype, purple door.
+   Tokens → Tailwind v4 utilities (bg-ink, text-volt, font-display, ease-expo, shadow-hard …).
+   Accent highlight insets are tuned to Anton's cap height (use .accent-text inside body copy). */
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+/* ── custom variants ─────────────────────────────────────────────────────── */
+@custom-variant can-hover (@media (hover: hover) and (pointer: fine));
+
+/* ── tokens ──────────────────────────────────────────────────────────────── */
+@theme {
+  /* core five + support (DESIGN §2) */
+  --color-ink: #0b0b0f;
+  --color-paper: #f4efe6;
+  --color-volt: #ffe14d;
+  --color-volt-hot: #ffe600;
+  --color-lav: #c9b8ff;
+  --color-door: #6d3bff;
+  --color-pink: #ffb8de;
+  --color-hype: #ff2d3d;
+  --color-tone-1: #1a1a20;
+  --color-tone-2: #2b2b33;
+  --color-tone-3: #6e6e78;
+  --color-tone-4: #b9b5ac;
+
+  /* type scale (DESIGN §3) */
+  --text-display-xl: 18vw;
+  --text-display-xl--line-height: 0.82;
+  --text-h1: clamp(56px, 11vw, 168px);
+  --text-h1--line-height: 0.86;
+  --text-h2: clamp(40px, 7vw, 112px);
+  --text-h2--line-height: 0.88;
+  --text-h3: clamp(28px, 3vw, 40px);
+  --text-h3--line-height: 0.95;
+  --text-body: 1.0625rem;
+  --text-body--line-height: 1.55;
+  --text-label: 0.75rem;
+  --text-label--line-height: 1.2;
+
+  /* easing (mirrors EASE / CSS_EASE in src/lib/motion.ts) */
+  --ease-expo: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-punch: cubic-bezier(0.165, 0.84, 0.44, 1);
+  --ease-slam: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  --ease-inout: cubic-bezier(0.65, 0, 0.35, 1);
+  --ease-exit: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-hover: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* hard offset shadows — never blur (DESIGN §1) */
+  --shadow-hard: 6px 6px 0 0 var(--color-ink);
+  --shadow-hard-sm: 3px 3px 0 0 var(--color-ink);
+  --shadow-hard-lg: 10px 10px 0 0 var(--color-ink);
+  --shadow-hard-volt: 6px 6px 0 0 var(--color-volt);
+  --shadow-hard-paper: 6px 6px 0 0 var(--color-paper);
+  --shadow-hard-door: 6px 6px 0 0 var(--color-door);
+
+  --radius-panel: 2px;
+  --breakpoint-xs: 30rem;
+
+  --animate-ticker: ted-ticker var(--ticker-dur, 30s) linear infinite;
+  --animate-tone-drift: ted-tone-drift 18s linear infinite;
+  --animate-bob: ted-bob 2.4s ease-in-out infinite;
+  --animate-blink: ted-blink 1.1s steps(1, end) infinite;
+  --animate-shimmer: ted-shimmer 1.4s linear infinite;
+
+  @keyframes ted-ticker { to { transform: translate3d(-50%, 0, 0); } }
+  @keyframes ted-tone-drift { to { background-position: 120px 60px; } }
+  @keyframes ted-bob { 50% { transform: translateY(-6px); } }
+  @keyframes ted-blink { 50% { opacity: 0; } }
+  @keyframes ted-shimmer { to { background-position: -200% 0, 0 0; } }
 }
 
+/* next/font variables → font utilities (font-display, font-sfx, font-sfx-jp, font-body, font-mono, font-jp) */
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-display: var(--nf-anton), "Anton", "Arial Narrow", Impact, sans-serif;
+  --font-sfx: var(--nf-bangers), "Bangers", Impact, sans-serif;
+  --font-sfx-jp: var(--nf-dela), "Dela Gothic One", var(--nf-noto-jp), sans-serif;
+  --font-body: var(--nf-dm), "DM Sans", system-ui, sans-serif;
+  --font-sans: var(--nf-dm), "DM Sans", system-ui, sans-serif;
+  --font-mono: var(--nf-jbm), "JetBrains Mono", ui-monospace, monospace;
+  --font-jp: var(--nf-noto-jp), "Noto Sans JP", "Hiragino Sans", sans-serif;
+
+  /* per-arc accents set at runtime on <html> or any [data-arc] element (useArcTheme) */
+  --color-arc-a: var(--arc-a);
+  --color-arc-b: var(--arc-b);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* ── runtime vars ────────────────────────────────────────────────────────── */
+:root {
+  --ink: var(--color-ink);
+  --paper: var(--color-paper);
+  --volt: var(--color-volt);
+  --lav: var(--color-lav);
+  --door: var(--color-door);
+  --pink: var(--color-pink);
+  --hype: var(--color-hype);
+  --tone-1: var(--color-tone-1);
+  --tone-2: var(--color-tone-2);
+  --tone-3: var(--color-tone-3);
+  --tone-4: var(--color-tone-4);
+  --arc-a: #6d3bff;
+  --arc-b: #ffe14d;
+  --header-h: 64px;
+  --gutter: 16px;
+  --border-panel: 4px;
+  /* screentone tiles (SVG data-uri; used as masks so they take any colour) */
+  --tone-light: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10'%3E%3Ccircle cx='2.5' cy='2.5' r='1'/%3E%3Ccircle cx='7.5' cy='7.5' r='1'/%3E%3C/svg%3E");
+  --tone-mid: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='8' height='8'%3E%3Ccircle cx='2' cy='2' r='1.25'/%3E%3Ccircle cx='6' cy='6' r='1.25'/%3E%3C/svg%3E");
+  --tone-dense: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='6'%3E%3Ccircle cx='1.5' cy='1.5' r='1.35'/%3E%3Ccircle cx='4.5' cy='4.5' r='1.35'/%3E%3C/svg%3E");
+  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .5 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  /* subtle paper texture for .panel-paper / .grain (DESIGN §4: ~4–6%) */
+  --grain-soft: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 .13 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+@media (min-width: 768px) {
+  :root { --header-h: 72px; --gutter: 24px; }
+}
+
+/* ── base ────────────────────────────────────────────────────────────────── */
+@layer base {
+  html {
+    background: var(--color-ink);
+    color-scheme: dark;
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    scroll-padding-top: calc(var(--header-h) + 16px);
+  }
+  body {
+    min-height: 100dvh;
+    background: var(--color-ink);
+    color: var(--color-paper);
+    font-family: var(--font-body);
+    font-size: var(--text-body);
+    line-height: var(--text-body--line-height);
+    overflow-x: clip;
+  }
+  ::selection { background: var(--color-volt); color: var(--color-ink); }
+  :focus-visible {
+    outline: 3px solid var(--focus-color, var(--color-door));
+    outline-offset: 3px;
+  }
+  /* on purple surfaces the door ring would vanish — swap to volt */
+  .bg-door, [data-focus="volt"] { --focus-color: var(--color-volt); }
+  h1, h2, h3 { text-wrap: balance; }
+  p { text-wrap: pretty; }
+  [lang="ja"] { font-family: var(--font-jp); }
+  button:not(:disabled), [role="button"] { cursor: pointer; }
+  :where(h1, h2) em { font-style: normal; }
+}
+
+/* ── lenis (copied from lenis/dist/lenis.css, v1.3.27) ───────────────────── */
+html.lenis, html.lenis body { height: auto; }
+.lenis:not(.lenis-autoToggle).lenis-stopped { overflow: clip; }
+.lenis [data-lenis-prevent], .lenis [data-lenis-prevent-wheel], .lenis [data-lenis-prevent-touch],
+.lenis [data-lenis-prevent-vertical], .lenis [data-lenis-prevent-horizontal] { overscroll-behavior: contain; }
+.lenis.lenis-smooth iframe { pointer-events: none; }
+.lenis.lenis-autoToggle { transition-property: overflow; transition-duration: 1ms; transition-behavior: allow-discrete; }
+
+/* ── component utilities (work with variants: md:panel, hover:shadow-hard …) ── */
+
+/* thick ink panel, no radius (DESIGN §1) */
+@utility panel {
+  position: relative;
+  border: var(--border-panel) solid var(--color-ink);
+  border-radius: var(--radius-panel);
+}
+@utility panel-paper {
+  position: relative;
+  border: var(--border-panel) solid var(--color-ink);
+  border-radius: var(--radius-panel);
+  background-color: var(--color-paper);
+  background-image: var(--grain-soft);
+  background-size: 160px 160px;
+  color: var(--color-ink);
+}
+@utility panel-ink {
+  position: relative;
+  border: var(--border-panel) solid var(--color-paper);
+  border-radius: var(--radius-panel);
+  background-color: var(--color-ink);
+  color: var(--color-paper);
+}
+
+/* screentone: dot layer painted behind the element's children.
+   Colour = --tone-color (default currentColor), opacity = --tone-opacity. */
+@utility screentone {
+  position: relative;
+  isolation: isolate;
+  &::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background: var(--tone-color, currentColor);
+    opacity: var(--tone-opacity, 0.32);
+    -webkit-mask: var(--tone-tile, var(--tone-mid)) repeat;
+    mask: var(--tone-tile, var(--tone-mid)) repeat;
+    -webkit-mask-size: var(--tone-size, 8px 8px);
+    mask-size: var(--tone-size, 8px 8px);
   }
 }
+@utility screentone-light { --tone-tile: var(--tone-light); --tone-size: 10px 10px; }
+@utility screentone-mid { --tone-tile: var(--tone-mid); --tone-size: 8px 8px; }
+@utility screentone-dense { --tone-tile: var(--tone-dense); --tone-size: 6px 6px; }
+/* plain dotted background (no pseudo) for strips and borders */
+@utility tone-bg {
+  background-image: radial-gradient(circle at center, var(--tone-color, currentColor) 32%, transparent 36%);
+  background-size: var(--tone-step, 6px) var(--tone-step, 6px);
+}
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* outlined display type (#47) */
+@utility outline-text {
+  color: transparent;
+  -webkit-text-stroke: var(--stroke-w, 2px) var(--stroke-c, var(--color-paper));
+  paint-order: stroke fill;
+}
+@utility outline-text-ink { --stroke-c: var(--color-ink); }
+
+/* accent word: volt highlighter block skewed −2deg behind the text.
+   Use <em className="accent"> — or just <em> inside any h1/h2 (auto-styled below). */
+@utility accent {
+  position: relative;
+  z-index: 0;
+  font-style: normal;
+  color: var(--accent-fg, var(--color-ink));
+  padding-inline: 0.08em;
+  white-space: nowrap;
+  -webkit-box-decoration-break: clone;
+  box-decoration-break: clone;
+  &::before {
+    content: "";
+    position: absolute;
+    z-index: -1;
+    inset: var(--accent-inset, 0.25em -0.06em 0.2em);
+    background: var(--accent-bg, var(--color-volt));
+    transform: skewX(-8deg) rotate(-2deg);
+  }
+}
+/* body-copy accent (DM Sans metrics): <em class="accent accent-text"> */
+@utility accent-text { --accent-inset: 0.1em -0.08em 0.02em; }
+@utility accent-lav { --accent-bg: var(--color-lav); }
+@utility accent-pink { --accent-bg: var(--color-pink); }
+@utility accent-arc { --accent-bg: var(--arc-b); }
+@utility accent-door { --accent-bg: var(--color-door); --accent-fg: var(--color-paper); }
+:where(h1, h2) em:not([class*="accent"]) {
+  position: relative;
+  z-index: 0;
+  color: var(--accent-fg, var(--color-ink));
+  padding-inline: 0.08em;
+  white-space: nowrap;
+}
+:where(h1, h2) em:not([class*="accent"])::before {
+  content: "";
+  position: absolute;
+  z-index: -1;
+  inset: var(--accent-inset, 0.25em -0.06em 0.2em);
+  background: var(--accent-bg, var(--color-volt));
+  transform: skewX(-8deg) rotate(-2deg);
+}
+
+/* mono label */
+@utility label {
+  font-family: var(--font-mono);
+  font-size: var(--text-label);
+  line-height: 1.2;
+  font-weight: 500;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+/* JP subtitle under titles (DESIGN §1: small, tracked, 60% opacity) */
+@utility jp-sub {
+  font-family: var(--font-jp);
+  font-weight: 700;
+  font-size: 0.8125rem;
+  letter-spacing: 0.32em;
+  opacity: 0.6;
+}
+
+@utility container-x {
+  width: 100%;
+  max-width: 1440px;
+  margin-inline: auto;
+  padding-inline: var(--gutter);
+}
+@utility section-y {
+  padding-block: clamp(72px, 10vw, 180px);
+}
+@utility focus-ring {
+  &:focus-visible { outline: 3px solid var(--focus-color, var(--color-door)); outline-offset: 3px; }
+}
+/* paper grain on any surface */
+@utility grain {
+  background-image: var(--grain-soft);
+  background-size: 160px 160px;
+}
+/* display heading preset */
+@utility h-display {
+  font-family: var(--font-display);
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: -0.01em;
+  line-height: 0.86;
+}
+/* screentone skeleton shimmer (loading states) */
+@utility skeleton-tone {
+  background-color: var(--color-tone-1);
+  background-image:
+    linear-gradient(100deg, transparent 30%, color-mix(in oklab, var(--color-paper) 12%, transparent) 50%, transparent 70%),
+    radial-gradient(circle at center, var(--color-tone-2) 32%, transparent 36%);
+  background-size: 200% 100%, 6px 6px;
+  animation: var(--animate-shimmer);
+}
+/* hard-press button feel: slams into its shadow on press */
+@utility press {
+  transition: translate 160ms var(--ease-hover), box-shadow 160ms var(--ease-hover), background-color 200ms var(--ease-hover), color 200ms var(--ease-hover);
+  &:active { translate: 3px 3px; box-shadow: 0 0 0 0 var(--color-ink); }
+}
+
+/* ── SFX type (Sfx component) ────────────────────────────────────────────── */
+@layer components {
+.sfx {
+  display: inline-block;
+  line-height: 0.9;
+  white-space: nowrap;
+  transform: skewX(-8deg) rotate(var(--sfx-rot, -6deg));
+  color: var(--sfx-fill, var(--color-volt));
+  -webkit-text-stroke: var(--sfx-stroke-w, 0.1em) var(--sfx-stroke, var(--color-ink));
+  paint-order: stroke fill;
+  text-shadow: 0.07em 0.07em 0 var(--sfx-shadow, var(--color-ink));
+  letter-spacing: 0.02em;
+  user-select: none;
+  pointer-events: none;
+}
+}
+
+/* ── reveal pre-states (JS adds .js on <html>; SplitReveal/Reveal clear data-reveal) ── */
+@media (prefers-reduced-motion: no-preference) {
+  html.js [data-reveal="pending"] {
+    opacity: 0;
+    animation: ted-failsafe 0s linear 3.5s forwards;
+  }
+}
+@keyframes ted-failsafe { to { opacity: 1; } }
+
+/* ── custom cursor (#31): hide the native cursor only while ours is live ── */
+html.has-cursor, html.has-cursor body, html.has-cursor a, html.has-cursor button,
+html.has-cursor [role="button"], html.has-cursor label, html.has-cursor summary { cursor: none; }
+html.has-cursor input, html.has-cursor textarea, html.has-cursor select { cursor: auto; }
+
+/* ── sonner toasts as manga panels ───────────────────────────────────────── */
+[data-sonner-toaster] [data-sonner-toast].ted-toast {
+  border-radius: 2px;
+  border: 3px solid var(--color-ink);
+  background: var(--color-paper);
+  color: var(--color-ink);
+  box-shadow: 5px 5px 0 0 var(--color-ink);
+  font-family: var(--font-body);
+  padding: 14px 16px;
+  gap: 10px;
+}
+[data-sonner-toaster] [data-sonner-toast].ted-toast [data-title] { font-weight: 700; font-size: 0.9375rem; }
+[data-sonner-toaster] [data-sonner-toast].ted-toast [data-description] { color: var(--color-tone-2); font-size: 0.8125rem; }
+[data-sonner-toaster] [data-sonner-toast].ted-toast[data-type="success"] { background: var(--color-volt); }
+[data-sonner-toaster] [data-sonner-toast].ted-toast[data-type="error"] { background: var(--color-pink); }
+[data-sonner-toaster] [data-sonner-toast].ted-toast [data-button] {
+  background: var(--color-ink); color: var(--color-paper); border-radius: 0; font-family: var(--font-mono);
+  text-transform: uppercase; letter-spacing: 0.1em; font-size: 0.6875rem; height: 28px; padding: 0 10px;
+}
+[data-sonner-toaster] [data-sonner-toast].ted-toast [data-close-button] {
+  background: var(--color-paper); border: 2px solid var(--color-ink); color: var(--color-ink);
+}
+
+/* ── #53 manga page-turn ink wipe (React <ViewTransition> in PageTransition) ── */
+::view-transition { pointer-events: none; }
+::view-transition-group(page-sheet) {
+  z-index: 90;
+  animation: ted-sheet 720ms cubic-bezier(0.65, 0, 0.35, 1) both;
+  background-color: var(--color-ink);
+  background-image: radial-gradient(circle at center, var(--color-tone-2) 30%, transparent 34%);
+  background-size: 7px 7px;
+  box-shadow: -14px 0 0 0 var(--color-volt), -22px 0 0 0 var(--color-ink), 14px 0 0 0 var(--color-door), 22px 0 0 0 var(--color-ink);
+}
+::view-transition-old(page-sheet), ::view-transition-new(page-sheet) { animation: none; opacity: 0; }
+::view-transition-old(root) { animation: ted-hold-out 720ms linear both; }
+::view-transition-new(root) { animation: ted-hold-in 720ms linear both; }
+/* the header stays anchored while the page turns */
+::view-transition-group(site-header) { animation: none; z-index: 100; }
+::view-transition-old(site-header) { display: none; }
+::view-transition-new(site-header) { animation: none; }
+/* links tagged transitionTypes={['morph']} (shared-element morphs) skip the ink sheet */
+html:active-view-transition-type(morph)::view-transition-group(page-sheet) { animation: none; opacity: 0; background: none; box-shadow: none; }
+html:active-view-transition-type(morph)::view-transition-old(root) { animation: ted-fade-out 220ms ease-in both; }
+html:active-view-transition-type(morph)::view-transition-new(root) { animation: ted-fade-in 260ms ease-out 80ms both; }
+
+@keyframes ted-sheet {
+  0% { transform: translateX(calc(100vw + 14vh + 40px)) skewX(-12deg); }
+  44%, 56% { transform: translateX(0) skewX(0deg); }
+  100% { transform: translateX(calc(-100vw - 14vh - 40px)) skewX(-12deg); }
+}
+@keyframes ted-hold-out { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
+@keyframes ted-hold-in { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
+@keyframes ted-fade-in { from { opacity: 0; } }
+@keyframes ted-fade-out { to { opacity: 0; } }
+
+/* ── reduced motion (DESIGN §7): static final states, fades ≤ 200 ms ────── */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  ::view-transition-group(page-sheet) { animation: none !important; opacity: 0; background: none; box-shadow: none; }
+  ::view-transition-old(root) { animation: ted-fade-out 150ms ease both !important; }
+  ::view-transition-new(root) { animation: ted-fade-in 150ms ease both !important; }
+}
+
+/* SplitReveal masks: give Anton's tight line-height room so glyphs are not clipped */
+.ted-split .sr-line-mask { padding-block: 0.12em; margin-block: -0.12em; }
+@keyframes ted-tone-mask-drift {
+  to { -webkit-mask-position: 120px 60px, 0 0; mask-position: 120px 60px, 0 0; }
+}
+
+/* Sfx pop: scroll-driven slam where supported (static elsewhere / reduced motion) */
+@supports (animation-timeline: view()) {
+  @media (prefers-reduced-motion: no-preference) {
+    .sfx-pop { animation: ted-sfx-pop linear both; animation-timeline: view(); animation-range: entry 10% cover 35%; }
+  }
+}
+@keyframes ted-sfx-pop {
+  0% { opacity: 0; transform: skewX(-8deg) rotate(var(--sfx-rot, -6deg)) scale(0.2); }
+  60% { opacity: 1; transform: skewX(-8deg) rotate(var(--sfx-rot, -6deg)) scale(1.15); }
+  100% { opacity: 1; transform: skewX(-8deg) rotate(var(--sfx-rot, -6deg)) scale(1); }
 }

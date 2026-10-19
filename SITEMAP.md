@@ -455,3 +455,48 @@ Rules: the fonts and 5 colours come from DESIGN.md, and text is real (rendered b
 - [ ] Footer disclaimer on every page, plus the "Fan-made, **original** designs" block on arc and product pages.
 - [ ] Owner `[CONFIRM]` list: domain · policies (shipping/returns/COD) · the "half-n-half" meaning · whether the bookmark custom price is magnetic-only · custom sticker unit price · poster size · stall years · contact details · founder story · photo permissions · the 11-seed list from CTX.
 - [ ] Post-launch: Search Console (verify, submit sitemap, inspect home) is done by the human for this client site. Also Bing Webmaster + IndexNow and Merchant Center free listings once policies are live.
+
+---
+
+## Critic addenda (2026-10-19, completeness pass)
+
+**Prices.** Every ₹ figure in §2 and §4 was re-checked against `docs/source/NOTEBOOK_TRANSCRIPTION.md` and matches, with one exception:
+- **FAQ #7, "a past order of 350 badges … ₹12 per badge":** OPEN_QUESTIONS lists this line as ambiguous (it could also read "₹350 for 12 pcs"). Render that sentence only after the owner confirms it. Until then, end the answer at "Custom stickers need a minimum of 15 pieces."
+
+**Small fixes (apply these when you implement):**
+1. **FAQ anchors.** FAQ #8 uses `#cosplay`, but §2.10 lists only `#prices #custom #fests #about`. Add `#cosplay` as a fifth group.
+2. **Rule 1 vs rule 5 contradiction.** Rule 1 says not to combine noindex with a canonical. Rule 5 does exactly that for `?q=`. Fix: search results get `robots: { index: false, follow: true }` and **no** canonical.
+3. **Fest names (§2.7 meta, FAQ #10).** The client's own Instagram grid also shows **Zeitgeist 2026 (IIT Ropar)** and **Blithchron 2026 (IIT Gandhinagar)** as "Fandom Partner" collabs (competitors.md §1). Add them to the "Fests we've already opened doors at" text list. The notebook's "IIT Ropar 13–15 March" stall is probably Zeitgeist; [CONFIRM].
+4. **Asset paths must match CONTRACTS.**
+   - Organization `logo` → `/brand/icon-512.png` (F3 ships `public/brand/icon-512.png`, not `logo-512.png`).
+   - Product `image` → `/mockups/{slug}-front.webp` until real photos exist in the Supabase `product-images` bucket.
+   - The §6.2 file-name rule then becomes `{slug}-{view}.webp|avif`.
+5. **sitemap.ts must be data-driven.** DESIGN §2 allows admin-added arcs (Chainsaw Man, Solo Leveling, Haikyuu, Spy x Family). Generate `/arc/*` and `/product/*` from `getCollections()` / `getProducts()`, not from a hard-coded list of 6 arcs. Use the cookie-less Supabase client there, and avoid `new Date()`; see stack-notes §1.5.
+6. **`lastModified = updated_at`.** The CONTRACTS `Product` type has only `createdAt`. Either F2 adds `updatedAt?: string` (the DB column can exist anyway), or `sitemap.ts` falls back to `createdAt`.
+7. **301 rules: how to build them on this stack.** `/shop?category=x` → `/shop/x` and `/shop?arc=x` → `/arc/x` go in `next.config.ts` `redirects()` with `has: [{ type: 'query', key: 'category', value: '(?<cat>[a-z-]+)' }]` and `destination: '/shop/:cat'` (verified in the Next 16 docs, `redirects.md`).
+   - Not via `proxy.ts`. Its matcher is limited to `/admin` and `/auth` (stack-notes §1.10).
+   - Next answers `permanent: true` with a **308**, which search engines treat like a 301.
+   - **Host and www:** set the primary domain in Netlify, which redirects the other host automatically.
+   - **Trailing slash:** Next's default `trailingSlash: false` already redirects `/x/` → `/x`.
+   - Whether a `public/_redirects` file is honoured next to the Next adapter is UNVERIFIED. Prefer the two mechanisms above.
+
+**Home H2 coverage (§2.1 vs DESIGN §8 / CONTRACTS §7).** CONTRACTS gives each of the 13 visible home sections its own H2, but §2.1 has only 7 H2s.
+
+Proposed mapping. **[proposal]** marks new H2 copy that uses only notebook facts.
+
+| Section | H2 |
+|---|---|
+| S02 Choose Arc | Pick your **arc**: Jujutsu Kaisen, One Piece, Naruto and more |
+| S03 Drop | Oversized tees that own the **frame** |
+| S04 Back-Print | **[proposal]** Turn it around: back prints up to 12×15 **inches** |
+| S05 Squad | Every **panel** of the shop: tees to katanas |
+| S06 Wall | **[proposal]** Pin up the **wall**: polaroids 3 for ₹100 |
+| S07 GSM | **[proposal]** Hoodie power **levels**: 280 to 600 GSM |
+| S08 Cosplay | **[proposal]** Props for your next **cosplay** |
+| S09 Forge | Bring your own design to the Custom **Forge** |
+| S10 Partners | **[proposal]** Your fest's Fandom **Partner** |
+| S11 Live | Catch us **live** at your college fest |
+| S12 Beyond | Beyond anime: K-pop, F1, films and **more** |
+| S13 Instagram | **[proposal]** Fresh panels on **Instagram** |
+
+"Questions fans ask us **first**" and the home **FAQPage (3 Qs)** have **no section** in DESIGN or CONTRACTS. Either add a 3-question block (e.g. inside S11 or above the footer), or drop FAQPage from the home schema. §5 forbids FAQ markup that is not visible.
