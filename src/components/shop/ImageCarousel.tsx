@@ -1,5 +1,6 @@
 'use client'
-// ImageCarousel — reusable, accessible product image carousel (owner: P1 shop).
+// ImageCarousel — reusable, accessible product image carousel (owner: P1 shop). Arrows avoid translate
+// centering: the `press` :active translate would override it and drop the click.
 // Native horizontal scroller + CSS scroll-snap (swipe/trackpad for free, compositor-driven = 60fps),
 // prev/next panels, story-style progress pips, ←/→ keys, "2 of 5" slide labels.
 // Autoplay: >1 image, pauses on hover/focus/touch, offscreen (IntersectionObserver ≥50%), hidden tab,

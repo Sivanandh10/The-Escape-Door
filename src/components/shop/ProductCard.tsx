@@ -72,7 +72,7 @@ export function ProductCard({
   const stage = useRef<HTMLDivElement>(null)
   const front = p.images.find((i) => i.side !== 'back') ?? p.images[0]
   const back = p.images.find((i) => i.side === 'back' && i !== front)
-  // 2+ images → the carousel replaces the front→back crossfade (front first, then the rest in order).
+  // 2+ images → the carousel replaces the front→back crossfade (front first, then the rest in order)
   const multi = p.images.length > 1
   const slides = multi && front ? [front, ...p.images.filter((i) => i !== front)] : p.images
   const [slideSide, setSlideSide] = useState<string | undefined>(slides[0]?.side)
