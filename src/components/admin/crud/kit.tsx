@@ -4,7 +4,8 @@
 import { useEffect, useId, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
-import { FlaskConical, Search, X } from 'lucide-react'
+import { Eye, FlaskConical, Search, X } from 'lucide-react'
+import { READONLY_NOTE } from '../AdminContext'
 import { AdminSkeleton } from '../EmptyState'
 import { ErrorState } from '../ErrorState'
 import { cn } from '@/lib/utils'
@@ -13,8 +14,19 @@ import { adminBtn, adminInput, adminLabel } from '../ui'
 import { setSandbox, type CrudMode, type CrudStatus } from './data'
 
 // ---------------------------------------------------------------- sandbox switch (demo only)
-export function SandboxSwitch({ mode }: { mode: CrudMode }) {
-  if (mode === 'live') return null
+export function SandboxSwitch({ mode, readOnly }: { mode: CrudMode; readOnly?: boolean }) {
+  if (mode === 'live') {
+    if (!readOnly) return null
+    return (
+      <span
+        role="status"
+        title={READONLY_NOTE}
+        className="inline-flex min-h-11 items-center gap-2 border-2 border-lav bg-lav/10 px-3 font-mono text-[11px] font-bold uppercase tracking-[0.14em] text-lav"
+      >
+        <Eye aria-hidden className="size-4" /> View only
+      </span>
+    )
+  }
   const on = mode === 'sandbox'
   return (
     <button
@@ -364,10 +376,10 @@ export function issuesToErrors(issues: ReadonlyArray<{ path: ReadonlyArray<Prope
 }
 
 /** Drawer footer: save + cancel with saving state. */
-export function SaveBar({ saving, dirty, onSave, onCancel, extra, mode }: { saving: boolean; dirty: boolean; onSave: () => void; onCancel: () => void; extra?: ReactNode; mode: CrudMode }) {
+export function SaveBar({ saving, dirty, onSave, onCancel, extra, mode, readOnly }: { saving: boolean; dirty: boolean; onSave: () => void; onCancel: () => void; extra?: ReactNode; mode: CrudMode; readOnly?: boolean }) {
   return (
     <>
-      <button type="button" onClick={onSave} disabled={saving} className={adminBtn({ variant: 'primary' })}>
+      <button type="button" onClick={onSave} disabled={saving || readOnly} title={readOnly ? READONLY_NOTE : undefined} className={adminBtn({ variant: 'primary' })}>
         {saving ? <span className="inline-block size-3.5 animate-spin border-2 border-ink border-t-transparent" aria-hidden /> : null}
         {saving ? 'Saving…' : mode === 'sandbox' ? 'Save (sandbox)' : 'Save'}
       </button>

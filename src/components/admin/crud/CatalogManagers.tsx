@@ -9,7 +9,7 @@ import { ArcMotif } from '@/components/fx/ArcMotif'
 import { cn } from '@/lib/utils'
 import { AdminPage, AdminPanel } from '../AdminPage'
 import { adminBtn, adminPill } from '../ui'
-import { explainDemo, getAdminClient, uploadProductImage, useCrud } from './data'
+import { explainDemo, explainReadOnly, getAdminClient, uploadProductImage, useCrud } from './data'
 import {
   collectionCfg, eventCfg, instaCfg, partnershipCfg,
   type AdminCollection, type AdminEvent, type AdminInsta, type AdminPartnership,
@@ -48,9 +48,9 @@ function DoorPreview({ c }: { c: AdminCollection }) {
 }
 
 export function CollectionsManager({ initial }: { initial: AdminCollection[] }) {
-  const crud = useCrud(collectionCfg, initial)
+  const crud = useCrud(collectionCfg, initial, { perm: 'catalog.edit' })
   return (
-    <AdminPage no="07" kicker={`Catalogue · ${crud.rows.length} arcs`} title={<>Arc <em>doors</em></>} jp="アーク · コレクション" description="Each collection is a door on the home page. Colours recolour the whole page when a visitor opens it." actions={<SandboxSwitch mode={crud.mode} />}>
+    <AdminPage no="07" kicker={`Catalogue · ${crud.rows.length} arcs`} title={<>Arc <em>doors</em></>} jp="アーク · コレクション" description="Each collection is a door on the home page. Colours recolour the whole page when a visitor opens it." actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}>
       <EntityManager<AdminCollection>
         crud={crud}
         caption="Collections"
@@ -113,10 +113,10 @@ const eventSchema = z.object({
 const partnerSchema = z.object({ fest: z.string().trim().min(2, 'Fest name').max(80), role: z.string().max(80), years: z.string().max(40) })
 
 export function EventsManager({ events, partners }: { events: AdminEvent[]; partners: AdminPartnership[] }) {
-  const ev = useCrud(eventCfg, events)
-  const pt = useCrud(partnershipCfg, partners)
+  const ev = useCrud(eventCfg, events, { perm: 'catalog.edit' })
+  const pt = useCrud(partnershipCfg, partners, { perm: 'catalog.edit' })
   return (
-    <AdminPage no="08" kicker="Catalogue · stalls & fests" title={<>Events &amp; <em>partners</em></>} jp="イベント · パートナー" description="Upcoming stalls feed “Catch us live”; partnerships feed the Fandom Partner timeline." actions={<SandboxSwitch mode={ev.mode} />}>
+    <AdminPage no="08" kicker="Catalogue · stalls & fests" title={<>Events &amp; <em>partners</em></>} jp="イベント · パートナー" description="Upcoming stalls feed “Catch us live”; partnerships feed the Fandom Partner timeline." actions={<SandboxSwitch mode={ev.mode} readOnly={ev.readOnly} />}>
       <AdminPanel index={0} title={<>Stalls &amp; <em className="accent">pop-ups</em></>} jp="イベント">
         <EntityManager<AdminEvent>
           crud={ev}
@@ -220,9 +220,9 @@ function ImageInput({ value, onChange, error, folder }: { value: string; onChang
 export { ImageInput }
 
 export function InstagramManager({ initial }: { initial: AdminInsta[] }) {
-  const crud = useCrud(instaCfg, initial)
+  const crud = useCrud(instaCfg, initial, { perm: 'catalog.edit' })
   return (
-    <AdminPage no="09" kicker={`Site · ${crud.rows.length} posts`} title={<>Insta <em>strip</em></>} jp="インスタ" description="Posts shown in the home Instagram strip. Empty = the designed “follow us” state. Nothing embeds Instagram's scripts." actions={<SandboxSwitch mode={crud.mode} />}>
+    <AdminPage no="09" kicker={`Site · ${crud.rows.length} posts`} title={<>Insta <em>strip</em></>} jp="インスタ" description="Posts shown in the home Instagram strip. Empty = the designed “follow us” state. Nothing embeds Instagram's scripts." actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}>
       <EntityManager
         crud={crud}
         caption="Posts"
@@ -263,8 +263,9 @@ const settingsSchema = z.object({
 })
 
 export function SettingsManager({ initial }: { initial: SiteSettings }) {
-  const crud = useCrud(collectionCfg, [])
+  const crud = useCrud(collectionCfg, [], { perm: 'settings.edit' })
   const mode = crud.mode
+  const readOnly = crud.readOnly
   const [s, setS] = useState<SiteSettings>(initial)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
@@ -280,6 +281,7 @@ export function SettingsManager({ initial }: { initial: SiteSettings }) {
     }
     setErrors({})
     if (mode === 'demo') return explainDemo()
+    if (readOnly) return explainReadOnly()
     if (mode === 'sandbox') { setDirty(false); return toast.success('Settings saved', { description: 'Sandbox — local only.' }) }
     setSaving(true)
     const { error } = await getAdminClient()!.from('settings').upsert({ key: 'site', value: s })
@@ -298,8 +300,8 @@ export function SettingsManager({ initial }: { initial: SiteSettings }) {
       jp="設定"
       description="Hero copy, the announcement banner, ticker words and the WhatsApp number orders go to."
       actions={<>
-        <SandboxSwitch mode={mode} />
-        <button type="button" onClick={save} disabled={saving} className={adminBtn()}>{saving ? 'Saving…' : 'Save settings'}</button>
+        <SandboxSwitch mode={mode} readOnly={readOnly} />
+        <button type="button" onClick={save} disabled={saving || readOnly} className={adminBtn()}>{saving ? 'Saving…' : 'Save settings'}</button>
         {dirty && <span className="label text-[10px] text-volt">● Unsaved</span>}
       </>}
     >

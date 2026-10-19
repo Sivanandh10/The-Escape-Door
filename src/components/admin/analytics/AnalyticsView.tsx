@@ -14,17 +14,20 @@ import type { AnalyticsSnapshot, Ranked, SrcRow } from './types'
 
 const nf = new Intl.NumberFormat('en-IN')
 
-function rankedCols(label: string, unit: string, total: number, mono = false): DataTableColumn<Ranked>[] {
+function rankedCols(label: string, unit: string, total: number, mono = false, extraHeader?: string): DataTableColumn<Ranked>[] {
   return [
     { id: 'label', header: label, cell: (r) => <span className={cn(mono && 'font-mono text-[13px]', 'break-all')}>{r.label}</span>, sortValue: (r) => r.label },
     { id: 'value', header: unit, align: 'right', cell: (r) => <span className="font-mono font-bold tabular-nums">{nf.format(r.value)}</span>, sortValue: (r) => r.value },
+    ...(extraHeader
+      ? [{ id: 'extra', header: extraHeader, align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.extra ?? 0)}</span>, sortValue: (r) => r.extra ?? 0 } satisfies DataTableColumn<Ranked>]
+      : []),
     { id: 'share', header: 'Share', align: 'right', cell: (r) => <span className="font-mono tabular-nums text-paper/65">{total ? ((r.value / total) * 100).toFixed(1) : '0'}%</span>, sortValue: (r) => r.value },
   ]
 }
 
 const srcCols: DataTableColumn<SrcRow>[] = [
   { id: 'src', header: 'src', cell: (r) => <span className="font-mono font-bold text-volt">{r.src}</span>, sortValue: (r) => r.src },
-  { id: 'visits', header: 'Visits', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.visits)}</span>, sortValue: (r) => r.visits },
+  { id: 'visits', header: 'Visits (sessions)', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.visits)}</span>, sortValue: (r) => r.visits },
   { id: 'uniques', header: 'Uniques', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.uniques)}</span>, sortValue: (r) => r.uniques },
   { id: 'leads', header: 'Leads', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.leads)}</span>, sortValue: (r) => r.leads },
   { id: 'orders', header: 'Orders', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.orders)}</span>, sortValue: (r) => r.orders },
@@ -46,7 +49,7 @@ export function AnalyticsView({ s }: { s: AnalyticsSnapshot }) {
 
       <div className="grid gap-6 xl:grid-cols-2">
         <AdminPanel id="pages" index={1} title="Pages" jp="ページ">
-          <DataTable caption="Top pages" rows={s.topPages} rowKey={(r) => r.key} columns={rankedCols('Path', 'Views', sum(s.topPages), true)} initialSort={{ id: 'value', dir: 'desc' }} pageSize={10} dense />
+          <DataTable caption="Top pages" rows={s.topPages} rowKey={(r) => r.key} columns={rankedCols('Path', 'Views', sum(s.topPages), true, 'Visitors')} initialSort={{ id: 'value', dir: 'desc' }} pageSize={10} dense />
         </AdminPanel>
         <AdminPanel id="sources" index={2} title="Sources" jp="流入元">
           <DataTable caption="Traffic sources" rows={s.sources} rowKey={(r) => r.key} columns={rankedCols('Source', 'Sessions', sum(s.sources), true)} initialSort={{ id: 'value', dir: 'desc' }} pageSize={10} dense />

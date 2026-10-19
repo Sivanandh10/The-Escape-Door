@@ -7,8 +7,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { isSupabaseConfigured, supabaseBrowser } from '@/lib/supabase/client'
-import { revalidateCatalog } from './actions'
+import { deleteRows, revalidateCatalog, type DeletableTable } from './actions'
 import type { TAGS } from '@/lib/data/repo'
+import type { Perm } from '@/lib/admin/permissions'
+import { DELETE_LOCK_NOTE, READONLY_NOTE, useCan, useCanDelete } from '../AdminContext'
 
 export type Row = Record<string, unknown>
 export type CrudMode = 'live' | 'demo' | 'sandbox'
@@ -49,6 +51,11 @@ export function explainDemo() {
   })
 }
 
+/** Live, but the member's role can't write here (RLS would refuse anyway). */
+export function explainReadOnly() {
+  toast('View only — nothing changed', { description: READONLY_NOTE, id: 'readonly-block' })
+}
+
 async function revalidate(tags?: TagKey[]) {
   if (!tags?.length) return
   try {
@@ -81,6 +88,10 @@ export interface CrudConfig<T> {
 
 export interface Crud<T> {
   mode: CrudMode
+  /** live, but the member's role lacks the write permission → edit controls disabled, writes refused */
+  readOnly: boolean
+  /** hierarchy rule: only the superadmin deletes. false → delete buttons show locked (server + RLS refuse too) */
+  canDelete: boolean
   status: CrudStatus
   error: string | null
   rows: T[]
@@ -97,6 +108,8 @@ export interface Crud<T> {
     onCommit: () => Promise<void>
     disabled: boolean
     disabledReason?: string
+    /** not the superadmin → lock icon + "Only the superadmin can delete" */
+    locked: boolean
   }
   reorder: (keys: string[]) => Promise<boolean>
   keyOf: (t: T) => string
@@ -104,14 +117,25 @@ export interface Crud<T> {
   saveMany: (items: T[]) => Promise<boolean>
 }
 
-export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
+export interface CrudOptions {
+  /** permission needed to write (e.g. 'leads.edit'). Without it the manager is view-only. */
+  perm?: Perm
+}
+
+export function useCrud<T>(cfg: CrudConfig<T>, initial: T[], opts?: CrudOptions): Crud<T> {
   const mode = useCrudMode()
+  const allowed = useCan(opts?.perm ?? 'dashboard.view')
+  const readOnly = mode === 'live' && !!opts?.perm && !allowed
+  const mayDelete = useCanDelete()
+  const canDelete = mode !== 'live' || mayDelete
   const cfgRef = useRef(cfg)
+  // eslint-disable-next-line react-hooks/refs -- latest-config ref, read only inside callbacks
   cfgRef.current = cfg
   const keyOf = useCallback((t: T) => String((t as Record<string, unknown>)[cfgRef.current.pk === 'slug' ? 'slug' : 'id']), [])
 
   const [rows, setRows] = useState<T[]>(initial)
   const rowsRef = useRef(rows)
+  // eslint-disable-next-line react-hooks/refs -- latest-rows ref for optimistic rollback, read only inside callbacks
   rowsRef.current = rows
   const [status, setStatus] = useState<CrudStatus>(mode === 'live' ? 'loading' : 'ready')
   const [error, setError] = useState<string | null>(null)
@@ -120,6 +144,7 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
   useEffect(() => {
     const sb = getAdminClient()
     if (!sb) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- demo/sandbox: nothing to fetch
       setStatus('ready')
       return
     }
@@ -169,6 +194,10 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
         explainDemo()
         return false
       }
+      if (readOnly) {
+        explainReadOnly()
+        return false
+      }
       const before = rowsRef.current
       items.forEach(applyLocal)
       if (mode === 'sandbox') return true
@@ -182,13 +211,17 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
       void revalidate(cfgRef.current.tags)
       return true
     },
-    [mode, applyLocal],
+    [mode, readOnly, applyLocal],
   )
 
   const save = useCallback(
     async (item: T, opts?: { quiet?: boolean }): Promise<boolean> => {
       if (mode === 'demo') {
         explainDemo()
+        return false
+      }
+      if (readOnly) {
+        explainReadOnly()
         return false
       }
       const before = rowsRef.current
@@ -209,7 +242,7 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
       if (!opts?.quiet) toast.success(`Saved “${cfgRef.current.label(item)}”`)
       return true
     },
-    [mode, applyLocal],
+    [mode, readOnly, applyLocal],
   )
 
   const update = useCallback(
@@ -218,6 +251,10 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
       if (!cur) return false
       if (mode === 'demo') {
         explainDemo()
+        return false
+      }
+      if (readOnly) {
+        explainReadOnly()
         return false
       }
       const next = fn(cur)
@@ -240,7 +277,7 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
       if (opts?.success) toast.success(opts.success)
       return true
     },
-    [mode, applyLocal, keyOf],
+    [mode, readOnly, applyLocal, keyOf],
   )
 
   const shredProps = useCallback(
@@ -248,10 +285,14 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
       const item = rowsRef.current.find((r) => keyOf(r) === key)
       const itemLabel = item ? cfgRef.current.label(item) : 'item'
       let idx = -1
+      const locked = !canDelete
       return {
         itemLabel,
-        disabled: mode === 'demo',
-        disabledReason: mode === 'demo' ? 'Demo mode — deleting is switched off. Try sandbox to rehearse it.' : undefined,
+        locked,
+        disabled: mode === 'demo' || locked || readOnly,
+        disabledReason: mode === 'demo'
+          ? 'Demo mode — deleting is switched off. Try sandbox to rehearse it.'
+          : locked ? DELETE_LOCK_NOTE : readOnly ? READONLY_NOTE : undefined,
         onConfirm: () => {
           idx = rowsRef.current.findIndex((r) => keyOf(r) === key)
           setRows((rs) => rs.filter((r) => keyOf(r) !== key))
@@ -268,15 +309,13 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
         },
         onCommit: async () => {
           if (mode !== 'live') return
-          const sb = getAdminClient()
-          if (!sb) return
-          const { error: e } = await sb.from(cfgRef.current.table).delete().eq(cfgRef.current.pk, key)
-          if (e) throw e
-          void revalidate(cfgRef.current.tags)
+          // superadmin-only server action (re-checks the session, then deletes under RLS + revalidates tags)
+          const r = await deleteRows(cfgRef.current.table as DeletableTable, [key])
+          if (!r.ok) throw new Error(r.error)
         },
       }
     },
-    [mode, keyOf],
+    [mode, readOnly, canDelete, keyOf],
   )
 
   const reorder = useCallback(
@@ -285,6 +324,10 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
       if (!set) return false
       if (mode === 'demo') {
         explainDemo()
+        return false
+      }
+      if (readOnly) {
+        explainReadOnly()
         return false
       }
       const before = rowsRef.current
@@ -303,12 +346,12 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[]): Crud<T> {
       void revalidate(cfgRef.current.tags)
       return true
     },
-    [mode, keyOf],
+    [mode, readOnly, keyOf],
   )
 
   return useMemo(
-    () => ({ mode, status, error, rows, reload, save, update, shredProps, reorder, keyOf, saveMany }),
-    [mode, status, error, rows, reload, save, update, shredProps, reorder, keyOf, saveMany],
+    () => ({ mode, readOnly, canDelete, status, error, rows, reload, save, update, shredProps, reorder, keyOf, saveMany }),
+    [mode, readOnly, canDelete, status, error, rows, reload, save, update, shredProps, reorder, keyOf, saveMany],
   )
 }
 

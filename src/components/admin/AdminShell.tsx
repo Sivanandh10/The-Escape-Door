@@ -7,14 +7,15 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
-  CalendarDays, ChartLine, DoorOpen, ExternalLink, Images, Inbox, LayoutDashboard, LogOut, Menu, Package,
-  QrCode, Settings, Shirt, X, type LucideIcon,
+  CalendarDays, ChartLine, DoorOpen, ExternalLink, Images, Inbox, LayoutDashboard, Lock, LogOut, Menu, Package,
+  QrCode, Settings, Shirt, UsersRound, X, type LucideIcon,
 } from 'lucide-react'
 import { Wordmark } from '@/components/brand'
 import { cn } from '@/lib/utils'
 import { useReducedMotion } from '@/lib/motion'
+import { PERMS, ROLE_META, type Perm, type Role } from '@/lib/admin/permissions'
 import { AdminProvider } from './AdminContext'
-import { ADMIN_NAV, adminNavFor, type AdminNavItem } from './nav'
+import { adminNavFor, navFor, type AdminNavGroup, type AdminNavItem } from './nav'
 
 const ICONS: Record<AdminNavItem['icon'], LucideIcon> = {
   dashboard: LayoutDashboard,
@@ -27,6 +28,7 @@ const ICONS: Record<AdminNavItem['icon'], LucideIcon> = {
   events: CalendarDays,
   instagram: Images,
   settings: Settings,
+  team: UsersRound,
 }
 
 export interface AdminShellProps {
@@ -38,18 +40,31 @@ export interface AdminShellProps {
   signOutAction?: () => Promise<void>
   /** render children without chrome (login screen) */
   bare?: boolean
+  /** team role of the signed-in member (null in demo mode) */
+  role?: Role | null
+  /** effective permissions; the sidebar only lists sections the member can open (demo = all) */
+  perms?: readonly Perm[]
+  displayName?: string | null
+  isSuperadmin?: boolean
+  isProtected?: boolean
 }
 
-export function AdminShell({ children, demo, email = null, signOutAction, bare }: AdminShellProps) {
+export function AdminShell({
+  children, demo, email = null, signOutAction, bare, role = null, perms = PERMS, displayName = null, isSuperadmin = false, isProtected = false,
+}: AdminShellProps) {
   const pathname = usePathname() ?? '/admin'
   const isLogin = pathname.startsWith('/admin/login')
   const [open, setOpen] = useState(false)
+  const groups = navFor(demo ? PERMS : perms)
+  const ctx = { demo, email, role, perms: demo ? PERMS : perms, isSuperadmin }
+  const who: Who = { email, role, displayName, isProtected, demo }
 
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- close the mobile sheet on route change
   useEffect(() => setOpen(false), [pathname])
 
   if (bare || isLogin) {
     return (
-      <AdminProvider value={{ demo, email }}>
+      <AdminProvider value={ctx}>
         <div data-admin-shell="" className="min-h-dvh bg-ink text-paper">
           {children}
         </div>
@@ -60,15 +75,15 @@ export function AdminShell({ children, demo, email = null, signOutAction, bare }
   const current = adminNavFor(pathname)
 
   return (
-    <AdminProvider value={{ demo, email }}>
+    <AdminProvider value={ctx}>
       <div data-admin-shell="" className="min-h-dvh bg-ink text-paper lg:grid lg:grid-cols-[272px_minmax(0,1fr)]">
         {/* ── desktop sidebar ───────────────────────────── */}
         <aside className="sticky top-0 hidden h-dvh flex-col border-r-4 border-paper/10 bg-[#0e0e13] lg:flex" aria-label="Admin">
           <SidebarBrand demo={demo} />
           <nav aria-label="Admin sections" className="min-h-0 flex-1 overflow-y-auto px-3 pb-4" data-lenis-prevent="">
-            <NavGroups pathname={pathname} layoutId="admin-nav-desk" />
+            <NavGroups groups={groups} pathname={pathname} layoutId="admin-nav-desk" />
           </nav>
-          <SidebarFoot email={email} demo={demo} signOutAction={signOutAction} />
+          <SidebarFoot who={who} signOutAction={signOutAction} />
         </aside>
 
         {/* ── main column ───────────────────────────────── */}
@@ -78,7 +93,7 @@ export function AdminShell({ children, demo, email = null, signOutAction, bare }
           <div className="mx-auto w-full max-w-[1400px] px-4 pb-24 pt-6 sm:px-6 lg:px-10 lg:pt-10">{children}</div>
         </div>
 
-        <MobileSheet open={open} onClose={() => setOpen(false)} pathname={pathname} email={email} demo={demo} signOutAction={signOutAction} />
+        <MobileSheet open={open} onClose={() => setOpen(false)} pathname={pathname} groups={groups} who={who} signOutAction={signOutAction} />
       </div>
     </AdminProvider>
   )
@@ -109,12 +124,12 @@ function SidebarBrand({ demo }: { demo: boolean }) {
   )
 }
 
-function NavGroups({ pathname, layoutId, onNavigate }: { pathname: string; layoutId: string; onNavigate?: () => void }) {
+function NavGroups({ groups, pathname, layoutId, onNavigate }: { groups: AdminNavGroup[]; pathname: string; layoutId: string; onNavigate?: () => void }) {
   const current = adminNavFor(pathname)
   const reduced = useReducedMotion()
   return (
     <>
-      {ADMIN_NAV.map((group) => (
+      {groups.map((group) => (
         <div key={group.label} className="mt-4 first:mt-0">
           <p className="label px-3 pb-1.5 text-[10px] text-paper/40">{group.label}</p>
           <ul className="space-y-0.5">
@@ -192,9 +207,46 @@ function SignOutButton({ signOutAction, className }: { signOutAction?: () => Pro
   )
 }
 
-function SidebarFoot({ email, demo, signOutAction }: { email: string | null; demo: boolean; signOutAction?: () => Promise<void> }) {
+interface Who {
+  email: string | null
+  role: Role | null
+  displayName: string | null
+  isProtected: boolean
+  demo: boolean
+}
+
+/** Signed-in member's role badge. SUPERADMIN = volt with a lock (protected at the database level). */
+function RoleBadge({ role, isProtected }: { role: Role; isProtected: boolean }) {
+  const meta = ROLE_META[role]
+  const tone: Record<string, string> = {
+    volt: 'border-ink bg-volt text-ink shadow-[3px_3px_0_var(--color-door)]',
+    door: 'border-ink bg-door text-paper',
+    lav: 'border-ink bg-lav text-ink',
+    pink: 'border-ink bg-pink text-ink',
+    muted: 'border-paper/25 bg-tone-2 text-paper/80',
+  }
+  return (
+    <span
+      className={cn('inline-flex items-center gap-1.5 border-2 px-2 py-0.5 font-mono text-[10.5px] font-bold uppercase tracking-[0.14em]', tone[meta.tone])}
+      title={isProtected ? 'Protected superadmin — can’t be edited or removed' : meta.description}
+    >
+      {(role === 'superadmin' || isProtected) && <Lock aria-hidden="true" className="size-3" />}
+      {meta.label}
+      <span lang="ja" className="font-jp text-[9.5px] opacity-70">{meta.jp}</span>
+    </span>
+  )
+}
+
+function SidebarFoot({ who, signOutAction }: { who: Who; signOutAction?: () => Promise<void> }) {
+  const { email, demo, role, displayName, isProtected } = who
   return (
     <div className="border-t-2 border-paper/10 px-5 py-4">
+      {role && (
+        <div className="mb-2 flex items-center gap-2">
+          <RoleBadge role={role} isProtected={isProtected} />
+        </div>
+      )}
+      {displayName && <p className="truncate text-[13px] font-semibold text-paper/85">{displayName}</p>}
       {email ? (
         <p className="truncate font-mono text-[11px] text-paper/60" title={email}>
           {email}
@@ -256,8 +308,8 @@ function MobileBar({ current, onMenu }: { current?: AdminNavItem; onMenu: () => 
 }
 
 function MobileSheet({
-  open, onClose, pathname, email, demo, signOutAction,
-}: { open: boolean; onClose: () => void; pathname: string; email: string | null; demo: boolean; signOutAction?: () => Promise<void> }) {
+  open, onClose, pathname, groups, who, signOutAction,
+}: { open: boolean; onClose: () => void; pathname: string; groups: AdminNavGroup[]; who: Who; signOutAction?: () => Promise<void> }) {
   const panelRef = useRef<HTMLDivElement>(null)
   const reduced = useReducedMotion()
 
@@ -308,7 +360,7 @@ function MobileSheet({
             transition={reduced ? { duration: 0.15 } : { type: 'spring', stiffness: 420, damping: 40 }}
           >
             <div className="flex items-start justify-between pr-3">
-              <SidebarBrand demo={demo} />
+              <SidebarBrand demo={who.demo} />
               <button
                 type="button"
                 onClick={onClose}
@@ -319,9 +371,9 @@ function MobileSheet({
               </button>
             </div>
             <nav aria-label="Admin sections" className="min-h-0 flex-1 overflow-y-auto px-3 pb-4" data-lenis-prevent="">
-              <NavGroups pathname={pathname} layoutId="admin-nav-sheet" onNavigate={onClose} />
+              <NavGroups groups={groups} pathname={pathname} layoutId="admin-nav-sheet" onNavigate={onClose} />
             </nav>
-            <SidebarFoot email={email} demo={demo} signOutAction={signOutAction} />
+            <SidebarFoot who={who} signOutAction={signOutAction} />
           </motion.div>
         </div>
       )}

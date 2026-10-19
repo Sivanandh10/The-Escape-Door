@@ -1,9 +1,17 @@
 // First-party, privacy-light analytics (client). Owner: F2.
 // → POST batches to NEXT_PUBLIC_TRACK_ENDPOINT (default /.netlify/functions/track, which adds
 //   country/region/city from Netlify context.geo and never stores IPs). CONTRACTS §10.4/§10.5.
-// Anonymous random visitor id (localStorage) + session id (sessionStorage). No fingerprinting.
-// Honours Do-Not-Track / Global Privacy Control. track() never throws; in `next dev` the
-// endpoint 404s and that is swallowed.
+// Anonymous random visitor id (localStorage) + rolling session id (localStorage, shared by tabs).
+// No fingerprinting. Honours Do-Not-Track / Global Privacy Control. track() never throws; in
+// `next dev` the endpoint 404s and that is swallowed.
+//
+// Honest counting (what the admin dashboard calls a visit / unique visitor / page view):
+// - Visit = session. A session ends after 30 min without activity or when the local day changes.
+//   Passive events (scroll_depth, page_leave) keep a live session alive but never start one.
+// - Page view: the same path in the same session is recorded once per 30 min, so reloads,
+//   back/forward and React re-mounts don't add views. A different page is a new view, same visit.
+// - Never tracked: /admin/*, /lab/*, /api/*. Opening any /admin page marks this browser as staff
+//   (localStorage 'ted-staff'='1') and nothing is tracked on it after that. /?track=1 clears it.
 import type { Attribution } from './types'
 
 export type AnalyticsEvent =
@@ -13,11 +21,19 @@ export type AnalyticsEvent =
 
 type Props = Record<string, string | number | boolean | null | undefined>
 
-interface QueuedEvent { name: string; path: string; ts: number; props?: Props }
+interface QueuedEvent { name: string; path: string; ts: number; props?: Props; sid: string }
 
 const ENDPOINT = process.env.NEXT_PUBLIC_TRACK_ENDPOINT || '/.netlify/functions/track'
 const VID_KEY = 'ted-vid'
-const SID_KEY = 'ted-sid'
+const SESS_KEY = 'ted-sess'
+const PV_KEY = 'ted-pv'
+const STAFF_KEY = 'ted-staff'
+const SESSION_IDLE_MS = 30 * 60 * 1000
+const PV_DEDUPE_MS = 30 * 60 * 1000
+/** Events that describe an existing page view; they never start a session (only keep a live one alive). */
+const PASSIVE = new Set(['scroll_depth', 'page_leave'])
+const EXCLUDED_PATH = /^\/(admin|lab|api)(\/|$)/
+const ADMIN_PATH = /^\/admin(\/|$)/
 const ATTR_KEY = 'ted-attr'
 const MAX_BATCH = 20
 const FLUSH_MS = 5000
@@ -30,13 +46,15 @@ function safeGet(store: 'local' | 'session', k: string): string | null {
 function safeSet(store: 'local' | 'session', k: string, v: string): void {
   try { (store === 'local' ? window.localStorage : window.sessionStorage).setItem(k, v) } catch { /* private mode */ }
 }
+function safeRemove(store: 'local' | 'session', k: string): void {
+  try { (store === 'local' ? window.localStorage : window.sessionStorage).removeItem(k) } catch { /* private mode */ }
+}
 function randomId(): string {
   try { if (crypto?.randomUUID) return crypto.randomUUID() } catch { /* old browsers */ }
   return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`
 }
 
 let memVid = ''
-let memSid = ''
 /** Anonymous random visitor id (persists in localStorage). */
 export function getVisitorId(): string {
   if (!isBrowser()) return ''
@@ -44,16 +62,95 @@ export function getVisitorId(): string {
   if (!v) { v = memVid || randomId(); memVid = v; safeSet('local', VID_KEY, v) }
   return v
 }
-export function getSessionId(): string {
-  if (!isBrowser()) return ''
-  let s = safeGet('session', SID_KEY)
-  if (!s) { s = memSid || randomId(); memSid = s; safeSet('session', SID_KEY, s) }
-  return s
+
+// ---------------------------------------------------------------- rolling session
+interface SessionState { id: string; last: number; day: string }
+let memSess: SessionState | null = null
+const localDay = (t: number) => { const d = new Date(t); return `${d.getFullYear()}-${d.getMonth() + 1}-${d.getDate()}` }
+
+function readSession(): SessionState | null {
+  const raw = safeGet('local', SESS_KEY)
+  if (raw) {
+    const [id, last, day] = raw.split('|')
+    const n = Number(last)
+    if (id && /^[\w-]{6,64}$/.test(id) && Number.isFinite(n) && day) return { id, last: n, day }
+  }
+  return memSess
+}
+function writeSession(st: SessionState): void {
+  memSess = st
+  safeSet('local', SESS_KEY, `${st.id}|${st.last}|${st.day}`)
 }
 
-/** false when DNT/GPC is on, for automation (navigator.webdriver) and on the server. */
+/**
+ * Current session id. A session = activity with gaps under 30 min on the same local day, shared
+ * by every tab. `touch` (user activity) rotates an expired session and refreshes lastSeen.
+ * Without it (passive events: scroll depth, time on page) a still-live session is kept alive
+ * (scrolling/reading is activity) but an expired one is never rotated, so they never start a visit.
+ */
+export function getSessionId(touch = false): string {
+  if (!isBrowser()) return ''
+  const now = Date.now()
+  const today = localDay(now)
+  const cur = readSession()
+  const expired = !cur || now - cur.last > SESSION_IDLE_MS || cur.day !== today
+  if (cur && !touch) {
+    if (!expired && now > cur.last) writeSession({ ...cur, last: now })
+    return cur.id
+  }
+  if (expired) {
+    const next = { id: randomId(), last: now, day: today }
+    writeSession(next)
+    return next.id
+  }
+  if (now > cur.last) writeSession({ ...cur, last: now })
+  return cur.id
+}
+
+type PvMap = { sid: string; p: Record<string, number> }
+let memPv: PvMap | null = null
+/** true when this path was already counted in this session within the last 30 min (reload, back/forward, re-mount). */
+function isRepeatPageView(sid: string, path: string, now: number): boolean {
+  let map: PvMap | null = null
+  const raw = safeGet('local', PV_KEY)
+  if (raw) { try { map = JSON.parse(raw) as PvMap } catch { /* corrupted */ } }
+  if (!map) map = memPv
+  if (!map || map.sid !== sid || !map.p || typeof map.p !== 'object') map = { sid, p: {} }
+  const last = map.p[path]
+  if (typeof last === 'number' && now >= last && now - last < PV_DEDUPE_MS) return true
+  map.p[path] = now
+  const keys = Object.keys(map.p)
+  if (keys.length > 200) for (const k of keys.slice(0, keys.length - 200)) delete map.p[k]
+  memPv = map
+  safeSet('local', PV_KEY, JSON.stringify(map))
+  return false
+}
+
+// ---------------------------------------------------------------- staff exclusion
+let memStaff = false
+/**
+ * Opening any /admin page marks this browser as staff; a URL with ?track=1 clears it.
+ * true = this browser must not be tracked.
+ */
+function isStaff(): boolean {
+  try {
+    if (ADMIN_PATH.test(window.location.pathname)) {
+      memStaff = true
+      safeSet('local', STAFF_KEY, '1')
+      return true
+    }
+    if (new URLSearchParams(window.location.search).get('track') === '1') {
+      memStaff = false
+      safeRemove('local', STAFF_KEY)
+    }
+  } catch { /* ignore */ }
+  return memStaff || safeGet('local', STAFF_KEY) === '1'
+}
+
+/** false when DNT/GPC is on, for automation (navigator.webdriver), for staff browsers and on the server. */
 export function isTrackingEnabled(): boolean {
   if (!isBrowser()) return false
+  if (isStaff()) return false
   try {
     const n = navigator as Navigator & { globalPrivacyControl?: boolean; msDoNotTrack?: string }
     const w = window as Window & { doNotTrack?: string }
@@ -106,11 +203,11 @@ export function getAttribution(): Attribution {
 let queue: QueuedEvent[] = []
 let timer: ReturnType<typeof setTimeout> | null = null
 
-function payload(events: QueuedEvent[]) {
+function payload(events: Omit<QueuedEvent, 'sid'>[], sid: string) {
   const w = isBrowser() ? window.innerWidth : 0
   return JSON.stringify({
     v: getVisitorId(),
-    s: getSessionId(),
+    s: sid,
     attr: getAttribution(),
     device: w < 768 ? 'mobile' : w < 1024 ? 'tablet' : 'desktop',
     events,
@@ -121,8 +218,12 @@ function payload(events: QueuedEvent[]) {
 export function flush(beacon = false): void {
   if (timer) { clearTimeout(timer); timer = null }
   if (!queue.length || !isBrowser()) return
-  const batch = queue.splice(0, MAX_BATCH)
-  const body = payload(batch)
+  // one POST per session id (a queue can straddle a session rollover)
+  const sid = queue[0].sid
+  const batch: QueuedEvent[] = [], rest: QueuedEvent[] = []
+  for (const e of queue) (e.sid === sid && batch.length < MAX_BATCH ? batch : rest).push(e)
+  queue = rest
+  const body = payload(batch.map(({ name, path, ts, props }) => ({ name, path, ts, ...(props ? { props } : {}) })), sid)
   try {
     let sent = false
     if (beacon && typeof navigator.sendBeacon === 'function') {
@@ -146,11 +247,17 @@ export function track(event: AnalyticsEvent | (string & {}), props?: Props): voi
     if (!isTrackingEnabled()) return
     const name = String(event).toLowerCase().replace(/[^a-z0-9_]/g, '_').slice(0, 40)
     if (!name) return
+    const path = window.location.pathname
+    if (EXCLUDED_PATH.test(path)) return
+    const now = Date.now()
+    const sid = getSessionId(!PASSIVE.has(name))
+    if (!sid) return
+    if (name === 'page_view' && isRepeatPageView(sid, path, now)) return
     const clean: Props | undefined = props
       ? Object.fromEntries(Object.entries(props).filter(([, v]) => v !== undefined).slice(0, 20)
           .map(([k, v]) => [k.slice(0, 40), typeof v === 'string' ? v.slice(0, 200) : v]))
       : undefined
-    queue.push({ name, path: window.location.pathname, ts: Date.now(), ...(clean && Object.keys(clean).length ? { props: clean } : {}) })
+    queue.push({ name, path, ts: now, sid, ...(clean && Object.keys(clean).length ? { props: clean } : {}) })
     // Mirror to GA4 if F1 loaded gtag (optional).
     const gtag = (window as Window & { gtag?: (...a: unknown[]) => void }).gtag
     if (typeof gtag === 'function') { try { gtag('event', name, clean ?? {}) } catch { /* ignore */ } }
@@ -212,7 +319,7 @@ export function trackPageView(path: string = isBrowser() ? window.location.pathn
 export function initAnalytics(): () => void {
   if (!isBrowser() || initialised) return () => {}
   initialised = true
-  captureAttribution()
+  if (!isStaff() && !EXCLUDED_PATH.test(window.location.pathname)) captureAttribution()
 
   let raf = 0
   const onScroll = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; measureDepth() }) }

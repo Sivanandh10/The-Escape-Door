@@ -1,14 +1,16 @@
 'use server'
-// Admin auth Server Actions (P4a): owner-only email+password sign-in and sign-out (stack-notes §7.3).
+// Admin auth Server Actions (P4a + team roles): team-member email+password sign-in and sign-out (stack-notes §7.3).
+// Membership = a public.admins row (role + permissions); see src/lib/supabase/server.ts resolveAdminSession().
 import { redirect } from 'next/navigation'
 import { z } from 'zod'
-import { supabaseServer } from '@/lib/supabase/server'
+import { resolveAdminSession, supabaseServer } from '@/lib/supabase/server'
+import { homeFor } from '@/lib/admin/permissions'
 import { isSupabaseConfigured } from '@/lib/supabase/env'
 
 export type SignInState =
   | { status: 'idle' }
   | { status: 'error'; code: 'invalid' | 'credentials' | 'not-owner' | 'unconfigured' | 'rate-limited' | 'server'; message: string; field?: 'email' | 'password' }
-  | { status: 'ok' }
+  | { status: 'ok'; home: string }
 
 const Creds = z.object({
   email: z.email({ error: 'That doesn’t look like an email.' }).max(200),
@@ -32,18 +34,16 @@ export async function signInAction(_prev: SignInState, form: FormData): Promise<
     const rate = error?.status === 429
     return rate
       ? { status: 'error', code: 'rate-limited', message: 'Too many tries. Wait a minute, then knock again.' }
-      : { status: 'error', code: 'credentials', message: 'Wrong email or password. This door only opens for the owner.', field: 'password' }
+      : { status: 'error', code: 'credentials', message: 'Wrong email or password. This door only opens for the team.', field: 'password' }
   }
 
-  // owner check: admins table (is_admin()) + optional ADMIN_EMAILS allow-list
-  const { data: isAdmin } = await sb.rpc('is_admin')
-  const allow = (process.env.ADMIN_EMAILS ?? '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean)
-  const emailOk = allow.length === 0 || allow.includes((data.user.email ?? '').toLowerCase())
-  if (isAdmin !== true || !emailOk) {
+  // team check: public.admins row (role + permissions); ADMIN_EMAILS only bootstraps a first superadmin
+  const member = await resolveAdminSession(sb, data.user.id, data.user.email ?? null)
+  if (!member.isAdmin) {
     await sb.auth.signOut()
-    return { status: 'error', code: 'not-owner', message: 'You signed in, but this account isn’t on the owner list (admins table).' }
+    return { status: 'error', code: 'not-owner', message: 'You signed in, but this account isn’t on the team yet. Ask the superadmin to add you.' }
   }
-  return { status: 'ok' }
+  return { status: 'ok', home: homeFor(member.perms) }
 }
 
 export async function signOutAction(): Promise<void> {

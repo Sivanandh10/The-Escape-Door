@@ -11,7 +11,8 @@ import { signInAction, type SignInState } from './actions'
 import { adminBtn, adminInput, adminLabel } from './ui'
 
 const NOTES: Record<string, string> = {
-  'not-owner': 'That account is signed in but isn’t on the owner list (admins table).',
+  'not-owner': 'That account signed in but isn’t on the team. Ask the superadmin to add you.',
+  'no-perms': 'Your account is on the team but has no rooms unlocked yet. Ask the superadmin for a role.',
   'signed-out': 'Door closed. You’re signed out.',
 }
 
@@ -43,10 +44,11 @@ export function LoginForm({ demo }: { demo: boolean }) {
   const note = NOTES[params.get('e') ?? '']
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- replay the shake once per failed attempt
     if (state.status === 'error') setShakeKey((k) => k + 1)
     if (state.status === 'ok') {
       const next = params.get('next')
-      router.replace(next && next.startsWith('/admin') ? next : '/admin')
+      router.replace(next && next.startsWith('/admin') ? next : state.home)
       router.refresh()
     }
   }, [state, params, router])
@@ -83,7 +85,7 @@ export function LoginForm({ demo }: { demo: boolean }) {
           <h1 className="mt-2 font-display text-[clamp(48px,7vw,84px)] uppercase leading-[0.86]">
             Knock <em>knock</em>
           </h1>
-          <p className="mt-3 text-[15px] text-paper/70">Owner-only. Sign in with the email and password set up in Supabase Auth.</p>
+          <p className="mt-3 text-[15px] text-paper/70">Team only. Sign in with the email and password the superadmin gave you.</p>
 
           {note && <p role="status" className="mt-5 border-2 border-lav bg-lav/10 px-3 py-2 text-[13.5px]">{note}</p>}
 

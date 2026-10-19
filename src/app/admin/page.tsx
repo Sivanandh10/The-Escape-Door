@@ -4,6 +4,7 @@ import { Suspense } from 'react'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { AdminSkeleton } from '@/components/admin/EmptyState'
 import { requireAdmin } from '@/components/admin/server'
+import { NoAccess } from '@/components/admin/NoAccess'
 import { getAnalytics } from '@/components/admin/analytics/data'
 import { DashboardView } from '@/components/admin/analytics/DashboardView'
 import { RangePicker } from '@/components/admin/analytics/RangePicker'
@@ -12,7 +13,8 @@ import { parseRange } from '@/components/admin/analytics/types'
 export const metadata: Metadata = { title: 'Dashboard' }
 
 async function Body({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
-  await requireAdmin()
+  const gate = await requireAdmin('dashboard.view')
+  if (!gate.allowed) return <NoAccess perm="dashboard.view" session={gate.session} inline />
   const days = parseRange((await searchParams).range)
   const s = await getAnalytics(days)
   return (

@@ -11,7 +11,8 @@ import { adminBtn, adminInput, adminPill } from '../ui'
 import { AdminPage } from '../AdminPage'
 import { ConfirmShred } from '../ConfirmShred'
 import { EmptyState } from '../EmptyState'
-import { downloadText, getAdminClient, signCustomUpload, toCsv, useCrud, explainDemo, type Crud } from './data'
+import { downloadText, getAdminClient, signCustomUpload, toCsv, useCrud, explainDemo, explainReadOnly, type Crud } from './data'
+import { READONLY_NOTE, useCan } from '../AdminContext'
 import {
   LEAD_KINDS, LEAD_STATUSES, SPAM_STATUS, fileRefs, leadCfg, orderCfg, orderFromLead,
   type AdminLead, type LeadStatus,
@@ -30,7 +31,7 @@ function leadTotal(l: AdminLead): number | null {
 }
 
 export function LeadsManager({ initial }: { initial: AdminLead[] }) {
-  const crud = useCrud(leadCfg, initial)
+  const crud = useCrud(leadCfg, initial, { perm: 'leads.edit' })
   const [view, setView] = useState<View>('board')
   const [q, setQ] = useState('')
   const [kind, setKind] = useState<'all' | AdminLead['kind']>('all')
@@ -40,6 +41,7 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
 
   // small screens start in list view
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time viewport read after mount
     if (window.matchMedia('(max-width: 1023px)').matches) setView('list')
   }, [])
 
@@ -91,7 +93,7 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
         description="Every WhatsApp order, custom request, “remind me” and newsletter sign-up lands here. Drag cards along the pipeline, or open one to reply."
         actions={
           <>
-            <SandboxSwitch mode={crud.mode} />
+            <SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />
             <div role="radiogroup" aria-label="View" className="flex border-2 border-paper/20">
               {(['board', 'list'] as const).map((v) => (
                 <button key={v} type="button" role="radio" aria-checked={view === v} onClick={() => setView(v)} className={cn('grid min-h-11 min-w-11 place-items-center px-3 focus-ring', view === v ? 'bg-paper text-ink' : 'text-paper/70 can-hover:hover:text-paper')}>
@@ -138,7 +140,7 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
         ) : filtered.length === 0 ? (
           <EmptyState mood="peek" sfx="…?" title="No door leads there" body="No leads match these filters." action={<button type="button" className={adminBtn({ variant: 'ghost' })} onClick={() => { setQ(''); setKind('all'); setSrc('all') }}>Reset filters</button>} />
         ) : view === 'board' ? (
-          <Board leads={filtered} onOpen={setOpenId} onMove={setStatus} showSpam={showSpam} />
+          <Board leads={filtered} onOpen={setOpenId} onMove={setStatus} showSpam={showSpam} readOnly={crud.readOnly} />
         ) : (
           <ListView leads={filtered} onOpen={setOpenId} onStatus={setStatus} crud={crud} />
         )}
@@ -159,12 +161,13 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
 
 // ---------------------------------------------------------------- board
 function Board({
-  leads, onOpen, onMove, showSpam,
+  leads, onOpen, onMove, showSpam, readOnly,
 }: {
   leads: AdminLead[]
   onOpen: (id: string) => void
   onMove: (id: string, s: LeadStatus) => void
   showSpam: boolean
+  readOnly?: boolean
 }) {
   const [over, setOver] = useState<LeadStatus | null>(null)
   const cols = showSpam ? STATUS_ALL : LEAD_STATUSES
@@ -176,7 +179,7 @@ function Board({
           <section
             key={col.id}
             aria-label={`${col.label} (${items.length})`}
-            onDragOver={(e) => { e.preventDefault(); setOver(col.id) }}
+            onDragOver={(e) => { if (readOnly) return; e.preventDefault(); setOver(col.id) }}
             onDragLeave={() => setOver((o) => (o === col.id ? null : o))}
             onDrop={(e: DragEvent) => {
               e.preventDefault()
@@ -200,12 +203,12 @@ function Board({
             <ul className="flex flex-1 flex-col gap-2 p-2">
               {items.map((l) => (
                 <li key={l.id}>
-                  <LeadCard lead={l} onOpen={() => onOpen(l.id)} draggable />
+                  <LeadCard lead={l} onOpen={() => onOpen(l.id)} draggable={!readOnly} />
                 </li>
               ))}
               {items.length === 0 && (
                 <li className="grid flex-1 place-items-center border-2 border-dashed border-paper/10 p-4 text-center font-mono text-[11px] uppercase tracking-[0.12em] text-paper/35">
-                  Drop a card here
+                  {readOnly ? 'Nothing here' : 'Drop a card here'}
                 </li>
               )}
             </ul>
@@ -223,12 +226,13 @@ function LeadCard({ lead: l, onOpen, draggable }: { lead: AdminLead; onOpen: () 
     <button
       type="button"
       draggable={draggable}
+      data-drag={draggable ? 'true' : undefined}
       onDragStart={(e) => {
         e.dataTransfer.setData('text/lead', l.id)
         e.dataTransfer.effectAllowed = 'move'
       }}
       onClick={onOpen}
-      className="group relative block w-full cursor-grab border-2 border-ink bg-paper p-3 text-left text-ink shadow-[3px_3px_0_var(--color-ink)] transition-[translate,box-shadow] duration-150 focus-ring active:cursor-grabbing can-hover:hover:-translate-x-0.5 can-hover:hover:-translate-y-0.5 can-hover:hover:shadow-[5px_5px_0_var(--color-door)]"
+      className="group relative block w-full cursor-pointer border-2 data-[drag=true]:cursor-grab border-ink bg-paper p-3 text-left text-ink shadow-[3px_3px_0_var(--color-ink)] transition-[translate,box-shadow] duration-150 focus-ring active:cursor-grabbing can-hover:hover:-translate-x-0.5 can-hover:hover:-translate-y-0.5 can-hover:hover:shadow-[5px_5px_0_var(--color-door)]"
     >
       <span className="flex items-center justify-between gap-2">
         <span className={adminPill(l.kind === 'whatsapp_order' ? 'volt' : l.kind === 'custom_request' ? 'lav' : l.kind === 'remind_me' ? 'pink' : 'paper')}>{k?.short ?? l.kind}</span>
@@ -271,7 +275,7 @@ function ListView({
                 <span className="font-mono text-[14px] font-bold tabular-nums text-paper md:text-right">{total != null ? formatINR(total) : ''}</span>
                 <label className="col-span-1">
                   <span className="sr-only">Status for {l.name}</span>
-                  <select value={l.status} onChange={(e) => onStatus(l.id, e.target.value as LeadStatus)} className={cn('min-h-10 w-full cursor-pointer border-2 border-ink px-2 font-mono text-[11px] font-bold uppercase tracking-[0.1em] focus-ring', s.tone)}>
+                  <select value={l.status} disabled={crud.readOnly} title={crud.readOnly ? READONLY_NOTE : undefined} onChange={(e) => onStatus(l.id, e.target.value as LeadStatus)} className={cn('min-h-10 w-full cursor-pointer disabled:cursor-not-allowed disabled:opacity-70 border-2 border-ink px-2 font-mono text-[11px] font-bold uppercase tracking-[0.1em] focus-ring', s.tone)}>
                     {STATUS_ALL.map((x) => <option key={x.id} value={x.id} className="bg-ink text-paper">{x.label}</option>)}
                   </select>
                 </label>
@@ -299,13 +303,17 @@ function LeadDrawer({
   const [notes, setNotes] = useState('')
   const [files, setFiles] = useState<Array<{ ref: string; url: string | null }>>([])
   const [promoting, setPromoting] = useState(false)
+  const canOrders = useCan('orders.edit')
+  const ro = crud.readOnly
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- sync the notes draft when another lead opens
     setNotes(lead?.notes ?? '')
   }, [lead?.id, lead?.notes])
 
   useEffect(() => {
     let alive = true
     const refs = lead ? fileRefs(lead.payload) : []
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- show placeholders while links are signed
     setFiles(refs.map((ref) => ({ ref, url: null })))
     if (refs.length) {
       Promise.all(refs.map(async (ref) => ({ ref, url: await signCustomUpload(ref).catch(() => null) }))).then((r) => alive && setFiles(r))
@@ -318,6 +326,7 @@ function LeadDrawer({
   const promote = async () => {
     if (!lead) return
     if (mode === 'demo') return explainDemo()
+    if (ro || !canOrders) return explainReadOnly()
     if (mode === 'sandbox') {
       toast.success('Promoted to order', { description: 'Sandbox — local only.' })
       onPromoted()
@@ -349,7 +358,7 @@ function LeadDrawer({
         l && (
           <>
             {l.kind === 'whatsapp_order' && (
-              <button type="button" onClick={promote} disabled={promoting} className={adminBtn({ variant: 'primary' })}>
+              <button type="button" onClick={promote} disabled={promoting || (mode === 'live' && (ro || !canOrders))} title={mode === 'live' && (ro || !canOrders) ? READONLY_NOTE : undefined} className={adminBtn({ variant: 'primary' })}>
                 <PackagePlus aria-hidden className="size-4" /> {promoting ? 'Creating…' : 'Promote to order'}
               </button>
             )}
@@ -372,6 +381,7 @@ function LeadDrawer({
                   <button
                     type="button"
                     aria-pressed={l.status === s.id}
+                    disabled={ro}
                     onClick={() => onStatus(s.id)}
                     className={cn('min-h-11 border-2 px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em] transition-[translate,box-shadow] duration-150 focus-ring active:translate-y-px', l.status === s.id ? cn(s.tone, 'border-ink shadow-[3px_3px_0_var(--color-paper)]') : 'border-paper/20 text-paper/65 can-hover:hover:border-paper/60')}
                   >
@@ -379,7 +389,7 @@ function LeadDrawer({
                   </button>
                 </span>
               ))}
-              <button type="button" aria-pressed={l.status === 'spam'} onClick={() => onStatus('spam')} className={cn('ml-auto min-h-11 border-2 px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em] focus-ring', l.status === 'spam' ? 'border-ink bg-hype text-paper' : 'border-transparent text-paper/45 can-hover:hover:text-hype')}>
+              <button type="button" aria-pressed={l.status === 'spam'} disabled={ro} onClick={() => onStatus('spam')} className={cn('ml-auto min-h-11 disabled:opacity-50 border-2 px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em] focus-ring', l.status === 'spam' ? 'border-ink bg-hype text-paper' : 'border-transparent text-paper/45 can-hover:hover:text-hype')}>
                 Spam
               </button>
             </div>
@@ -460,10 +470,10 @@ function LeadDrawer({
 
           <section>
             <label htmlFor="lead-notes" className="label mb-2 flex items-center gap-2 text-paper/55"><Sparkles aria-hidden className="size-3.5 text-volt" /> Owner notes</label>
-            <textarea id="lead-notes" rows={4} value={notes} maxLength={2000} onChange={(e) => setNotes(e.target.value)} placeholder="Replied on WhatsApp, waiting for size…" className={cn(adminInput, 'resize-y leading-relaxed')} />
+            <textarea id="lead-notes" rows={4} value={notes} maxLength={2000} readOnly={ro} onChange={(e) => setNotes(e.target.value)} placeholder="Replied on WhatsApp, waiting for size…" className={cn(adminInput, 'resize-y leading-relaxed')} />
             <div className="mt-2 flex items-center gap-3">
-              <button type="button" disabled={notes === l.notes} onClick={() => onNotes(notes)} className={adminBtn({ variant: 'ghost', size: 'sm' })}>Save note</button>
-              <span className="text-[12px] text-paper/40">Private — only owners see this.</span>
+              <button type="button" disabled={ro || notes === l.notes} onClick={() => onNotes(notes)} className={adminBtn({ variant: 'ghost', size: 'sm' })}>Save note</button>
+              <span className="text-[12px] text-paper/40">{ro ? 'View only — your role can’t edit notes.' : 'Private — only the team sees this.'}</span>
             </div>
           </section>
         </div>

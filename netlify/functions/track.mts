@@ -3,12 +3,16 @@
 // - Adds country / region / city from context.geo. NEVER stores context.ip or the user agent.
 // - Validates the batch, responds 204 immediately and writes in waitUntil (service role).
 // - Unconfigured Supabase → accepted and dropped (still 204).
+// - Drops (204, nothing stored): bots / headless browsers by user agent (UA is only tested, never
+//   stored) and events on /admin, /lab or /api paths (staff and internal pages are not traffic).
 import type { Config, Context } from '@netlify/functions'
 import { createClient } from '@supabase/supabase-js'
 
 const MAX_BODY = 64 * 1024
 const MAX_EVENTS = 50
 const DAY = 24 * 60 * 60 * 1000
+const BOT_UA = /bot|crawler|spider|headless|lighthouse|playwright/i
+const EXCLUDED_PATH = /^\/(admin|lab|api)(\/|$)/
 
 type Props = Record<string, string | number | boolean | null>
 
@@ -48,6 +52,7 @@ export default async (req: Request, context: Context): Promise<Response> => {
   const headers = { 'cache-control': 'no-store', 'x-robots-tag': 'noindex' }
   if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers })
   if (req.method !== 'POST') return new Response(null, { status: 405, headers: { ...headers, allow: 'POST' } })
+  if (BOT_UA.test(req.headers.get('user-agent') ?? '')) return new Response(null, { status: 204, headers })
 
   let raw: string
   try { raw = await req.text() } catch { return new Response(null, { status: 400, headers }) }
@@ -64,12 +69,14 @@ export default async (req: Request, context: Context): Promise<Response> => {
   const geo = context.geo ?? {}
   const now = Date.now()
 
+  let excluded = 0
   const rows = (body.events as unknown[]).slice(0, MAX_EVENTS).flatMap((e) => {
     if (!e || typeof e !== 'object') return []
     const ev = e as Record<string, unknown>
     const name = typeof ev.name === 'string' && /^[a-z0-9_]{2,40}$/.test(ev.name) ? ev.name : null
     const path = typeof ev.path === 'string' && ev.path.startsWith('/') ? ev.path.slice(0, 300) : null
     if (!name || !path) return []
+    if (EXCLUDED_PATH.test(path)) { excluded++; return [] }
     const ts = typeof ev.ts === 'number' && Math.abs(ev.ts - now) < DAY ? ev.ts : now
     return [{
       ts: new Date(ts).toISOString(),
@@ -90,7 +97,7 @@ export default async (req: Request, context: Context): Promise<Response> => {
       city: geo.city ?? null,
     }]
   })
-  if (!rows.length) return new Response(null, { status: 400, headers })
+  if (!rows.length) return new Response(null, { status: excluded ? 204 : 400, headers })
 
   const url = env('NEXT_PUBLIC_SUPABASE_URL')
   const key = env('SUPABASE_SECRET_KEY') || env('SUPABASE_SERVICE_ROLE_KEY')

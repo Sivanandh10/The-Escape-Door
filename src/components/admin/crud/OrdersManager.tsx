@@ -12,7 +12,8 @@ import { DataTable, type DataTableColumn } from '../DataTable'
 import { EmptyState } from '../EmptyState'
 import { StatCard } from '../StatCard'
 import { adminBtn, adminPill } from '../ui'
-import { useCrud, type Crud } from './data'
+import { explainReadOnly, useCrud, type Crud } from './data'
+import { READONLY_NOTE } from '../AdminContext'
 import { ORDER_STATUSES, leadCfg, orderCfg, orderFromLead, type AdminLead, type AdminOrder, type OrderStatus } from './entities'
 import { Chips, Drawer, SandboxSwitch, StateSwitch } from './kit'
 import { OrderLines } from './LeadsManager'
@@ -28,8 +29,8 @@ const NEXT: Partial<Record<OrderStatus, { to: OrderStatus; label: string; icon: 
 }
 
 export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: AdminOrder[]; initialLeads: AdminLead[] }) {
-  const crud = useCrud(orderCfg, initialOrders)
-  const leads = useCrud(leadCfg, initialLeads)
+  const crud = useCrud(orderCfg, initialOrders, { perm: 'orders.edit' })
+  const leads = useCrud(leadCfg, initialLeads, { perm: 'leads.edit' })
   const [filter, setFilter] = useState<'all' | OrderStatus>('all')
   const [openId, setOpenId] = useState<string | null>(null)
 
@@ -55,7 +56,12 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
   const setStatus = (o: AdminOrder, status: OrderStatus) =>
     crud.update(o.id, (x) => ({ ...x, status }), { success: `${ref(o)} → ${meta(status).label}` })
 
+  // promoting creates an order AND marks the lead converted, so it needs orders.edit + leads.edit
+  // (otherwise the lead stays "waiting" and can be promoted twice)
+  const promoteReadOnly = crud.readOnly || leads.readOnly
   const promote = async (l: AdminLead) => {
+    if (promoteReadOnly) return explainReadOnly()
+    // eslint-disable-next-line react-hooks/purity -- runs in a click handler, not during render
     const order = orderFromLead(l, typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `o-${Date.now()}`)
     const ok = await crud.save(order, { quiet: true })
     if (!ok) return
@@ -94,7 +100,7 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
       title={<>Order <em>desk</em></>}
       jp="注文 · 入金 · 発送"
       description="WhatsApp orders you've promoted from leads. Confirm on chat, mark paid when the UPI lands, mark shipped when it leaves."
-      actions={<SandboxSwitch mode={crud.mode} />}
+      actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard index={0} label="Open orders" jp="未処理" value={stats.open} tone="volt" />
@@ -115,7 +121,7 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
                     <span className="block font-mono text-[11.5px] text-paper/45">{fmtDate(l.createdAt)}{l.src ? ` · src: ${l.src}` : ''}</span>
                   </span>
                   {typeof total === 'number' && <span className="font-mono text-[14px] font-bold">{formatINR(total)}</span>}
-                  <button type="button" onClick={() => promote(l)} className={adminBtn({ size: 'sm', className: 'min-h-10' })}>
+                  <button type="button" onClick={() => promote(l)} disabled={promoteReadOnly} title={promoteReadOnly ? READONLY_NOTE : undefined} className={adminBtn({ size: 'sm', className: 'min-h-10' })}>
                     <PackagePlus aria-hidden className="size-4" /> Promote
                   </button>
                 </li>
@@ -149,7 +155,7 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
             return (
               <span className="flex items-center gap-1">
                 {n && (
-                  <button type="button" onClick={() => setStatus(o, n.to)} className={adminBtn({ variant: 'ghost', size: 'sm', className: 'min-h-10' })}>
+                  <button type="button" onClick={() => setStatus(o, n.to)} disabled={crud.readOnly} title={crud.readOnly ? READONLY_NOTE : undefined} className={adminBtn({ variant: 'ghost', size: 'sm', className: 'min-h-10' })}>
                     <n.icon aria-hidden className="size-3.5" /> {n.label}
                   </button>
                 )}
@@ -184,12 +190,12 @@ function OrderDrawer({ order: o, crud, onClose, onStatus }: { order: AdminOrder 
         o && (
           <>
             {n && (
-              <button type="button" onClick={() => onStatus(o, n.to)} className={adminBtn()}>
+              <button type="button" onClick={() => onStatus(o, n.to)} disabled={crud.readOnly} className={adminBtn()}>
                 <n.icon aria-hidden className="size-4" /> {n.label}
               </button>
             )}
             {o.status !== 'cancelled' && o.status !== 'delivered' && (
-              <button type="button" onClick={() => onStatus(o, 'cancelled')} className={adminBtn({ variant: 'ghost' })}>Cancel order</button>
+              <button type="button" onClick={() => onStatus(o, 'cancelled')} disabled={crud.readOnly} className={adminBtn({ variant: 'ghost' })}>Cancel order</button>
             )}
             <span className="ml-auto" />
             <ConfirmShred {...crud.shredProps(o.id, onClose)} variant="button" label="Delete" />
@@ -206,7 +212,7 @@ function OrderDrawer({ order: o, crud, onClose, onStatus }: { order: AdminOrder 
                 const on = o.status === s.id
                 return (
                   <li key={s.id}>
-                    <button type="button" aria-pressed={on} onClick={() => onStatus(o, s.id)} className={cn('min-h-11 border-2 px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em] transition-[translate,box-shadow] duration-150 focus-ring active:translate-y-px', on ? cn(s.tone, 'border-ink shadow-[3px_3px_0_var(--color-paper)]') : 'border-paper/20 text-paper/65 can-hover:hover:border-paper/60')}>
+                    <button type="button" aria-pressed={on} disabled={crud.readOnly} onClick={() => onStatus(o, s.id)} className={cn('min-h-11 border-2 disabled:cursor-not-allowed px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em] transition-[translate,box-shadow] duration-150 focus-ring active:translate-y-px', on ? cn(s.tone, 'border-ink shadow-[3px_3px_0_var(--color-paper)]') : 'border-paper/20 text-paper/65 can-hover:hover:border-paper/60')}>
                       {s.label}
                     </button>
                   </li>

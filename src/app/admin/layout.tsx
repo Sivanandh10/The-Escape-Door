@@ -1,4 +1,4 @@
-// Admin layout (P4a): noindex, owner gate, AdminShell. The session read sits inside <Suspense> (Cache Components).
+// Admin layout (P4a + team roles): noindex, team gate, AdminShell (sidebar filtered by the member's permissions). The session read sits inside <Suspense> (Cache Components).
 // DEMO MODE when Supabase env is missing: browsable without login, banner + sample data, writes disabled.
 import '@/components/admin/admin.css'
 import type { Metadata } from 'next'
@@ -28,7 +28,16 @@ async function AdminGate({ children }: { children: React.ReactNode }) {
   if (!ctx.session) redirect('/admin/login')
   if (!ctx.session.isAdmin) redirect('/admin/login?e=not-owner')
   return (
-    <AdminShell demo={false} email={ctx.session.email} signOutAction={signOutAction}>
+    <AdminShell
+      demo={false}
+      email={ctx.session.email}
+      signOutAction={signOutAction}
+      role={ctx.session.role}
+      perms={ctx.session.perms}
+      displayName={ctx.session.displayName}
+      isSuperadmin={ctx.session.isSuperadmin}
+      isProtected={ctx.session.isProtected}
+    >
       {children}
     </AdminShell>
   )

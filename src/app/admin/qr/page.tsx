@@ -4,6 +4,7 @@ import { Suspense } from 'react'
 import { AdminPage } from '@/components/admin/AdminPage'
 import { AdminSkeleton } from '@/components/admin/EmptyState'
 import { requireAdmin } from '@/components/admin/server'
+import { NoAccess } from '@/components/admin/NoAccess'
 import { getAnalytics, knownSrcs } from '@/components/admin/analytics/data'
 import { QrStudio } from '@/components/admin/qr/QrStudio'
 import { getCollections } from '@/lib/data/repo'
@@ -12,7 +13,8 @@ import { SITE_URL } from '@/lib/seo'
 export const metadata: Metadata = { title: 'QR codes' }
 
 async function Body() {
-  await requireAdmin()
+  const gate = await requireAdmin('qr.use')
+  if (!gate.allowed) return <NoAccess perm="qr.use" session={gate.session} inline />
   const [srcs, snapshot, collections] = await Promise.all([knownSrcs(), getAnalytics(90), getCollections()])
   return (
     <QrStudio

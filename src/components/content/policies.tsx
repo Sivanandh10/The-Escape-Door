@@ -74,7 +74,7 @@ export const POLICIES: Policy[] = [
             </p>
             <p>
               <strong>Anonymous analytics:</strong> a random visitor ID kept in your browser (localStorage) and a session ID
-              (sessionStorage), the pages you view and actions such as add to cart or WhatsApp click, how you arrived (campaign
+              (localStorage, renewed after 30 minutes of inactivity), the pages you view and actions such as add to cart or WhatsApp click, how you arrived (campaign
               tags, a fest QR code or the referring website&apos;s domain), your device type (mobile, tablet or desktop) and an
               approximate country, region and city provided by our host. We do not store your IP address or browser user agent.
             </p>

@@ -2,11 +2,15 @@
 import type { Metadata } from 'next'
 import { getBundleRules, getCollections, getProducts } from '@/lib/data/repo'
 import { isSupabaseConfigured } from '@/lib/supabase/env'
+import { requireAdmin } from '@/components/admin/server'
+import { NoAccess } from '@/components/admin/NoAccess'
 import { ProductsManager } from '@/components/admin/crud/ProductsManager'
 
 export const metadata: Metadata = { title: 'Products' }
 
 export default async function ProductsPage() {
+  const gate = await requireAdmin('catalog.edit')
+  if (!gate.allowed) return <NoAccess perm="catalog.edit" session={gate.session} />
   const live = isSupabaseConfigured()
   const [products, collections, bundleRules] = await Promise.all([live ? [] : getProducts(), getCollections(), getBundleRules()])
   return (

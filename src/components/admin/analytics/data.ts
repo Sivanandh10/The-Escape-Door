@@ -1,9 +1,16 @@
 // Analytics aggregator (P4a) — server only (reads cookies via the owner's Supabase session).
 // Real mode: scans analytics_events (+ leads) for the range and the previous range under RLS, aggregates in JS.
+// Honest counting, applied to stored history too (no rows are deleted):
+//   visits = distinct sessions · unique visitors = distinct visitor ids ·
+//   page views = page_view rows de-duplicated to one per session + path (reloads don't inflate) ·
+//   funnel / WhatsApp / add-to-cart = distinct sessions. Rows on /admin, /lab, /api and every row of a
+//   visitor id that ever opened /admin (staff browsers) are ignored.
 // Demo mode (Supabase missing): deterministic seeded sample data, clearly flagged `demo: true` — never real.
 import { connection } from 'next/server'
 import { getAdminContext } from '../server'
 import { supabaseServer } from '@/lib/supabase/server'
+import { supabaseAdmin } from '@/lib/supabase/admin'
+import { can } from '@/lib/admin/permissions'
 import { getCollections, getEvents, getPartnerships, getProducts } from '@/lib/data/repo'
 import { hashString, seeded } from '@/lib/utils'
 import type { AnalyticsSnapshot, Kpis, Ranked, SeriesPoint, SrcRow } from './types'
@@ -11,6 +18,7 @@ import type { AnalyticsSnapshot, Kpis, Ranked, SeriesPoint, SrcRow } from './typ
 const DAY = 86_400_000
 const PAGE = 1000
 const MAX_ROWS = 60_000
+const EXCLUDED_PATH = /^\/(admin|lab|api)(\/|$)/
 
 interface EventRow {
   ts: string
@@ -69,8 +77,23 @@ export async function knownSrcs(): Promise<{ src: string; label: string }[]> {
 }
 
 // ────────────────────────────────────────────────────────────── real data
+/**
+ * Raw analytics rows (visitor ids, referrers, cities) are readable under RLS only with analytics.view.
+ * Dashboard-only / QR-only members get aggregates computed here with the service role; the deep-dive
+ * parts (pages, sources, geography) are then stripped by `limitSnapshot` before anything reaches them.
+ */
+async function eventsClient() {
+  const ctx = await getAdminContext()
+  const perms = ctx.session?.perms ?? []
+  if (!can(perms, 'analytics.view') && (can(perms, 'dashboard.view') || can(perms, 'qr.use'))) {
+    const sa = supabaseAdmin()
+    if (sa) return sa
+  }
+  return supabaseServer()
+}
+
 async function fetchEvents(fromIso: string, toIso: string): Promise<{ rows: EventRow[]; capped: boolean; error: string | null }> {
-  const sb = await supabaseServer()
+  const sb = await eventsClient()
   if (!sb) return { rows: [], capped: false, error: 'Supabase client unavailable' }
   const rows: EventRow[] = []
   for (let i = 0; i < MAX_ROWS; i += PAGE) {
@@ -79,7 +102,11 @@ async function fetchEvents(fromIso: string, toIso: string): Promise<{ rows: Even
       .select('ts,visitor_id,session_id,name,path,props,src,utm_source,referrer,device,country,region,city')
       .gte('ts', fromIso)
       .lt('ts', toIso)
+      // scroll depth / time on page are never aggregated; skipping them keeps a late page_leave
+      // (sent after the visit ended, or after midnight) from showing up as an extra visit.
+      .not('name', 'in', '(scroll_depth,page_leave)')
       .order('ts', { ascending: true })
+      .order('id', { ascending: true }) // stable paging when timestamps tie
       .range(i, i + PAGE - 1)
     if (error) return { rows, capped: false, error: error.message }
     rows.push(...((data ?? []) as EventRow[]))
@@ -88,30 +115,79 @@ async function fetchEvents(fromIso: string, toIso: string): Promise<{ rows: Even
   return { rows, capped: true, error: null }
 }
 
+/** Visitor ids that ever opened an /admin page (owner / staff browsers): excluded from every number. */
+async function fetchStaffVisitors(): Promise<Set<string>> {
+  const sb = await eventsClient()
+  const out = new Set<string>()
+  if (!sb) return out
+  // Supabase caps a response at 1000 rows, so page through (page views only: one per admin page opened).
+  for (let i = 0; i < 20 * PAGE; i += PAGE) {
+    const { data, error } = await sb
+      .from('analytics_events')
+      .select('visitor_id')
+      .eq('name', 'page_view')
+      .or('path.eq./admin,path.like./admin/*')
+      .order('id', { ascending: true })
+      .range(i, i + PAGE - 1)
+    if (error || !data) break
+    for (const r of data as { visitor_id: string }[]) out.add(r.visitor_id)
+    if (data.length < PAGE) break
+  }
+  return out
+}
+
+/** Drop staff visitors and internal paths. */
+function publicRows(rows: EventRow[], staff: Set<string>): EventRow[] {
+  return rows.filter((r) => !EXCLUDED_PATH.test(r.path) && !staff.has(r.visitor_id))
+}
+
+/**
+ * Lead counts for the KPIs. Members who may see insights (dashboard / analytics / QR) but not the lead
+ * inbox still get the aggregate numbers: the rows are read server-side with the service role and only
+ * counted here — names / contacts never leave the server. Everyone else reads under RLS.
+ */
+async function leadsClient() {
+  const ctx = await getAdminContext()
+  const perms = ctx.session?.perms ?? []
+  const insights = (['dashboard.view', 'analytics.view', 'qr.use'] as const).some((p) => can(perms, p))
+  if (insights && !can(perms, 'leads.view')) {
+    const sa = supabaseAdmin()
+    if (sa) return sa
+  }
+  return supabaseServer()
+}
+
 async function fetchLeads(fromIso: string, toIso: string): Promise<LeadRow[]> {
-  const sb = await supabaseServer()
+  const sb = await leadsClient()
   if (!sb) return []
   const { data } = await sb.from('leads').select('kind,src,payload,created_at').gte('created_at', fromIso).lt('created_at', toIso).limit(5000)
   return (data ?? []) as LeadRow[]
 }
 
+const pvKey = (r: EventRow) => `${r.session_id}\u0000${r.path}`
+
 function kpisFrom(rows: EventRow[], leads: LeadRow[]): Kpis {
-  const visitors = new Set<string>(), sessions = new Set<string>(), cartSessions = new Set<string>()
-  let visits = 0, adds = 0, wa = 0
+  const visitors = new Set<string>(), sessions = new Set<string>(), cartSessions = new Set<string>(), waSessions = new Set<string>()
+  const pageViews = new Set<string>()
+  let adds = 0, wa = 0
   for (const r of rows) {
     sessions.add(r.session_id)
-    if (r.name === 'page_view') { visits++; visitors.add(r.visitor_id) }
+    visitors.add(r.visitor_id)
+    if (r.name === 'page_view') pageViews.add(pvKey(r))
     else if (r.name === 'add_to_cart') { adds++; cartSessions.add(r.session_id) }
-    else if (r.name === 'whatsapp_click') wa++
+    else if (r.name === 'whatsapp_click') { wa++; waSessions.add(r.session_id) }
   }
   const orders = leads.filter((l) => l.kind === 'whatsapp_order')
   return {
-    visits,
+    visits: sessions.size,
     uniques: visitors.size,
     sessions: sessions.size,
+    pageViews: pageViews.size,
     addToCart: adds,
+    cartSessions: cartSessions.size,
     addToCartRate: sessions.size ? cartSessions.size / sessions.size : 0,
-    whatsappClicks: wa,
+    whatsappClicks: waSessions.size,
+    whatsappRaw: wa,
     leads: leads.length,
     orders: orders.length,
     revenueEstimate: orders.reduce((s, l) => s + orderTotal(l.payload), 0),
@@ -137,41 +213,48 @@ async function realSnapshot(days: number): Promise<AnalyticsSnapshot> {
   const end = startOfUtcDay(Date.now()) + DAY
   const from = end - days * DAY
   const prevFrom = from - days * DAY
-  const [cur, prev, leads, prevLeads, collections, products] = await Promise.all([
+  const [cur, prev, leads, prevLeads, collections, products, staff] = await Promise.all([
     fetchEvents(new Date(from).toISOString(), new Date(end).toISOString()),
     fetchEvents(new Date(prevFrom).toISOString(), new Date(from).toISOString()),
     fetchLeads(new Date(from).toISOString(), new Date(end).toISOString()),
     fetchLeads(new Date(prevFrom).toISOString(), new Date(from).toISOString()),
     getCollections(),
     getProducts(),
+    fetchStaffVisitors(),
   ])
-  const rows = cur.rows
+  const rows = publicRows(cur.rows, staff)
+  const prevRows = publicRows(prev.rows, staff)
   const colName = new Map(collections.map((c) => [c.slug, c.name]))
   const prodName = new Map(products.map((p) => [p.slug, p.name]))
 
-  // series
-  const byDay = new Map<string, { v: number; u: Set<string>; w: number }>()
-  for (let t = from; t < end; t += DAY) byDay.set(dayKey(t), { v: 0, u: new Set(), w: 0 })
-  const pages = new Map<string, number>(), cols = new Map<string, number>(), prodViews = new Map<string, number>(), prodAdds = new Map<string, number>()
+  // series: a session belongs to the day it started; WhatsApp = sessions with a click that day
+  const byDay = new Map<string, { v: number; u: Set<string>; w: Set<string> }>()
+  for (let t = from; t < end; t += DAY) byDay.set(dayKey(t), { v: 0, u: new Set(), w: new Set() })
+  const pages = new Map<string, number>(), pageVisitors = new Map<string, Set<string>>()
+  const cols = new Map<string, number>(), prodViews = new Map<string, number>(), prodAdds = new Map<string, number>()
   const firstOfSession = new Map<string, EventRow>()
+  const seenPv = new Set<string>()
   const funnelSets = { view: new Set<string>(), cart: new Set<string>(), checkout: new Set<string>(), wa: new Set<string>() }
-  const srcVisits = new Map<string, number>(), srcVisitors = new Map<string, Set<string>>()
+  const srcSessions = new Map<string, Set<string>>(), srcVisitors = new Map<string, Set<string>>()
+  const addTo = (m: Map<string, Set<string>>, k: string, v: string) => {
+    let set = m.get(k)
+    if (!set) { set = new Set(); m.set(k, set) }
+    set.add(v)
+  }
 
   for (const r of rows) {
-    const d = byDay.get(r.ts.slice(0, 10))
     if (!firstOfSession.has(r.session_id)) firstOfSession.set(r.session_id, r)
+    if (r.src) { addTo(srcSessions, r.src, r.session_id); addTo(srcVisitors, r.src, r.visitor_id) }
     if (r.name === 'page_view') {
-      if (d) { d.v++; d.u.add(r.visitor_id) }
+      const key = pvKey(r)
+      if (seenPv.has(key)) continue // reload / repeat of the same page in the same session
+      seenPv.add(key)
       inc(pages, r.path)
+      addTo(pageVisitors, r.path, r.visitor_id)
       const arc = r.path.match(/^\/arc\/([^/?#]+)/)?.[1]
       if (arc) inc(cols, arc)
       const prod = r.path.match(/^\/product\/([^/?#]+)/)?.[1]
       if (prod) { inc(prodViews, prod); funnelSets.view.add(r.session_id) }
-      if (r.src) {
-        inc(srcVisits, r.src)
-        if (!srcVisitors.has(r.src)) srcVisitors.set(r.src, new Set())
-        srcVisitors.get(r.src)!.add(r.visitor_id)
-      }
     } else if (r.name === 'product_view') {
       funnelSets.view.add(r.session_id)
     } else if (r.name === 'add_to_cart') {
@@ -182,12 +265,17 @@ async function realSnapshot(days: number): Promise<AnalyticsSnapshot> {
       funnelSets.checkout.add(r.session_id)
     } else if (r.name === 'whatsapp_click') {
       funnelSets.wa.add(r.session_id)
-      if (d) d.w++
+      byDay.get(r.ts.slice(0, 10))?.w.add(r.session_id)
     } else if (r.name === 'collection_open') {
       const slug = String(r.props?.collection ?? r.props?.slug ?? '')
       if (slug) inc(cols, slug)
     }
   }
+  for (const r of firstOfSession.values()) {
+    const d = byDay.get(r.ts.slice(0, 10))
+    if (d) { d.v++; d.u.add(r.visitor_id) }
+  }
+  const pageUniques = new Map([...pageVisitors].map(([k, v]) => [k, v.size]))
   // funnel is cumulative: a WhatsApp click implies the earlier steps
   const reached = (s: Set<string>, ...later: Set<string>[]) => new Set([...s, ...later.flatMap((x) => [...x])]).size
 
@@ -205,7 +293,7 @@ async function realSnapshot(days: number): Promise<AnalyticsSnapshot> {
     if (!srcRows.has(src)) srcRows.set(src, { src, visits: 0, uniques: 0, leads: 0, orders: 0, revenue: 0 })
     return srcRows.get(src)!
   }
-  for (const [src, v] of srcVisits) { const s = srcRow(src); s.visits = v; s.uniques = srcVisitors.get(src)?.size ?? 0 }
+  for (const [src, v] of srcSessions) { const s = srcRow(src); s.visits = v.size; s.uniques = srcVisitors.get(src)?.size ?? 0 }
   const kinds = new Map<string, number>()
   for (const l of leads) {
     inc(kinds, l.kind)
@@ -215,7 +303,7 @@ async function realSnapshot(days: number): Promise<AnalyticsSnapshot> {
     if (l.kind === 'whatsapp_order') { s.orders++; s.revenue += orderTotal(l.payload) }
   }
 
-  const prevK = kpisFrom(prev.rows, prevLeads)
+  const prevK = kpisFrom(prevRows, prevLeads)
   return {
     demo: false,
     error: cur.error,
@@ -224,8 +312,8 @@ async function realSnapshot(days: number): Promise<AnalyticsSnapshot> {
     to: dayKey(end - DAY),
     kpis: kpisFrom(rows, leads),
     prev: prev.error ? null : prevK,
-    series: [...byDay.entries()].map(([date, x]) => ({ date, label: dayLabel(date), visits: x.v, uniques: x.u.size, whatsapp: x.w })),
-    topPages: top(pages, 10),
+    series: [...byDay.entries()].map(([date, x]) => ({ date, label: dayLabel(date), visits: x.v, uniques: x.u.size, whatsapp: x.w.size })),
+    topPages: top(pages, 10, (k) => k, pageUniques),
     topCollections: top(cols, 8, (k) => colName.get(k) ?? k),
     topProducts: top(prodViews, 8, (k) => prodName.get(k) ?? k, prodAdds),
     funnel: [
@@ -242,7 +330,7 @@ async function realSnapshot(days: number): Promise<AnalyticsSnapshot> {
     cities: top(cities, 10),
     leadsByKind: top(kinds, 6),
     integrations: integrations(true),
-    scanned: rows.length,
+    scanned: cur.rows.length,
     capped: cur.capped,
   }
 }
@@ -253,34 +341,41 @@ async function demoSnapshot(days: number): Promise<AnalyticsSnapshot> {
   const end = startOfUtcDay(Date.now()) + DAY
   const from = end - days * DAY
 
-  const dayVisits = (t: number) => {
+  // daily sessions (visits) with a weekly shape, slow trend and the odd fest-stall spike
+  const daySessions = (t: number) => {
     const r = seeded(hashString(dayKey(t)))
     const dow = new Date(t).getUTCDay()
     const weekly = dow === 0 || dow === 6 ? 1.28 : dow === 5 ? 1.12 : 1
     const trend = 1 + ((t / DAY) % 365) / 900
-    const spike = r() > 0.93 ? 2.1 : 1 // a fest-stall day
-    return Math.round((150 + r() * 70) * weekly * trend * spike)
+    const spike = r() > 0.93 ? 2.1 : 1
+    return Math.round((64 + r() * 30) * weekly * trend * spike)
   }
   const build = (a: number, b: number) => {
     const series: SeriesPoint[] = []
-    let visits = 0, uniques = 0, wa = 0
+    let visits = 0, dailyUniques = 0, pageViews = 0, waSessions = 0
     for (let t = a; t < b; t += DAY) {
       const r = seeded(hashString(dayKey(t)) ^ 0x9e37)
-      const v = dayVisits(t)
-      const u = Math.round(v * (0.58 + r() * 0.08))
-      const w = Math.round(v * (0.028 + r() * 0.014))
-      visits += v; uniques += u; wa += w
+      const v = daySessions(t)
+      const u = Math.round(v * (0.78 + r() * 0.08))
+      const w = Math.round(v * (0.05 + r() * 0.025))
+      visits += v; dailyUniques += u; waSessions += w
+      pageViews += Math.round(v * (2.1 + r() * 0.6))
       const k = dayKey(t)
       series.push({ date: k, label: dayLabel(k), visits: v, uniques: u, whatsapp: w })
     }
-    const sessions = Math.round(visits * 0.44)
-    const addToCart = Math.round(sessions * 0.083)
-    const orders = Math.round(wa * 0.74)
+    const cartSessions = Math.round(visits * 0.068)
+    const orders = Math.round(waSessions * 0.74)
     const kpis: Kpis = {
-      visits, uniques, sessions, addToCart,
-      addToCartRate: sessions ? (addToCart * 0.82) / sessions : 0,
-      whatsappClicks: wa,
-      leads: orders + Math.round(wa * 0.31),
+      visits,
+      uniques: Math.round(dailyUniques * 0.86), // returning visitors across days
+      sessions: visits,
+      pageViews,
+      addToCart: Math.round(cartSessions * 1.35),
+      cartSessions,
+      addToCartRate: visits ? cartSessions / visits : 0,
+      whatsappClicks: waSessions,
+      whatsappRaw: Math.round(waSessions * 1.3),
+      leads: orders + Math.round(waSessions * 0.31),
       orders,
       revenueEstimate: orders * 1340,
     }
@@ -297,11 +392,11 @@ async function demoSnapshot(days: number): Promise<AnalyticsSnapshot> {
 
   const pageList = ['/', '/shop', '/custom', '/shop/t-shirts', '/fests', '/shop/hoodies', '/shop/polaroids', '/cosplay', '/faq', '/about']
   const pageW = [34, 16, 9, 8, 6, 5, 5, 4, 2, 1.5]
-  const pagesV = share(k.visits * 0.7, pageW)
+  const pagesV = share(k.pageViews, pageW)
   const colW = collections.map((_, i) => 10 / (i + 1.4) + r() * 2)
-  const colV = share(k.visits * 0.14, colW)
+  const colV = share(k.pageViews * 0.14, colW)
   const prodPick = [...products].sort((a, b) => Number(b.featured) - Number(a.featured)).slice(0, 8)
-  const prodV = share(k.visits * 0.16, prodPick.map((_, i) => 9 / (i + 1.2) + r()))
+  const prodV = share(k.pageViews * 0.16, prodPick.map((_, i) => 9 / (i + 1.2) + r()))
   const srcPick = srcList.slice(0, 7)
   const srcV = share(k.visits * 0.12, srcPick.map((_, i) => 8 / (i + 1) + r() * 2))
 
@@ -315,12 +410,12 @@ async function demoSnapshot(days: number): Promise<AnalyticsSnapshot> {
     kpis: k,
     prev: prev.kpis,
     series: cur.series,
-    topPages: pageList.map((p, i) => ({ key: p, label: p, value: pagesV[i] })),
+    topPages: pageList.map((p, i) => ({ key: p, label: p, value: pagesV[i], extra: Math.round(pagesV[i] * 0.82) })),
     topCollections: collections.map((c, i) => ({ key: c.slug, label: c.name, value: colV[i] })).sort((a, b) => b.value - a.value),
     topProducts: prodPick.map((p, i) => ({ key: p.slug, label: p.name, value: prodV[i], extra: Math.round(prodV[i] * (0.09 + r() * 0.06)) })),
     funnel: [
       { id: 'view', label: 'Viewed a product', jp: '閲覧', sessions: view },
-      { id: 'cart', label: 'Added to cart', jp: 'カート', sessions: Math.round(k.addToCartRate * k.sessions) },
+      { id: 'cart', label: 'Added to cart', jp: 'カート', sessions: k.cartSessions },
       { id: 'checkout', label: 'Started checkout', jp: '注文開始', sessions: Math.round(k.whatsappClicks * 1.45) },
       { id: 'wa', label: 'Opened WhatsApp', jp: '送信', sessions: k.whatsappClicks },
     ],
@@ -361,15 +456,35 @@ async function demoSnapshot(days: number): Promise<AnalyticsSnapshot> {
   }
 }
 
+/**
+ * Without analytics.view a member only gets the dashboard KPIs, series, funnel, top collections /
+ * products and devices. Pages, traffic sources and geography are the analytics deep-dive and are
+ * removed here, server-side, so they never reach the browser. QR rows stay for qr.use (QR studio).
+ */
+function limitSnapshot(s: AnalyticsSnapshot, perms: readonly string[]): AnalyticsSnapshot {
+  if (can(perms, 'analytics.view')) return s
+  return {
+    ...s,
+    limited: true,
+    topPages: [],
+    sources: [],
+    countries: [],
+    regions: [],
+    cities: [],
+    srcs: can(perms, 'qr.use') ? s.srcs : [],
+  }
+}
+
 /** Snapshot for the last `days` days (UTC). Demo data when Supabase is unconfigured. Never throws. */
 export async function getAnalytics(days: number): Promise<AnalyticsSnapshot> {
   await connection() // request-time: uses Date.now() for the range
   const ctx = await getAdminContext()
   if (ctx.demo) return demoSnapshot(days)
+  const perms = ctx.session?.perms ?? []
   try {
-    return await realSnapshot(days)
+    return limitSnapshot(await realSnapshot(days), perms)
   } catch (e) {
     const empty = await demoSnapshot(days)
-    return { ...empty, demo: false, error: e instanceof Error ? e.message : 'Analytics query failed' }
+    return limitSnapshot({ ...empty, demo: false, error: e instanceof Error ? e.message : 'Analytics query failed' }, perms)
   }
 }

@@ -8,6 +8,7 @@ import { ConfirmShred } from '../ConfirmShred'
 import { DataTable, type DataTableColumn } from '../DataTable'
 import { EmptyState } from '../EmptyState'
 import { adminBtn } from '../ui'
+import { READONLY_NOTE } from '../AdminContext'
 import type { Crud } from './data'
 import { Drawer, SaveBar, StateSwitch, issuesToErrors } from './kit'
 
@@ -41,6 +42,7 @@ export function EntityManager<T>({
   const list = rows ?? crud.rows
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset form state when the drawer closes
     if (!draft) { setErrors({}); setDirty(false) }
   }, [draft])
 
@@ -83,7 +85,7 @@ export function EntityManager<T>({
           pageSize={reorderable ? 0 : 25}
           toolbar={
             <>
-              <button type="button" onClick={openNew} className={adminBtn()}>
+              <button type="button" onClick={openNew} disabled={crud.readOnly} title={crud.readOnly ? READONLY_NOTE : undefined} className={adminBtn()}>
                 <Plus aria-hidden className="size-4" /> New {noun}
               </button>
               {toolbar}
@@ -93,14 +95,14 @@ export function EntityManager<T>({
             <span className="flex items-center gap-0.5">
               {reorderable && (
                 <>
-                  <button type="button" aria-label="Move up" onClick={() => move(t, -1)} className="grid size-11 place-items-center text-paper/55 focus-ring can-hover:hover:text-volt"><ArrowUp aria-hidden className="size-4" /></button>
-                  <button type="button" aria-label="Move down" onClick={() => move(t, 1)} className="grid size-11 place-items-center text-paper/55 focus-ring can-hover:hover:text-volt"><ArrowDown aria-hidden className="size-4" /></button>
+                  <button type="button" aria-label="Move up" disabled={crud.readOnly} onClick={() => move(t, -1)} className="grid size-11 place-items-center text-paper/55 focus-ring can-hover:hover:text-volt"><ArrowUp aria-hidden className="size-4" /></button>
+                  <button type="button" aria-label="Move down" disabled={crud.readOnly} onClick={() => move(t, 1)} className="grid size-11 place-items-center text-paper/55 focus-ring can-hover:hover:text-volt"><ArrowDown aria-hidden className="size-4" /></button>
                 </>
               )}
               <ConfirmShred {...crud.shredProps(crud.keyOf(t))} />
             </span>
           )}
-          empty={<EmptyState title={`No ${caption.toLowerCase()} yet`} body={emptyBody ?? `Add the first ${noun}.`} action={<button type="button" onClick={openNew} className={adminBtn()}><Plus aria-hidden className="size-4" /> New {noun}</button>} />}
+          empty={<EmptyState title={`No ${caption.toLowerCase()} yet`} body={emptyBody ?? `Add the first ${noun}.`} action={crud.readOnly ? undefined : <button type="button" onClick={openNew} className={adminBtn()}><Plus aria-hidden className="size-4" /> New {noun}</button>} />}
         />
       </StateSwitch>
 
@@ -110,7 +112,7 @@ export function EntityManager<T>({
         title={isNew ? `New ${noun}` : `Edit ${noun}`}
         jp={jp}
         wide={wide}
-        footer={draft && <SaveBar saving={saving} dirty={dirty} mode={crud.mode} onSave={save} onCancel={() => setDraft(null)} extra={Object.keys(errors).length ? <span role="alert" className="label text-[10px] text-hype">{Object.keys(errors).length} field(s) to fix</span> : null} />}
+        footer={draft && <SaveBar saving={saving} dirty={dirty} mode={crud.mode} readOnly={crud.readOnly} onSave={save} onCancel={() => setDraft(null)} extra={Object.keys(errors).length ? <span role="alert" className="label text-[10px] text-hype">{Object.keys(errors).length} field(s) to fix</span> : null} />}
       >
         {draft && form(draft, set, errors, isNew)}
       </Drawer>

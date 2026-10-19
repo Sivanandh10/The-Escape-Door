@@ -7,7 +7,7 @@
 import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { toast } from 'sonner'
-import { Trash2 } from 'lucide-react'
+import { Lock, Trash2 } from 'lucide-react'
 import { prefersReducedMotion } from '@/lib/motion'
 import { cn, seeded } from '@/lib/utils'
 import { adminBtn } from './ui'
@@ -34,6 +34,8 @@ export interface ConfirmShredProps extends ShredOptions {
   disabled?: boolean
   /** shown as tooltip + in the popover when disabled (e.g. DEMO_WRITE_NOTE) */
   disabledReason?: string
+  /** hierarchy lock (not the superadmin): lock icon instead of the bin, disabled, tooltip = disabledReason */
+  locked?: boolean
   className?: string
 }
 
@@ -60,9 +62,11 @@ export function shredWithUndo({ itemLabel, onConfirm, onCommit, onUndo, undoMs =
     if (!onCommit) return
     Promise.resolve()
       .then(onCommit)
-      .catch(() => {
+      .catch((err: unknown) => {
         onUndo?.()
-        toast.error(`Couldn't delete “${itemLabel}” — it's back in the list.`)
+        toast.error(`Couldn't delete “${itemLabel}” — it's back in the list.`, {
+          description: err instanceof Error && err.message ? err.message : undefined,
+        })
       })
   }
   const undo = () => {
@@ -89,8 +93,9 @@ const STRIPS = 9
 
 export function ConfirmShred({
   itemLabel, onConfirm, onCommit, onUndo, undoMs, label = 'Delete', variant = 'icon', confirmText = 'Shred it',
-  disabled, disabledReason, className,
+  disabled, disabledReason, locked, className,
 }: ConfirmShredProps) {
+  const off = disabled || locked
   const [open, setOpen] = useState(false)
   const [shredding, setShredding] = useState(false)
   const [pos, setPos] = useState<{ top: number; left: number } | null>(null)
@@ -174,13 +179,14 @@ export function ConfirmShred({
         type="button"
         aria-haspopup="dialog"
         aria-expanded={open}
-        aria-label={variant === 'icon' ? `${label} ${itemLabel}` : undefined}
-        title={disabled ? disabledReason : `${label} ${itemLabel}`}
-        aria-disabled={disabled || undefined}
+        aria-label={variant === 'icon' || locked ? `${label} ${itemLabel}${locked && disabledReason ? ` — ${disabledReason}` : ''}` : undefined}
+        title={off ? disabledReason : `${label} ${itemLabel}`}
+        aria-disabled={off || undefined}
+        data-locked={locked ? 'true' : undefined}
         onClick={(e) => {
           e.stopPropagation()
-          if (disabled) {
-            if (disabledReason) toast(disabledReason)
+          if (off) {
+            if (disabledReason) toast(disabledReason, { id: locked ? 'delete-locked' : undefined, icon: locked ? <Lock aria-hidden className="size-4" /> : undefined })
             return
           }
           setOpen((o) => !o)
@@ -188,11 +194,12 @@ export function ConfirmShred({
         className={cn(
           variant === 'icon'
             ? 'grid size-11 place-items-center border-2 border-transparent text-paper/60 transition-colors duration-150 focus-ring can-hover:hover:border-hype can-hover:hover:text-hype aria-expanded:border-hype aria-expanded:text-hype aria-disabled:opacity-40'
-            : adminBtn({ variant: 'ghost', size: 'sm', className: 'can-hover:hover:border-hype can-hover:hover:text-hype' }),
+            : adminBtn({ variant: 'ghost', size: 'sm', className: 'can-hover:hover:border-hype can-hover:hover:text-hype aria-disabled:opacity-50' }),
+          locked && 'cursor-not-allowed can-hover:hover:border-paper/25 can-hover:hover:text-paper/70',
           className,
         )}
       >
-        <Trash2 aria-hidden="true" className="size-4" />
+        {locked ? <Lock aria-hidden="true" className="size-4" /> : <Trash2 aria-hidden="true" className="size-4" />}
         {variant === 'button' && label}
       </button>
 

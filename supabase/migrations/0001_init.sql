@@ -6,6 +6,8 @@
 --     Netlify function `track` insert with the service role after validation. Owner reads.
 --   * admins(user_id): whoever is listed here is an owner. Add the owner after creating their
 --     auth user:  insert into public.admins (user_id) select id from auth.users where email = '<owner email>';
+--   * Safe to re-run after 0002_roles.sql: when public.has_perm() exists, the is_admin()-based write
+--     policies below are dropped/skipped instead of recreated (roles stay in charge).
 --   * Storage: product-images (public read), custom-uploads (private; uploads via signed URLs
 --     from /api/upload-url, so visitors need no storage policy).
 
@@ -254,26 +256,37 @@ alter table public.leads            enable row level security;
 alter table public.orders           enable row level security;
 alter table public.analytics_events enable row level security;
 
--- catalogue: public read (published), owner everything
+-- catalogue: public read (published), owner everything.
+-- Once 0002_roles.sql has run (public.has_perm exists), is_admin() means "any team member", so the
+-- "owner all" write policies are NOT recreated: re-running this file must never hand viewers / editors
+-- full write access. 0002's has_perm() policies stay in charge.
 do $$
-declare t text;
+declare
+  t text;
+  roles_on boolean := to_regprocedure('public.has_perm(text)') is not null;
 begin
   foreach t in array array['collections','products','events','partnerships','insta_posts'] loop
     execute format('drop policy if exists "public read published" on public.%I', t);
     execute format('create policy "public read published" on public.%I for select to anon, authenticated using (is_published)', t);
     execute format('drop policy if exists "owner all" on public.%I', t);
-    execute format('create policy "owner all" on public.%I for all to authenticated using ((select public.is_admin())) with check ((select public.is_admin()))', t);
+    if not roles_on then
+      execute format('create policy "owner all" on public.%I for all to authenticated using ((select public.is_admin())) with check ((select public.is_admin()))', t);
+    end if;
   end loop;
   foreach t in array array['bundle_rules','custom_rules','settings'] loop
     execute format('drop policy if exists "public read" on public.%I', t);
     execute format('create policy "public read" on public.%I for select to anon, authenticated using (true)', t);
     execute format('drop policy if exists "owner all" on public.%I', t);
-    execute format('create policy "owner all" on public.%I for all to authenticated using ((select public.is_admin())) with check ((select public.is_admin()))', t);
+    if not roles_on then
+      execute format('create policy "owner all" on public.%I for all to authenticated using ((select public.is_admin())) with check ((select public.is_admin()))', t);
+    end if;
   end loop;
   -- private tables: owner only (inserts come from the service role, which bypasses RLS)
   foreach t in array array['leads','orders','analytics_events'] loop
     execute format('drop policy if exists "owner all" on public.%I', t);
-    execute format('create policy "owner all" on public.%I for all to authenticated using ((select public.is_admin())) with check ((select public.is_admin()))', t);
+    if not roles_on then
+      execute format('create policy "owner all" on public.%I for all to authenticated using ((select public.is_admin())) with check ((select public.is_admin()))', t);
+    end if;
   end loop;
 end $$;
 
@@ -290,22 +303,30 @@ on conflict (id) do update
 drop policy if exists "product images public read" on storage.objects;
 create policy "product images public read" on storage.objects for select to anon, authenticated
   using (bucket_id = 'product-images');
-drop policy if exists "product images owner write" on storage.objects;
-create policy "product images owner write" on storage.objects for insert to authenticated
-  with check (bucket_id = 'product-images' and (select public.is_admin()));
-drop policy if exists "product images owner update" on storage.objects;
-create policy "product images owner update" on storage.objects for update to authenticated
-  using (bucket_id = 'product-images' and (select public.is_admin()));
-drop policy if exists "product images owner delete" on storage.objects;
-create policy "product images owner delete" on storage.objects for delete to authenticated
-  using (bucket_id = 'product-images' and (select public.is_admin()));
+-- Owner write / private read policies. Skipped once 0002_roles.sql has run: it owns these policy names
+-- (has_perm-based), and recreating them with is_admin() would give every team member full access.
+do $$
+begin
+  if to_regprocedure('public.has_perm(text)') is not null then
+    return;
+  end if;
+  drop policy if exists "product images owner write" on storage.objects;
+  create policy "product images owner write" on storage.objects for insert to authenticated
+    with check (bucket_id = 'product-images' and (select public.is_admin()));
+  drop policy if exists "product images owner update" on storage.objects;
+  create policy "product images owner update" on storage.objects for update to authenticated
+    using (bucket_id = 'product-images' and (select public.is_admin()));
+  drop policy if exists "product images owner delete" on storage.objects;
+  create policy "product images owner delete" on storage.objects for delete to authenticated
+    using (bucket_id = 'product-images' and (select public.is_admin()));
 
-drop policy if exists "custom uploads owner read" on storage.objects;
-create policy "custom uploads owner read" on storage.objects for select to authenticated
-  using (bucket_id = 'custom-uploads' and (select public.is_admin()));
-drop policy if exists "custom uploads owner delete" on storage.objects;
-create policy "custom uploads owner delete" on storage.objects for delete to authenticated
-  using (bucket_id = 'custom-uploads' and (select public.is_admin()));
+  drop policy if exists "custom uploads owner read" on storage.objects;
+  create policy "custom uploads owner read" on storage.objects for select to authenticated
+    using (bucket_id = 'custom-uploads' and (select public.is_admin()));
+  drop policy if exists "custom uploads owner delete" on storage.objects;
+  create policy "custom uploads owner delete" on storage.objects for delete to authenticated
+    using (bucket_id = 'custom-uploads' and (select public.is_admin()));
+end $$;
 
 -- ================================================================ admin KPI views
 -- security_invoker → the caller's RLS applies (only owners can read analytics/leads).

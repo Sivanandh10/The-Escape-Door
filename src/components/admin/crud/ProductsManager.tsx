@@ -3,10 +3,12 @@
 // successful create/update/delete/reorder calls revalidateCatalog(['products']) → updateTag('products'),
 // so /shop, /shop/[category], /arc/[collection], home sections and /product/[slug] update immediately.
 // Images: many per product (multi-file upload, add by URL, ↑/↓ reorder, side front/back/detail, alt, remove + undo).
+// Hierarchy: deleting a product or removing an image is superadmin-only (locked button for everyone else).
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
-import { ArrowDown, ArrowUp, ImagePlus, Plus, Trash2 } from 'lucide-react'
+import { ArrowDown, ArrowUp, ImagePlus, Lock, Plus, Trash2 } from 'lucide-react'
+import { DELETE_LOCK_NOTE, useCanDelete } from '../AdminContext'
 import type { BundleRule, ProductImage, ProductType, Variant } from '@/lib/types'
 import { productPriceLabel } from '@/lib/pricing'
 import { AdminPage } from '../AdminPage'
@@ -49,7 +51,7 @@ function withDerived(p: AdminProduct): AdminProduct {
 }
 
 export function ProductsManager({ initial, collections: initialCollections, bundleRules }: { initial: AdminProduct[]; collections: AdminCollection[]; bundleRules: BundleRule[] }) {
-  const crud = useCrud(productCfg, initial)
+  const crud = useCrud(productCfg, initial, { perm: 'catalog.edit' })
   // every arc incl. hidden ones (live: loaded under RLS), for the picker and labels
   const collections = useCrud(collectionCfg, initialCollections).rows
   const [arc, setArc] = useState<string>('all')
@@ -77,7 +79,7 @@ export function ProductsManager({ initial, collections: initialCollections, bund
       title={<>Shop <em>shelf</em></>}
       jp="商品"
       description="Everything in /shop, the arc pages, the home sections and each product page. Saves are live on the site straight away."
-      actions={<SandboxSwitch mode={crud.mode} />}
+      actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}
     >
       <EntityManager<AdminProduct>
         crud={{ ...crud, save: (item, opts) => crud.save(withDerived(item), opts) }}
@@ -173,6 +175,8 @@ const sq = 'grid size-11 place-items-center border-2 border-paper/20 text-paper/
 
 function ImagesEditor({ images, name, slug, errors, onChange }: { images: ProductImage[]; name: string; slug: string; errors: Record<string, string>; onChange: (v: ProductImage[]) => void }) {
   const [busy, setBusy] = useState(0)
+  // hierarchy rule: removing an image is a delete → superadmin only (admins can still add, replace, reorder)
+  const canDel = useCanDelete()
   const nextSide = (list: ProductImage[]): ProductImage['side'] =>
     !list.some((x) => x.side === 'front') ? 'front' : !list.some((x) => x.side === 'back') ? 'back' : 'detail'
   const altFor = (side: ProductImage['side']) => (name ? `${name} — ${side === 'back' ? 'back print' : side}` : '')
@@ -236,7 +240,11 @@ function ImagesEditor({ images, name, slug, errors, onChange }: { images: Produc
             <SelectField label="Side" value={img.side ?? 'front'} onChange={(side) => patch(i, { side })} options={SIDES.map((x) => ({ id: x.id, label: x.label }))} />
             <button type="button" aria-label={`Move image ${i + 1} up`} disabled={i === 0} onClick={() => move(i, -1)} className={cn(sq, 'can-hover:hover:border-volt can-hover:hover:text-volt')}><ArrowUp aria-hidden className="size-4" /></button>
             <button type="button" aria-label={`Move image ${i + 1} down`} disabled={i === images.length - 1} onClick={() => move(i, 1)} className={cn(sq, 'can-hover:hover:border-volt can-hover:hover:text-volt')}><ArrowDown aria-hidden className="size-4" /></button>
-            <button type="button" aria-label={`Remove image ${i + 1}`} onClick={() => remove(i)} className={cn(sq, 'can-hover:hover:border-hype can-hover:hover:text-hype')}><Trash2 aria-hidden className="size-4" /></button>
+            {canDel ? (
+              <button type="button" aria-label={`Remove image ${i + 1}`} onClick={() => remove(i)} className={cn(sq, 'can-hover:hover:border-hype can-hover:hover:text-hype')}><Trash2 aria-hidden className="size-4" /></button>
+            ) : (
+              <button type="button" aria-label={`Remove image ${i + 1} — ${DELETE_LOCK_NOTE}`} aria-disabled title={DELETE_LOCK_NOTE} onClick={() => toast(DELETE_LOCK_NOTE, { id: 'delete-locked', description: 'You can replace the image, change its alt text or move it.' })} className={cn(sq, 'cursor-not-allowed opacity-50')}><Lock aria-hidden className="size-4" /></button>
+            )}
           </div>
         </div>
       ))}
