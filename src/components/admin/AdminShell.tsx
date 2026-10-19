@@ -7,7 +7,7 @@ import { usePathname } from 'next/navigation'
 import { useEffect, useRef, useState, useTransition, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import {
-  CalendarDays, ChartLine, DoorOpen, ExternalLink, Images, Inbox, LayoutDashboard, Lock, LogOut, Menu, Package,
+  BadgePercent, CalendarDays, ChartLine, DoorOpen, Gauge, Ruler, ExternalLink, Images, Inbox, LayoutDashboard, Lock, LogOut, Menu, Package,
   QrCode, Settings, Shirt, UsersRound, X, type LucideIcon,
 } from 'lucide-react'
 import { Wordmark } from '@/components/brand'
@@ -25,6 +25,9 @@ const ICONS: Record<AdminNavItem['icon'], LucideIcon> = {
   orders: Package,
   products: Shirt,
   collections: DoorOpen,
+  deals: BadgePercent,
+  custom: Ruler,
+  pricing: Gauge,
   events: CalendarDays,
   instagram: Images,
   settings: Settings,

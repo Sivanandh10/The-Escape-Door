@@ -10,7 +10,7 @@ import { Footer } from '@/components/layout/Footer'
 import { toNavArcs } from '@/components/layout/nav'
 import JsonLd from '@/components/seo/JsonLd'
 import { orgJsonLd, websiteJsonLd } from '@/lib/seo'
-import { getCollections, getSettings } from '@/lib/data/repo'
+import { getBundleRules, getCollections, getSettings } from '@/lib/data/repo'
 import './globals.css'
 
 // DESIGN §3. JP faces + secondary faces use preload:false (JP glyphs arrive as unicode-range slices).
@@ -59,7 +59,7 @@ export const viewport: Viewport = {
 const JS_FLAG = "document.documentElement.classList.add('js')"
 
 export default async function RootLayout({ children }: LayoutProps<'/'>) {
-  const [collections, settings] = await Promise.all([getCollections(), getSettings()])
+  const [collections, settings, bundleRules] = await Promise.all([getCollections(), getSettings(), getBundleRules()])
   const arcs = toNavArcs(collections)
   const swatches = collections.map(({ slug, accentA, accentB }) => ({ slug, accentA, accentB }))
 
@@ -74,7 +74,7 @@ export default async function RootLayout({ children }: LayoutProps<'/'>) {
         <script dangerouslySetInnerHTML={{ __html: JS_FLAG }} />
       </head>
       <body className="bg-ink font-body text-paper">
-        <Providers arcs={swatches} whatsapp={settings.whatsapp}>
+        <Providers arcs={swatches} whatsapp={settings.whatsapp} bundleRules={bundleRules}>
           <SkipLink />
           <Header arcs={arcs} />
           <main id="main" tabIndex={-1} className="relative outline-none">

@@ -75,7 +75,8 @@ function errMsg(e: unknown): string {
 // ---------------------------------------------------------------- generic table hook
 export interface CrudConfig<T> {
   table: string
-  pk: 'id' | 'slug'
+  /** primary key column — the app field of the same name holds it (custom_rules uses `type`) */
+  pk: 'id' | 'slug' | 'type'
   fromRow: (r: Row) => T
   toRow: (t: T) => Row
   order?: { column: string; ascending?: boolean }
@@ -131,7 +132,7 @@ export function useCrud<T>(cfg: CrudConfig<T>, initial: T[], opts?: CrudOptions)
   const cfgRef = useRef(cfg)
   // eslint-disable-next-line react-hooks/refs -- latest-config ref, read only inside callbacks
   cfgRef.current = cfg
-  const keyOf = useCallback((t: T) => String((t as Record<string, unknown>)[cfgRef.current.pk === 'slug' ? 'slug' : 'id']), [])
+  const keyOf = useCallback((t: T) => String((t as Record<string, unknown>)[cfgRef.current.pk]), [])
 
   const [rows, setRows] = useState<T[]>(initial)
   const rowsRef = useRef(rows)

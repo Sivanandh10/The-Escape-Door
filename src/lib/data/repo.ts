@@ -6,7 +6,7 @@
 // Do not import from 'use client' files (use props from a Server Component instead).
 import { cacheLife, cacheTag } from 'next/cache'
 import type {
-  BundleRule, Collection, CustomRule, FestEvent, HoodieTier, InstaPost, Partnership, Product,
+  ApparelCustomRules, BundleRule, Collection, CustomRule, FestEvent, HoodieTier, InstaPost, Partnership, Product,
   ProductFilter, ProductImage, SiteSettings, TeeFit, Variant,
 } from '../types'
 import { publicClient } from '../supabase/server'
@@ -280,4 +280,19 @@ export async function getTeeFits(): Promise<TeeFit[]> {
   cacheTag(TAGS.settings)
   const stored = await fetchSetting<TeeFit[]>('tee_fits')
   return Array.isArray(stored) && stored.length ? stored : seed.teeFits
+}
+
+/** Custom-apparel extras (design fee, half-n-half fee, print zones) — Admin → Custom rules. */
+export async function getApparelCustom(): Promise<ApparelCustomRules> {
+  'use cache'
+  cacheLife('hours')
+  cacheTag(TAGS.settings)
+  const stored = await fetchSetting<Partial<ApparelCustomRules>>('apparel_custom')
+  if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return seed.apparelCustom
+  const zones = stored.zones && typeof stored.zones === 'object' ? stored.zones : seed.apparelCustom.zones
+  return {
+    ...seed.apparelCustom,
+    ...stored,
+    zones: { front: { ...seed.apparelCustom.zones.front, ...(zones.front ?? {}) }, back: { ...seed.apparelCustom.zones.back, ...(zones.back ?? {}) } },
+  }
 }

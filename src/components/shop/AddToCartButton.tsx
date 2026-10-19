@@ -34,7 +34,8 @@ import { track } from '@/lib/analytics'
 import { submitLead } from '@/lib/leads'
 import { buildOrderMessage, waLink } from '@/lib/whatsapp'
 import { openWhatsApp } from '@/lib/wa-open'
-import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
+import { useBundleRules, useWhatsappNumber } from '@/components/SiteSettingsProvider'
+import { computeTotals } from '@/lib/pricing'
 import { registerGsap, useReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { DoorIcon } from '@/components/brand/DoorIcon'
@@ -91,6 +92,7 @@ export function AddToCartButton({
 }: AddToCartButtonProps) {
   const reduced = useReducedMotion()
   const waNumber = useWhatsappNumber()
+  const bundleRules = useBundleRules()
   const btn = useRef<HTMLButtonElement>(null)
   const [phase, setPhase] = useState<Phase>('idle')
   const [status, setStatus] = useState('')
@@ -166,8 +168,9 @@ export function AddToCartButton({
     if (mode === 'buy') {
       // open WhatsApp inside this click — nothing awaited before it
       const { item } = commit()
+      // eslint-disable-next-line react-hooks/purity -- runs in a click handler, not during render
       const orderRef = `TED-${Date.now().toString(36).slice(-6).toUpperCase()}`
-      const link = waLink(buildOrderMessage({ items: [item], orderRef }), waNumber)
+      const link = waLink(buildOrderMessage({ items: [item], totals: computeTotals([item], bundleRules), orderRef }), waNumber)
       const opened = openWhatsApp(link)
       track('whatsapp_click', { where: 'buy_now', product: product.slug, opened })
       void submitLead({

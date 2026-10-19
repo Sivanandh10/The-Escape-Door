@@ -7,12 +7,13 @@ import { Sparkles } from 'lucide-react'
 import type { CartItem, Product, Variant } from '@/lib/types'
 import { useCart, useHydrated } from '@/lib/cart'
 import { computeTotals, formatINR, ruleMatches } from '@/lib/pricing'
-import { bundleRules } from '@/lib/data/rules'
+import { useBundleRules } from '@/components/SiteSettingsProvider'
 import { cn } from '@/lib/utils'
 
 export function BundleHint({ product, variant, qty, className }: { product: Product; variant: Variant | null; qty: number; className?: string }) {
   const hydrated = useHydrated()
   const items = useCart((s) => s.items)
+  const bundleRules = useBundleRules()
   const out = useMemo(() => {
     if (!variant || typeof variant.price !== 'number') return null
     const candidate: CartItem = {
@@ -23,12 +24,12 @@ export function BundleHint({ product, variant, qty, className }: { product: Prod
     const rule = bundleRules.find((r) => ruleMatches(r, candidate))
     if (!rule) return null
     const base = hydrated ? items : []
-    const t = computeTotals([...base, candidate])
+    const t = computeTotals([...base, candidate], bundleRules)
     const applied = t.applied.find((a) => a.ruleId === rule.id)
     const inCart = base.filter((i) => ruleMatches(rule, i)).reduce((n, i) => n + i.qty, 0)
     const hint = t.hints.find((h) => h.includes(rule.label))
     return { rule, applied, hint, inCart }
-  }, [product, variant, qty, items, hydrated])
+  }, [product, variant, qty, items, hydrated, bundleRules])
 
   if (!out) return null
   return (

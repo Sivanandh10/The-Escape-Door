@@ -104,7 +104,7 @@ export function TeamManager({ initial, initialError = null, demo = false, legacy
 
   return (
     <AdminPage
-      no="11"
+      no="14"
       kicker={`Team · ${members.length} ${members.length === 1 ? 'member' : 'members'}`}
       title={<>The <em>crew</em></>}
       jp="チーム · 役割と権限"

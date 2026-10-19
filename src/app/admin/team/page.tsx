@@ -43,7 +43,7 @@ async function TeamBody() {
 
 function TeamLoading() {
   return (
-    <AdminPage no="11" kicker="Team" title={<>The <em>crew</em></>} jp="チーム · 役割と権限" description="Opening the team list…">
+    <AdminPage no="14" kicker="Team" title={<>The <em>crew</em></>} jp="チーム · 役割と権限" description="Opening the team list…">
       <div aria-busy="true" aria-label="Loading team">
         <AdminSkeleton rows={4} />
       </div>

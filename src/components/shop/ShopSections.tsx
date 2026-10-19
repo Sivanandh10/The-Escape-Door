@@ -4,7 +4,7 @@ import type { CSSProperties, ReactNode } from 'react'
 import Link from 'next/link'
 import { ArrowRight } from 'lucide-react'
 import type { Collection, Product } from '@/lib/types'
-import { bundleRules } from '@/lib/data/rules'
+import { getBundleRules } from '@/lib/data/repo'
 import { formatINR } from '@/lib/pricing'
 import { cn } from '@/lib/utils'
 import { ArcMotif } from '@/components/fx/ArcMotif'
@@ -144,8 +144,8 @@ export function CategoryTiles({ products, exclude, only, className, headingLevel
 }
 
 // ---------------------------------------------------------------- packs (bundle rules from data)
-export function PacksStrip({ types, className }: { types?: Product['type'][]; className?: string }) {
-  const rules = bundleRules.filter((r) => !types || types.includes(r.appliesTo.type))
+export async function PacksStrip({ types, className }: { types?: Product['type'][]; className?: string }) {
+  const rules = (await getBundleRules()).filter((r) => !types || types.includes(r.appliesTo.type))
   if (!rules.length) return null
   const href: Record<string, string> = { polaroid: '/shop/polaroids', poster: '/shop/posters', bookmark: '/shop/bookmarks', badge: '/shop/badges' }
   return (

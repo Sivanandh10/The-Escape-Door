@@ -8,6 +8,7 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ArrowRight, Lock } from 'lucide-react'
 import { useCart, useHydrated } from '@/lib/cart'
 import { computeTotals } from '@/lib/pricing'
+import { useBundleRules } from '@/components/SiteSettingsProvider'
 import { track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import { CheckoutForm } from './CheckoutForm'
@@ -30,7 +31,8 @@ export interface CartPanelProps {
 export function CartPanel({ variant = 'page', step = 'cart', onStepChange, onNavigate }: CartPanelProps) {
   const hydrated = useHydrated()
   const items = useCart((s) => s.items)
-  const totals = useMemo(() => computeTotals(items), [items])
+  const bundleRules = useBundleRules()
+  const totals = useMemo(() => computeTotals(items, bundleRules), [items, bundleRules])
   const pieces = items.reduce((n, i) => n + i.qty, 0)
   const startedRef = useRef(false)
 

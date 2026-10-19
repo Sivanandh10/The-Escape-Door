@@ -1,11 +1,11 @@
 'use client'
 // /admin/qr studio: pick a src + target path → tracked URL → framed on-brand QR (SVG/PNG download)
-// + per-src attribution table from the analytics snapshot.
+// + saved links (settings 'qr_links': save / edit / delete / load back) + per-src attribution table.
 import { useEffect, useMemo, useState } from 'react'
 import QRCode from 'qrcode'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { toast } from 'sonner'
-import { Check, Copy, Download, ImageDown, Loader2, QrCode } from 'lucide-react'
+import { Bookmark, Check, Copy, Download, ImageDown, Loader2, QrCode } from 'lucide-react'
 import { AdminPanel } from '../AdminPage'
 import { DataTable, type DataTableColumn } from '../DataTable'
 import { EmptyState } from '../EmptyState'
@@ -14,6 +14,10 @@ import { adminBtn, adminInput, adminLabel, adminPill } from '../ui'
 import type { SrcRow } from '../analytics/types'
 import { formatINR } from '@/lib/pricing'
 import { cn } from '@/lib/utils'
+import { READONLY_NOTE } from '../AdminContext'
+import { useSettingList } from '../crud/settingsData'
+import type { QrLink } from '../crud/settingsSchemas'
+import { SavedLinks, newQrLink } from './SavedLinks'
 
 type Target = 'home' | 'shop' | 'custom' | 'arc'
 const TARGETS: { id: Target; label: string; path: string }[] = [
@@ -56,13 +60,36 @@ export function QrStudio({ siteUrl, srcs, arcs, rows, demo, error, range }: Prop
   const [copied, setCopied] = useState(false)
   const [busy, setBusy] = useState<'svg' | 'png' | null>(null)
   const [nonce, setNonce] = useState(0)
+  // a saved link whose path isn't one of the builder targets
+  const [loadedPath, setLoadedPath] = useState<string | null>(null)
+  const links = useSettingList<QrLink>('qr_links', [], { perm: 'qr.use', label: (l) => l.label || l.src })
 
   const src = pick === NEW ? slugifySrc(draft) : pick
   const label = srcs.find((s) => s.src === src)?.label
-  const path = target === 'arc' ? (arc ? `/arc/${arc}` : '/') : TARGETS.find((t) => t.id === target)!.path
+  const path = loadedPath ?? (target === 'arc' ? (arc ? `/arc/${arc}` : '/') : TARGETS.find((t) => t.id === target)!.path)
+  const alreadySaved = links.rows.some((l) => l.src === src && l.path === path)
+
+  async function saveLink() {
+    if (!src) return
+    if (alreadySaved) return toast('Already saved', { description: `${src} → ${path}` })
+    await links.save(newQrLink(src, path, label ?? (pick === NEW ? draft.trim() : src)))
+  }
+
+  function loadLink(l: QrLink) {
+    if (srcs.some((s) => s.src === l.src)) setPick(l.src)
+    else { setPick(NEW); setDraft(l.src) }
+    const t = TARGETS.find((x) => x.id !== 'arc' && x.path === l.path)
+    const arcSlug = l.path.startsWith('/arc/') ? l.path.slice(5) : ''
+    if (t) { setTarget(t.id); setLoadedPath(null) }
+    else if (arcSlug && arcs.some((a) => a.slug === arcSlug)) { setTarget('arc'); setArc(arcSlug); setLoadedPath(null) }
+    else setLoadedPath(l.path)
+    document.getElementById('qr-build')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    toast.success(`Loaded “${l.label || l.src}”`)
+  }
   const url = src ? buildQrUrl(siteUrl, path, src) : ''
 
   useEffect(() => {
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reset/loading state for the async QR draw
     if (!url) { setQr({ status: 'idle' }); return }
     let live = true
     setQr({ status: 'loading' })
@@ -179,7 +206,7 @@ export function QrStudio({ siteUrl, srcs, arcs, rows, demo, error, range }: Prop
               <legend className={adminLabel}>2 · Where the scan lands</legend>
               <div className="grid grid-cols-2 gap-2 sm:grid-cols-4" role="radiogroup" aria-label="Target page">
                 {TARGETS.map((t) => (
-                  <button key={t.id} type="button" role="radio" aria-checked={target === t.id} onClick={() => setTarget(t.id)}
+                  <button key={t.id} type="button" role="radio" aria-checked={target === t.id} onClick={() => { setTarget(t.id); setLoadedPath(null) }}
                     className={cn('flex min-h-14 flex-col items-start justify-center border-2 px-3 text-left transition-colors duration-150 focus-ring',
                       target === t.id ? 'border-paper bg-paper text-ink' : 'border-paper/25 text-paper/80 can-hover:hover:border-paper/60')}>
                     <span className="text-[14px] font-bold">{t.label}</span>
@@ -187,7 +214,10 @@ export function QrStudio({ siteUrl, srcs, arcs, rows, demo, error, range }: Prop
                   </button>
                 ))}
               </div>
-              {target === 'arc' && (
+              {loadedPath && (
+                <p className="mt-3 font-mono text-[12px] text-lav">Saved path <span className="text-paper">{loadedPath}</span> — pick a target above to change it.</p>
+              )}
+              {target === 'arc' && !loadedPath && (
                 <div className="mt-3">
                   <label htmlFor="qr-arc" className={adminLabel}>Arc</label>
                   {arcs.length ? (
@@ -205,6 +235,9 @@ export function QrStudio({ siteUrl, srcs, arcs, rows, demo, error, range }: Prop
                 <output aria-live="polite" className="min-h-11 flex-1 break-all border-2 border-paper/20 bg-tone-1 px-3 py-2.5 font-mono text-[12.5px] leading-relaxed text-paper/90">
                   {url || <span className="text-paper/45">Pick or name a src to build the link.</span>}
                 </output>
+                <button type="button" onClick={saveLink} disabled={!url || links.readOnly || links.status !== 'ready'} title={links.readOnly ? READONLY_NOTE : alreadySaved ? 'This src + page is already in Saved links' : 'Keep this link in Saved links'} className={adminBtn({ variant: 'ghost', className: 'shrink-0' })}>
+                  <Bookmark size={16} aria-hidden className={alreadySaved ? 'fill-current text-volt' : undefined} /> {alreadySaved ? 'Saved' : 'Save link'}
+                </button>
                 <button type="button" onClick={copy} disabled={!url} className={adminBtn({ variant: copied ? 'door' : 'primary', className: 'min-w-[132px] shrink-0' })}>
                   <AnimatePresence mode="wait" initial={false}>
                     <motion.span key={copied ? 'y' : 'n'} className="inline-flex items-center gap-2"
@@ -275,8 +308,10 @@ export function QrStudio({ siteUrl, srcs, arcs, rows, demo, error, range }: Prop
         </AdminPanel>
       </div>
 
+      <SavedLinks crud={links} siteUrl={siteUrl} onLoad={loadLink} buildUrl={buildQrUrl} slugify={slugifySrc} />
+
       <AdminPanel
-        id="qr-srcs" index={2} title="What each QR brought in" jp="QR別" shadow="door"
+        id="qr-srcs" index={3} title="What each QR brought in" jp="QR別" shadow="door"
         action={<span className={adminPill(demo ? 'hype' : 'muted')}>{demo ? 'Demo data · not real' : `Last 90 days · ${range.from.slice(0, 10)} → ${range.to.slice(0, 10)}`}</span>}
       >
         {error ? (

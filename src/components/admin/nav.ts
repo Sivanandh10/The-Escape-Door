@@ -8,7 +8,7 @@ export interface AdminNavItem {
   jp: string
   /** two-digit chapter number shown in the sidebar and page kickers */
   no: string
-  icon: 'dashboard' | 'analytics' | 'leads' | 'orders' | 'products' | 'collections' | 'events' | 'instagram' | 'settings' | 'qr' | 'team'
+  icon: 'dashboard' | 'analytics' | 'leads' | 'orders' | 'products' | 'collections' | 'deals' | 'custom' | 'pricing' | 'events' | 'instagram' | 'settings' | 'qr' | 'team'
   /** permission needed to open this section */
   perm: Perm
 }
@@ -38,15 +38,18 @@ export const ADMIN_NAV: AdminNavGroup[] = [
     items: [
       { href: '/admin/products', label: 'Products', jp: '商品', no: '06', icon: 'products', perm: 'catalog.edit' },
       { href: '/admin/collections', label: 'Collections', jp: 'アーク', no: '07', icon: 'collections', perm: 'catalog.edit' },
-      { href: '/admin/events', label: 'Events & Partners', jp: 'イベント', no: '08', icon: 'events', perm: 'catalog.edit' },
-      { href: '/admin/instagram', label: 'Instagram', jp: 'インスタ', no: '09', icon: 'instagram', perm: 'catalog.edit' },
+      { href: '/admin/deals', label: 'Deals', jp: 'お得', no: '08', icon: 'deals', perm: 'catalog.edit' },
+      { href: '/admin/custom-rules', label: 'Custom rules', jp: '特注', no: '09', icon: 'custom', perm: 'catalog.edit' },
+      { href: '/admin/pricing', label: 'Pricing', jp: '価格', no: '10', icon: 'pricing', perm: 'catalog.edit' },
+      { href: '/admin/events', label: 'Events & Partners', jp: 'イベント', no: '11', icon: 'events', perm: 'catalog.edit' },
+      { href: '/admin/instagram', label: 'Instagram', jp: 'インスタ', no: '12', icon: 'instagram', perm: 'catalog.edit' },
     ],
   },
   {
     label: 'Site',
     items: [
-      { href: '/admin/settings', label: 'Settings', jp: '設定', no: '10', icon: 'settings', perm: 'settings.edit' },
-      { href: '/admin/team', label: 'Team', jp: 'チーム', no: '11', icon: 'team', perm: 'team.manage' },
+      { href: '/admin/settings', label: 'Settings', jp: '設定', no: '13', icon: 'settings', perm: 'settings.edit' },
+      { href: '/admin/team', label: 'Team', jp: 'チーム', no: '14', icon: 'team', perm: 'team.manage' },
     ],
   },
 ]

@@ -1,11 +1,17 @@
 // P4b — admin entity types + row mappers (DB snake_case ⇄ app types) + CrudConfigs.
 // Mirrors supabase/migrations/0001_init.sql. Pure module (client + server safe).
 import type {
-  Attribution, CartItem, CartTotals, Collection, FestEvent, InstaPost, LeadKind, Partnership, Product, ProductImage,
+  Attribution, BundleRule, CartItem, CartTotals, Collection, CustomRule, FestEvent, InstaPost, LeadKind, Partnership, Product, ProductImage,
   SiteSettings, Variant,
 } from '@/lib/types'
 import type { CrudConfig } from './data'
 import { bool, num, str, strArr } from './util'
+
+/** Every product type the shop knows (pickers in Products, Deals and Custom rules). */
+export const PRODUCT_TYPES: Product['type'][] = [
+  'tshirt', 'hoodie', 'polaroid', 'bookmark', 'poster', 'badge', 'sticker', 'keychain', 'cosplay', 'katana',
+  'figurine', 'cape', 'accessory', 'hat', 'tote', 'stationery',
+]
 
 // ---------------------------------------------------------------- catalogue (+ admin-only columns)
 export type AdminProduct = Product & { published: boolean; sortOrder: number }
@@ -125,6 +131,51 @@ export const instaCfg: CrudConfig<AdminInsta> = {
     published: bool(r.is_published, true),
   }),
   toRow: (p) => ({ id: p.id, image: p.image, url: p.url, caption: p.caption, sort_order: p.order, is_published: p.published }),
+}
+
+// ---------------------------------------------------------------- pricing rules (tag 'rules')
+/** Bundle deal + the admin-only `active` switch (inactive deals stay in the list but stop applying). */
+export type AdminBundleRule = BundleRule & { active: boolean }
+
+export const bundleRuleCfg: CrudConfig<AdminBundleRule> = {
+  table: 'bundle_rules',
+  pk: 'id',
+  order: { column: 'id' },
+  tags: ['rules'],
+  label: (r) => r.label || r.id,
+  fromRow: (r) => {
+    const k = str(r.variant_attr_key), v = str(r.variant_attr_value)
+    const price = num(r.price), free = num(r.free)
+    return {
+      id: str(r.id), label: str(r.label),
+      appliesTo: { type: str(r.applies_type, 'polaroid') as BundleRule['appliesTo']['type'], ...(k && v ? { variantAttr: [k, v] as [string, string] } : {}) },
+      kind: r.kind === 'buyXgetY' ? 'buyXgetY' : 'nForPrice',
+      n: num(r.n) ?? 1,
+      ...(price != null ? { price } : {}), ...(free != null ? { free } : {}),
+      active: bool(r.active, true),
+    }
+  },
+  toRow: (r) => ({
+    id: r.id, label: r.label, applies_type: r.appliesTo.type,
+    variant_attr_key: r.appliesTo.variantAttr?.[0] || null, variant_attr_value: r.appliesTo.variantAttr?.[1] || null,
+    kind: r.kind, n: r.n,
+    price: r.kind === 'nForPrice' ? (r.price ?? null) : null,
+    free: r.kind === 'buyXgetY' ? (r.free ?? null) : null,
+    active: r.active,
+  }),
+}
+
+/** Custom-order rule per product type (pk = type). */
+export type AdminCustomRule = CustomRule
+
+export const customRuleCfg: CrudConfig<AdminCustomRule> = {
+  table: 'custom_rules',
+  pk: 'type',
+  order: { column: 'type' },
+  tags: ['rules'],
+  label: (r) => `${r.type} custom rule`,
+  fromRow: (r) => ({ type: str(r.type) as CustomRule['type'], minQty: num(r.min_qty) ?? 1, unitPrice: num(r.unit_price), note: str(r.note) }),
+  toRow: (r) => ({ type: r.type, min_qty: r.minQty, unit_price: r.unitPrice, note: r.note }),
 }
 
 // ---------------------------------------------------------------- settings (key/value row 'site')

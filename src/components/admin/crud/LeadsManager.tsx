@@ -1,9 +1,10 @@
 'use client'
 // P4b — Leads: pipeline board (drag between New → Contacted → Won / Lost) + list view, filters,
-// detail drawer (contact, order lines, custom files via signed URLs, notes), CSV export, #69 shred + undo.
+// detail drawer (contact, order lines, custom files via signed URLs, notes), CSV export, #69 shred + undo,
+// "Add lead" (manual: walk-ins, DMs, calls) and "Edit details" (ManualEntry.tsx).
 import { useEffect, useMemo, useState, type DragEvent } from 'react'
 import { toast } from 'sonner'
-import { ArrowRight, Download, ExternalLink, FileText, Kanban, List, Mail, MessageCircle, PackagePlus, Sparkles } from 'lucide-react'
+import { ArrowRight, Download, ExternalLink, FileText, Kanban, List, Mail, MessageCircle, PackagePlus, Pencil, Plus, Sparkles } from 'lucide-react'
 import type { CartItem, CartTotals } from '@/lib/types'
 import { formatINR } from '@/lib/pricing'
 import { cn } from '@/lib/utils'
@@ -19,6 +20,7 @@ import {
 } from './entities'
 import { fmtDate, newId, waFor } from './util'
 import { Chips, Drawer, SandboxSwitch, SearchBox, StateSwitch, Toolbar } from './kit'
+import { LeadEditDrawer, blankLead } from './ManualEntry'
 
 type View = 'board' | 'list'
 const STATUS_ALL = [...LEAD_STATUSES, SPAM_STATUS]
@@ -38,6 +40,7 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
   const [src, setSrc] = useState('all')
   const [showSpam, setShowSpam] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<{ lead: AdminLead; isNew: boolean } | null>(null)
 
   // small screens start in list view
   useEffect(() => {
@@ -102,6 +105,9 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
                 </button>
               ))}
             </div>
+            <button type="button" onClick={() => setEditing({ lead: blankLead(), isNew: true })} disabled={crud.readOnly} title={crud.readOnly ? READONLY_NOTE : 'Walk-in, DM or phone call — add it by hand'} className={adminBtn()}>
+              <Plus aria-hidden className="size-4" /> Add lead
+            </button>
             <button type="button" onClick={exportCsv} className={adminBtn({ variant: 'ghost' })}>
               <Download aria-hidden className="size-4" /> CSV
             </button>
@@ -136,6 +142,7 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
           <EmptyState
             title="Inbox zero"
             body="No leads yet. They appear here the moment someone taps “Buy on WhatsApp”, sends a custom request or asks to be reminded about a stall."
+            action={crud.readOnly ? undefined : <button type="button" onClick={() => setEditing({ lead: blankLead(), isNew: true })} className={adminBtn()}><Plus aria-hidden className="size-4" /> Add lead</button>}
           />
         ) : filtered.length === 0 ? (
           <EmptyState mood="peek" sfx="…?" title="No door leads there" body="No leads match these filters." action={<button type="button" className={adminBtn({ variant: 'ghost' })} onClick={() => { setQ(''); setKind('all'); setSrc('all') }}>Reset filters</button>} />
@@ -154,7 +161,9 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
         onNotes={(notes) => open && crud.update(open.id, (x) => ({ ...x, notes }), { success: 'Note saved' })}
         crud={crud}
         onPromoted={() => open && setStatus(open.id, 'converted')}
+        onEdit={() => { if (open) { setOpenId(null); setEditing({ lead: open, isNew: false }) } }}
       />
+      <LeadEditDrawer lead={editing?.lead ?? null} isNew={!!editing?.isNew} crud={crud} onClose={() => setEditing(null)} />
     </AdminPage>
   )
 }
@@ -290,7 +299,7 @@ function ListView({
 
 // ---------------------------------------------------------------- drawer
 function LeadDrawer({
-  lead, mode, onClose, onStatus, onNotes, crud, onPromoted,
+  lead, mode, onClose, onStatus, onNotes, crud, onPromoted, onEdit,
 }: {
   lead: AdminLead | null
   mode: Crud<AdminLead>['mode']
@@ -299,6 +308,7 @@ function LeadDrawer({
   onNotes: (n: string) => void
   crud: Crud<AdminLead>
   onPromoted: () => void
+  onEdit: () => void
 }) {
   const [notes, setNotes] = useState('')
   const [files, setFiles] = useState<Array<{ ref: string; url: string | null }>>([])
@@ -362,6 +372,9 @@ function LeadDrawer({
                 <PackagePlus aria-hidden className="size-4" /> {promoting ? 'Creating…' : 'Promote to order'}
               </button>
             )}
+            <button type="button" onClick={onEdit} disabled={ro} title={ro ? READONLY_NOTE : undefined} className={adminBtn({ variant: 'ghost' })}>
+              <Pencil aria-hidden className="size-4" /> Edit details
+            </button>
             <span className="ml-auto" />
             <ConfirmShred {...crud.shredProps(l.id, onClose)} variant="button" label="Delete" />
           </>

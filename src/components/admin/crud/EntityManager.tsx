@@ -1,6 +1,7 @@
 'use client'
 // P4b — generic CRUD list + editor drawer (zod-validated, optimistic save, reorder, #69 shred + undo).
-// Used by Products, Collections, Events & Partners and Instagram.
+// Used by Products, Collections, Deals, Custom rules, Pricing (tiers / fits), Events & Partners, Instagram and QR links.
+// Add = toolbar "New …"; Edit = row click → drawer; Delete = row shredder + drawer "Delete" (superadmin only, lock otherwise).
 import { useEffect, useState, type ReactNode } from 'react'
 import { ArrowDown, ArrowUp, Plus } from 'lucide-react'
 import type { ZodType } from 'zod'
@@ -112,7 +113,23 @@ export function EntityManager<T>({
         title={isNew ? `New ${noun}` : `Edit ${noun}`}
         jp={jp}
         wide={wide}
-        footer={draft && <SaveBar saving={saving} dirty={dirty} mode={crud.mode} readOnly={crud.readOnly} onSave={save} onCancel={() => setDraft(null)} extra={Object.keys(errors).length ? <span role="alert" className="label text-[10px] text-hype">{Object.keys(errors).length} field(s) to fix</span> : null} />}
+        footer={draft && (
+          <SaveBar
+            saving={saving}
+            dirty={dirty}
+            mode={crud.mode}
+            readOnly={crud.readOnly}
+            onSave={save}
+            onCancel={() => setDraft(null)}
+            extra={
+              <>
+                {Object.keys(errors).length ? <span role="alert" className="label text-[10px] text-hype">{Object.keys(errors).length} field(s) to fix</span> : null}
+                {/* delete from inside the editor too (superadmin: shredder; everyone else: lock) */}
+                {!isNew && <ConfirmShred {...crud.shredProps(crud.keyOf(draft), () => setDraft(null))} variant="button" label="Delete" />}
+              </>
+            }
+          />
+        )}
       >
         {draft && form(draft, set, errors, isNew)}
       </Drawer>

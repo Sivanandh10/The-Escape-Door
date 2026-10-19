@@ -1,9 +1,10 @@
 'use client'
 // P4b — Orders: WhatsApp-order leads promoted to orders. Status stepper (new → confirmed → paid → shipped →
-// delivered / cancelled), quick "Mark paid" / "Mark shipped", items + totals drawer, promote-from-lead strip.
+// delivered / cancelled), quick "Mark paid" / "Mark shipped", items + totals drawer, promote-from-lead strip,
+// "Add order" (manual: stall sales, DMs) and "Edit" (customer, items, total — ManualEntry.tsx).
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import { ArrowRight, Banknote, MessageCircle, PackagePlus, Truck } from 'lucide-react'
+import { ArrowRight, Banknote, MessageCircle, PackagePlus, Pencil, Plus, Truck } from 'lucide-react'
 import { formatINR } from '@/lib/pricing'
 import { cn } from '@/lib/utils'
 import { AdminPage, AdminPanel } from '../AdminPage'
@@ -17,6 +18,7 @@ import { READONLY_NOTE } from '../AdminContext'
 import { ORDER_STATUSES, leadCfg, orderCfg, orderFromLead, type AdminLead, type AdminOrder, type OrderStatus } from './entities'
 import { Chips, Drawer, SandboxSwitch, StateSwitch } from './kit'
 import { OrderLines } from './LeadsManager'
+import { OrderEditDrawer, blankOrder } from './ManualEntry'
 import { fmtDate, waFor } from './util'
 
 const meta = (s: OrderStatus) => ORDER_STATUSES.find((x) => x.id === s) ?? ORDER_STATUSES[0]
@@ -33,6 +35,8 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
   const leads = useCrud(leadCfg, initialLeads, { perm: 'leads.edit' })
   const [filter, setFilter] = useState<'all' | OrderStatus>('all')
   const [openId, setOpenId] = useState<string | null>(null)
+  const [editing, setEditing] = useState<{ order: AdminOrder; isNew: boolean } | null>(null)
+  const addOrder = () => setEditing({ order: blankOrder(), isNew: true })
 
   const open = crud.rows.find((o) => o.id === openId) ?? null
   const rows = useMemo(() => (filter === 'all' ? crud.rows : crud.rows.filter((o) => o.status === filter)), [crud.rows, filter])
@@ -100,7 +104,12 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
       title={<>Order <em>desk</em></>}
       jp="注文 · 入金 · 発送"
       description="WhatsApp orders you've promoted from leads. Confirm on chat, mark paid when the UPI lands, mark shipped when it leaves."
-      actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}
+      actions={<>
+        <SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />
+        <button type="button" onClick={addOrder} disabled={crud.readOnly} title={crud.readOnly ? READONLY_NOTE : 'Stall sale, DM or phone order — add it by hand'} className={adminBtn()}>
+          <Plus aria-hidden className="size-4" /> Add order
+        </button>
+      </>}
     >
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard index={0} label="Open orders" jp="未処理" value={stats.open} tone="volt" />
@@ -166,18 +175,20 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
           empty={
             <EmptyState
               title={crud.rows.length ? 'No orders in this state' : 'No orders yet'}
-              body={crud.rows.length ? 'Try another status filter.' : 'Promote a WhatsApp-order lead once the customer confirms on chat — it becomes an order here.'}
+              body={crud.rows.length ? 'Try another status filter.' : 'Promote a WhatsApp-order lead once the customer confirms on chat — it becomes an order here. Or add one by hand.'}
+              action={crud.rows.length || crud.readOnly ? undefined : <button type="button" onClick={addOrder} className={adminBtn()}><Plus aria-hidden className="size-4" /> Add order</button>}
             />
           }
         />
       </StateSwitch>
 
-      <OrderDrawer order={open} crud={crud} onClose={() => setOpenId(null)} onStatus={setStatus} />
+      <OrderDrawer order={open} crud={crud} onClose={() => setOpenId(null)} onStatus={setStatus} onEdit={() => { if (open) { setOpenId(null); setEditing({ order: open, isNew: false }) } }} />
+      <OrderEditDrawer order={editing?.order ?? null} isNew={!!editing?.isNew} crud={crud} onClose={() => setEditing(null)} />
     </AdminPage>
   )
 }
 
-function OrderDrawer({ order: o, crud, onClose, onStatus }: { order: AdminOrder | null; crud: Crud<AdminOrder>; onClose: () => void; onStatus: (o: AdminOrder, s: OrderStatus) => void }) {
+function OrderDrawer({ order: o, crud, onClose, onStatus, onEdit }: { order: AdminOrder | null; crud: Crud<AdminOrder>; onClose: () => void; onStatus: (o: AdminOrder, s: OrderStatus) => void; onEdit: () => void }) {
   const wa = o ? waFor(o.contact) : null
   const n = o ? NEXT[o.status] : undefined
   return (
@@ -197,6 +208,9 @@ function OrderDrawer({ order: o, crud, onClose, onStatus }: { order: AdminOrder 
             {o.status !== 'cancelled' && o.status !== 'delivered' && (
               <button type="button" onClick={() => onStatus(o, 'cancelled')} disabled={crud.readOnly} className={adminBtn({ variant: 'ghost' })}>Cancel order</button>
             )}
+            <button type="button" onClick={onEdit} disabled={crud.readOnly} title={crud.readOnly ? READONLY_NOTE : undefined} className={adminBtn({ variant: 'ghost' })}>
+              <Pencil aria-hidden className="size-4" /> Edit
+            </button>
             <span className="ml-auto" />
             <ConfirmShred {...crud.shredProps(o.id, onClose)} variant="button" label="Delete" />
           </>

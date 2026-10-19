@@ -116,7 +116,7 @@ export function EventsManager({ events, partners }: { events: AdminEvent[]; part
   const ev = useCrud(eventCfg, events, { perm: 'catalog.edit' })
   const pt = useCrud(partnershipCfg, partners, { perm: 'catalog.edit' })
   return (
-    <AdminPage no="08" kicker="Catalogue · stalls & fests" title={<>Events &amp; <em>partners</em></>} jp="イベント · パートナー" description="Upcoming stalls feed “Catch us live”; partnerships feed the Fandom Partner timeline." actions={<SandboxSwitch mode={ev.mode} readOnly={ev.readOnly} />}>
+    <AdminPage no="11" kicker="Catalogue · stalls & fests" title={<>Events &amp; <em>partners</em></>} jp="イベント · パートナー" description="Upcoming stalls feed “Catch us live”; partnerships feed the Fandom Partner timeline." actions={<SandboxSwitch mode={ev.mode} readOnly={ev.readOnly} />}>
       <AdminPanel index={0} title={<>Stalls &amp; <em className="accent">pop-ups</em></>} jp="イベント">
         <EntityManager<AdminEvent>
           crud={ev}
@@ -222,7 +222,7 @@ export { ImageInput }
 export function InstagramManager({ initial }: { initial: AdminInsta[] }) {
   const crud = useCrud(instaCfg, initial, { perm: 'catalog.edit' })
   return (
-    <AdminPage no="09" kicker={`Site · ${crud.rows.length} posts`} title={<>Insta <em>strip</em></>} jp="インスタ" description="Posts shown in the home Instagram strip. Empty = the designed “follow us” state. Nothing embeds Instagram's scripts." actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}>
+    <AdminPage no="12" kicker={`Site · ${crud.rows.length} posts`} title={<>Insta <em>strip</em></>} jp="インスタ" description="Posts shown in the home Instagram strip. Empty = the designed “follow us” state. Nothing embeds Instagram's scripts." actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}>
       <EntityManager
         crud={crud}
         caption="Posts"
@@ -294,7 +294,7 @@ export function SettingsManager({ initial }: { initial: SiteSettings }) {
 
   return (
     <AdminPage
-      no="10"
+      no="13"
       kicker="Site · words on the door"
       title={<>Site <em>settings</em></>}
       jp="設定"

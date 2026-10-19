@@ -14,17 +14,14 @@ import { productPriceLabel } from '@/lib/pricing'
 import { AdminPage } from '../AdminPage'
 import { adminBtn, adminPill } from '../ui'
 import { explainDemo, getAdminClient, uploadProductImage, useCrud } from './data'
-import { collectionCfg, productCfg, type AdminCollection, type AdminProduct } from './entities'
+import { PRODUCT_TYPES, collectionCfg, productCfg, type AdminCollection, type AdminProduct } from './entities'
 import { EntityManager } from './EntityManager'
 import { Chips, ColorField, FormSection, NumberField, SandboxSwitch, SelectField, TagsField, TextArea, TextField, Toggle } from './kit'
 import { ImageInput } from './CatalogManagers'
 import { newId, slugify } from './util'
 import { cn } from '@/lib/utils'
 
-const TYPES: ProductType[] = [
-  'tshirt', 'hoodie', 'polaroid', 'bookmark', 'poster', 'badge', 'sticker', 'keychain', 'cosplay', 'katana',
-  'figurine', 'cape', 'accessory', 'hat', 'tote', 'stationery',
-]
+const TYPES: ProductType[] = PRODUCT_TYPES
 const APPAREL: ProductType[] = ['tshirt', 'hoodie']
 const DEFAULT_SIZES = ['XS', 'S', 'M', 'L', 'XL', 'XXL']
 const STOCK = [

@@ -3,8 +3,7 @@
 // stage to a client island. H2 + JP subtitle + steps + minimum chips are static HTML.
 import type { CSSProperties } from 'react'
 import Link from 'next/link'
-import { getCustomRules } from '@/lib/data/repo'
-import { apparelCustom } from '@/lib/data/rules'
+import { getApparelCustom, getCustomRules } from '@/lib/data/repo'
 import { formatINR } from '@/lib/pricing'
 import { ForgeStage } from './s09/ForgeStage'
 import { ForgeCta } from './s09/ForgeCta'
@@ -17,7 +16,7 @@ const MIN_LABEL: Record<string, string> = {
 }
 
 export default async function S09ForgeTeaser() {
-  const rules = await getCustomRules()
+  const [rules, apparelCustom] = await Promise.all([getCustomRules(), getApparelCustom()])
   const mins = Object.keys(MIN_LABEL)
     .map((type) => rules.find((r) => r.type === type))
     .filter((r): r is NonNullable<typeof r> => !!r && r.minQty > 1)

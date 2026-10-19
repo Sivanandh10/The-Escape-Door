@@ -11,8 +11,7 @@ import { ZoneDiagram } from '@/components/forge/ZoneDiagram'
 import { ForgeFaq } from '@/components/forge/ForgeFaq'
 import { KindIcon } from '@/components/forge/KindIcon'
 import { KIND_META, type ForgeData } from '@/components/forge/model'
-import { getCustomRules, getHoodieTiers, getPartnerships, getTeeFits } from '@/lib/data/repo'
-import { apparelCustom } from '@/lib/data/rules'
+import { getApparelCustom, getCustomRules, getHoodieTiers, getPartnerships, getTeeFits } from '@/lib/data/repo'
 import { formatINR } from '@/lib/pricing'
 import { breadcrumbJsonLd, faqJsonLd, serviceJsonLd } from '@/lib/seo'
 
@@ -43,7 +42,7 @@ function SectionHead({ id, kicker, jp, children, className }: { id: string; kick
 }
 
 export default async function CustomPage() {
-  const [rules, fits, tiers, partnerships] = await Promise.all([getCustomRules(), getTeeFits(), getHoodieTiers(), getPartnerships()])
+  const [rules, fits, tiers, partnerships, apparelCustom] = await Promise.all([getCustomRules(), getTeeFits(), getHoodieTiers(), getPartnerships(), getApparelCustom()])
   const data: ForgeData = { fits, tiers, rules, apparel: apparelCustom }
   const z = apparelCustom.zones
   const fee = formatINR(apparelCustom.companyDesignFee)

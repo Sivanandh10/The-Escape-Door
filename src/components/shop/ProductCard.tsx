@@ -21,7 +21,7 @@ import Link from 'next/link'
 import { ArrowUpRight, RotateCcw } from 'lucide-react'
 import type { Product } from '@/lib/types'
 import { cn } from '@/lib/utils'
-import { bundleRules } from '@/lib/data/rules'
+import { useBundleRules } from '@/components/SiteSettingsProvider'
 import { Tilt } from '@/components/motion/Tilt'
 import { PriceTag } from './PriceTag'
 import { WishlistButton } from './WishlistButton'
@@ -81,6 +81,7 @@ export function ProductCard({
   const single = p.variants.length === 1 && !p.sizes?.length && !p.priceOnRequest
   const stock = STOCK[p.stock]
   const arc = collectionName ?? titleCase(p.collection)
+  const bundleRules = useBundleRules()
   const deal = p.bundleRuleId ? bundleRules.find((r) => r.id === p.bundleRuleId)?.label : undefined
 
   const card = (

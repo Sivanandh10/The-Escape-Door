@@ -25,8 +25,9 @@ import { prefersReducedMotion, registerGsap } from '@/lib/motion'
 import { initAnalytics } from '@/lib/analytics'
 import { ensureHydrated, useCart } from '@/lib/cart'
 import { SiteSettingsProvider } from '@/components/SiteSettingsProvider'
+import type { BundleRule } from '@/lib/types'
 
-export { useSiteSettings, useWhatsappNumber } from '@/components/SiteSettingsProvider'
+export { useBundleRules, useSiteSettings, useWhatsappNumber } from '@/components/SiteSettingsProvider'
 
 const CartDrawer = dynamic(() => import('@/components/shop/CartDrawer'), { ssr: false, loading: () => null })
 
@@ -129,9 +130,11 @@ export interface ProvidersProps {
   arcs?: ArcSwatch[]
   /** settings.whatsapp from repo getSettings() (Admin → Settings) */
   whatsapp?: string
+  /** active bundle deals from repo getBundleRules() (Admin → Deals) */
+  bundleRules?: BundleRule[]
 }
 
-export function Providers({ children, arcs = [], whatsapp = '' }: ProvidersProps) {
+export function Providers({ children, arcs = [], whatsapp = '', bundleRules }: ProvidersProps) {
   const arcTheme = useArcThemeState(arcs)
   const resetArc = arcTheme.set
   const onRoute = useCallback(() => resetArc(null), [resetArc])
@@ -143,7 +146,7 @@ export function Providers({ children, arcs = [], whatsapp = '' }: ProvidersProps
   }, [])
 
   return (
-    <SiteSettingsProvider whatsapp={whatsapp}>
+    <SiteSettingsProvider whatsapp={whatsapp} bundleRules={bundleRules}>
     <ArcThemeContext.Provider value={arcTheme}>
       <MotionConfig reducedMotion="user">
         <SmoothScroll>

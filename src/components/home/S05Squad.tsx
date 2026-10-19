@@ -6,8 +6,7 @@
 // Server component: all counts / prices come from the catalogue (repo, 'use cache'); the art is
 // rendered here so the client bundle only carries the interaction.
 import type { Product, ProductType } from '@/lib/types'
-import { getBundleRules, getHoodieTiers, getProducts, getTeeFits } from '@/lib/data/repo'
-import { apparelCustom } from '@/lib/data/rules'
+import { getApparelCustom, getBundleRules, getHoodieTiers, getProducts, getTeeFits } from '@/lib/data/repo'
 import { formatINR, formatINRRange } from '@/lib/pricing'
 import { ProductArt } from '@/components/shop/ProductArt'
 import { Sfx } from '@/components/fx/Sfx'
@@ -46,7 +45,7 @@ function minPrice(list: Product[]): number | null {
 }
 
 export default async function S05Squad(_props: { products?: Product[] }) {
-  const [all, tiers, fits, rules] = await Promise.all([getProducts(), getHoodieTiers(), getTeeFits(), getBundleRules()])
+  const [all, tiers, fits, rules, apparelCustom] = await Promise.all([getProducts(), getHoodieTiers(), getTeeFits(), getBundleRules(), getApparelCustom()])
 
   const polaroidRule = rules.find((r) => r.appliesTo.type === 'polaroid' && r.kind === 'nForPrice')
   const posterRule = rules.find((r) => r.appliesTo.type === 'poster')
