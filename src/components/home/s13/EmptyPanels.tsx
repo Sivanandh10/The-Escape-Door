@@ -2,7 +2,8 @@
 // Frames are a redundant visual link to the profile (aria-hidden, out of tab order) — the real,
 // labelled CTA is the follow button above. Owner: s13.
 import type { ReactNode } from 'react'
-import { Mascot, DoorIcon } from '@/components/brand'
+import { DoorIcon } from '@/components/brand'
+import { KadoArt } from '@/components/brand/BrandArt'
 import { Screentone } from '@/components/fx/Screentone'
 import { cn } from '@/lib/utils'
 
@@ -61,7 +62,7 @@ const FRAMES: Frame[] = [
       <>
         <Screentone density="light" color="var(--color-ink)" opacity={0.16} fade="bottom" />
         <span className="absolute bottom-[22%] left-1/2 block w-[58%] -translate-x-1/2">
-          <Mascot mood="wave" animate title="" shadow={false} className="h-auto w-full" />
+          <KadoArt name="kado-wave-anim-flat" className="block h-auto w-full" />
         </span>
         <span className="absolute right-[8%] top-[16%] rotate-3 border-[3px] border-ink bg-paper px-2 py-1 font-sfx text-[0.95rem] leading-none text-ink">
           FOLLOW!

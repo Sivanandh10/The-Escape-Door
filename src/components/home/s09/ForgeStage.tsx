@@ -95,6 +95,9 @@ export function ForgeStage() {
 
       // idle: the tee floats (sine yoyo)
       const idle = gsap.to(q('[data-float]'), { y: -10, duration: 2.2, ease: 'sine.inOut', yoyo: true, repeat: -1 })
+      // perf: pause the idle float while offscreen
+      const idleIo = new IntersectionObserver(([e]) => (e.isIntersecting ? idle.play() : idle.pause()))
+      if (root.current) idleIo.observe(root.current)
       // exit: stage drifts up + tilts as the section scrolls away
       const exit = gsap.to(q('[data-exit]'), {
         yPercent: -6,
@@ -105,6 +108,7 @@ export function ForgeStage() {
       return () => {
         st.scrollTrigger?.kill()
         st.kill()
+        idleIo.disconnect()
         idle.kill()
         exit.scrollTrigger?.kill()
         exit.kill()

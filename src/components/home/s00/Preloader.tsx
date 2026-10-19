@@ -259,14 +259,17 @@ export default function Preloader() {
         <div className="relative grid place-items-center px-4">
           <div className="s00-shake relative">
             <svg className="s00-burst pointer-events-none absolute left-1/2 top-1/2 size-[170%] -translate-x-1/2 -translate-y-1/2" viewBox="-150 -150 300 300" aria-hidden="true">
-              <g fill="var(--color-paper)">
-                {burst.map((pts, i) => (
-                  <polygon key={i} points={pts} />
-                ))}
-              </g>
+              {phase === 'run' && (
+                <g fill="var(--color-paper)">
+                  {burst.map((pts, i) => (
+                    <polygon key={i} points={pts} />
+                  ))}
+                </g>
+              )}
             </svg>
             <div className="s00-mark">
-              <Wordmark variant="full" title="" className="relative block size-full" />
+              {/* perf: the 79 KB wordmark only exists while the intro actually runs (never in the SSR HTML) */}
+              {phase === 'run' && <Wordmark variant="full" title="" className="relative block size-full" />}
             </div>
             <div className="s00-don pointer-events-none absolute -right-[4%] -top-[14%] origin-center md:-right-[16%]">
               <Sfx text="ドン!" size="lg" tone="hype" rotate={-9} />
@@ -297,7 +300,7 @@ export default function Preloader() {
             </div>
           </div>
           <div className="s00-kado pointer-events-none -mb-5 shrink-0 md:-mb-7">
-            <Mascot mood="peek" open={0} animate title="" className="block w-[92px] md:w-[150px]" />
+            {phase === 'run' ? <Mascot mood="peek" open={0} animate title="" className="block w-[92px] md:w-[150px]" /> : <span className="block aspect-[200/220] w-[92px] md:w-[150px]" />}
           </div>
         </div>
       </div>

@@ -69,7 +69,7 @@ export function ShopHero({
   return (
     <header className="relative overflow-hidden border-b-4 border-paper/90 bg-ink pt-[calc(var(--header-h)+28px)]">
       <div aria-hidden="true" className="ted-hero-motif pointer-events-none absolute inset-y-0 right-0 w-[min(62vw,860px)] opacity-[0.55] [mask-image:linear-gradient(90deg,transparent,#000_38%)]">
-        <ArcMotif motif={motif} colorA={accentA} colorB={accentB} line="#F4EFE6" light="#0B0B0F" animated width={900} height={700} density={0.55} />
+        <ArcMotif motif={motif} colorA={accentA} colorB={accentB} line="#F4EFE6" light="#0B0B0F" animated width={900} height={700} density={0.55} loading="eager" />
       </div>
       <div aria-hidden="true" className="pointer-events-none absolute inset-0 screentone screentone-light [--tone-color:var(--color-paper)] [--tone-opacity:0.07]" />
       <div className="container-x relative pb-10 md:pb-14">

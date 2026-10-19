@@ -47,6 +47,9 @@ export function DropStage({ product, dropLabel }: { product: Product; dropLabel:
         // idle: float + breathing shadow (#51)
         const float = gsap.to(q('[data-float]'), { y: -16, rotate: 0.8, duration: 2.4, ease: 'sine.inOut', yoyo: true, repeat: -1 })
         const floor = gsap.to(q('[data-floor-inner]'), { scaleX: 0.84, opacity: 0.55, duration: 2.4, ease: 'sine.inOut', yoyo: true, repeat: -1 })
+        // perf: idle loops only tick while the stage is on screen
+        const idleIo = new IntersectionObserver(([e]) => [float, floor].forEach((t) => (e.isIntersecting ? t.play() : t.pause())))
+        idleIo.observe(el)
 
         // exit: the tee lifts and recedes as the page turns to S04
         gsap.to(q('[data-exit]'), {
@@ -94,6 +97,7 @@ export function DropStage({ product, dropLabel }: { product: Product; dropLabel:
           cleanup()
           tl.kill()
           st.kill()
+          idleIo.disconnect()
           float.kill()
           floor.kill()
         }

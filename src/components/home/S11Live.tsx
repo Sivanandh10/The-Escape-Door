@@ -2,7 +2,7 @@
 // Upcoming stalls as ticket stubs with an inline "Remind me" lead form; past pop-ups as a stamped row.
 // dateLabel is shown exactly as stored (no invented years). Server shell + client ticket island.
 import Link from 'next/link'
-import { Mascot } from '@/components/brand'
+import { KadoArt } from '@/components/brand/BrandArt'
 import { INSTAGRAM_URL } from '@/lib/seo'
 import type { FestEvent } from '@/lib/types'
 import { TicketList } from './s11/TicketList'
@@ -40,7 +40,7 @@ export default function S11Live({ events = [] }: { events?: FestEvent[] }) {
             <TicketList events={upcoming} />
           ) : (
             <div className="flex flex-col items-start gap-5 border-4 border-paper p-6 sm:flex-row sm:items-center sm:p-8">
-              <Mascot mood="sleepy" size={96} title="" />
+              <KadoArt name="kado-sleepy" size={96} />
               <div>
                 <p className="font-display text-[clamp(28px,3vw,40px)] uppercase leading-none">No stalls on the calendar yet</p>
                 <p className="mt-2 max-w-[48ch] text-tone-4">New dates land on Instagram first. Follow along and catch the next one.</p>

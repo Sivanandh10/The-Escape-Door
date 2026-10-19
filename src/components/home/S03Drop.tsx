@@ -4,7 +4,7 @@ import Link from 'next/link'
 import type { Product } from '@/lib/types'
 import { getCollection } from '@/lib/data/repo'
 import { PriceTag } from '@/components/shop/PriceTag'
-import { Mascot } from '@/components/brand'
+import { KadoArt } from '@/components/brand/BrandArt'
 import { TitleRows } from './s03/TitleRows'
 import { DropStage } from './s03/DropStage'
 import { DropBuy } from './s03/DropBuy'
@@ -111,7 +111,7 @@ export default async function S03Drop({ product }: { product?: Product | null })
           </>
         ) : (
           <div className="panel-paper flex items-center gap-6 p-6 shadow-hard lg:col-span-7">
-            <Mascot mood="sleepy" size={96} title="" />
+            <KadoArt name="kado-sleepy" size={96} />
             <div>
               <p className="h-display text-h3">This week&rsquo;s drop is still being inked</p>
               <Link href="/shop" className="focus-ring mt-3 inline-block font-mono text-[13px] font-bold uppercase tracking-[0.12em] underline decoration-2 underline-offset-4">

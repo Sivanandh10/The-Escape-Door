@@ -79,6 +79,7 @@ export function ArcDoor({
               density={0.55}
               seed={`${door.slug}-door`}
               className="s02-motif"
+              loading="eager"
             />
             <span className="s02-shade" />
             <span className="s02-knob" />

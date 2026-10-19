@@ -3,6 +3,7 @@
 // Server-safe. Dispatches by product.type: tshirt/hoodie → garment, everything else → flat-lay.
 import { useId } from 'react'
 import { compositionSvg, productArtSvg } from '@/lib/art/compose'
+import { docLabel, productDoc, staticProductImage } from '@/lib/art/static'
 import type { ArtCollection, ArtProduct, ArtSide } from '@/lib/art/types'
 
 export interface ProductArtProps {
@@ -17,6 +18,8 @@ export interface ProductArtProps {
   className?: string
   /** override the generated aria-label; '' → decorative (aria-hidden) */
   title?: string
+  /** <img sizes> when the pre-rendered raster is used */
+  sizes?: string
 }
 
 /** Adds sizing + optional a11y overrides to a builder's root <svg>. */
@@ -27,8 +30,30 @@ function finish(svg: string, title: string | undefined): string {
   return s
 }
 
-export function ProductArt({ product, side = 'front', collection, framed = false, className, title }: ProductArtProps) {
+export function ProductArt({ product, side = 'front', collection, framed = false, className, title, sizes = '(min-width: 1024px) 560px, 90vw' }: ProductArtProps) {
   const uid = useId().replace(/[^a-zA-Z0-9]/g, '')
+  // perf: pre-rendered raster (public/art, scripts/export-art.mts) keeps ~15–25 KB of SVG out of HTML + RSC
+  const doc = productDoc(product, { side, collection, framed })
+  const file = framed ? null : staticProductImage(doc)
+  if (file) {
+    return (
+      <div className={className} data-product-art={product.type} data-side={side} style={{ aspectRatio: '1000 / 1100', lineHeight: 0 }}>
+        {/* eslint-disable-next-line @next/next/no-img-element -- pre-sized, content-addressed static files */}
+        <img
+          src={file.src}
+          srcSet={file.srcSet}
+          sizes={sizes}
+          alt={title === '' ? '' : (title ?? docLabel(doc))}
+          width={1000}
+          height={1100}
+          loading="lazy"
+          decoding="async"
+          draggable={false}
+          style={{ display: 'block', width: '100%', height: '100%' }}
+        />
+      </div>
+    )
+  }
   const opts = { side, collection, uid }
   const svg = framed ? compositionSvg(product, opts) : productArtSvg(product, opts)
   return (

@@ -32,6 +32,8 @@ export const metadata: Metadata = {
   openGraph: { url: '/' },
 }
 
+const CV = { contentVisibility: 'auto', containIntrinsicSize: 'auto 900px' } as const
+
 const WALL_TYPES = new Set(['polaroid', 'sticker', 'poster', 'bookmark', 'badge'])
 const COSPLAY_TYPES = new Set(['cosplay', 'katana', 'cape', 'figurine', 'accessory'])
 
@@ -62,13 +64,29 @@ export default async function HomePage() {
       <S05Squad products={featured} />
       <S06Wall products={wall} />
       <S07Gsm tiers={tiers} />
-      <S08Cosplay products={cosplay} />
-      <S09ForgeTeaser />
-      <S10Partners partnerships={partnerships} />
-      <S11Live events={events} />
-      <S12Beyond collection={beyond} />
-      <S14Faq />
-      <S13Instagram posts={posts} instagram={settings.instagram} />
+      {/* perf: below the last pinned section (S07) the browser may skip layout/paint until near view.
+          contain-intrinsic-size 'auto' remembers the real height after first render (no ScrollTrigger drift above). */}
+      <div style={CV}>
+        <S08Cosplay products={cosplay} />
+      </div>
+      <div style={CV}>
+        <S09ForgeTeaser />
+      </div>
+      <div style={CV}>
+        <S10Partners partnerships={partnerships} />
+      </div>
+      <div style={CV}>
+        <S11Live events={events} />
+      </div>
+      <div style={CV}>
+        <S12Beyond collection={beyond} />
+      </div>
+      <div style={CV}>
+        <S14Faq />
+      </div>
+      <div style={CV}>
+        <S13Instagram posts={posts} instagram={settings.instagram} />
+      </div>
     </>
   )
 }

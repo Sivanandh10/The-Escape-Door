@@ -2,7 +2,7 @@
 // Manga speed lines (canvas). Radial wedges toward a focus point; intensity follows Lenis scroll velocity.
 // Owner: F1. DPR capped at 1.5, ~30fps "inked" flicker only while visible and moving, static under reduced motion.
 import { useEffect, useRef, type CSSProperties } from 'react'
-import { useReducedMotion } from '@/lib/motion'
+import { useLowPower, useReducedMotion } from '@/lib/motion'
 import { useScrollVelocity } from '@/components/motion/SmoothScroll'
 import { cn, clamp, seeded } from '@/lib/utils'
 
@@ -39,6 +39,9 @@ export function SpeedLines({
   style,
 }: SpeedLinesProps) {
   const reduced = useReducedMotion()
+  // perf: low-power devices get the static drawing only (no rAF loop)
+  const lowPower = useLowPower()
+  const still = reduced || lowPower
   const velocity = useScrollVelocity()
   const canvas = useRef<HTMLCanvasElement>(null)
   const fx = focus.x
@@ -122,7 +125,7 @@ export function SpeedLines({
     ro.observe(cv)
     resize()
     let io: IntersectionObserver | null = null
-    if (!reduced) {
+    if (!still) {
       io = new IntersectionObserver(([e]) => {
         visible = e.isIntersecting
         if (visible && !raf) raf = requestAnimationFrame(loop)
@@ -139,7 +142,7 @@ export function SpeedLines({
       cancelAnimationFrame(raf)
       flicker = () => 0
     }
-  }, [intensity, fx, fy, color, count, inner, react, animated, seed, reduced, velocity])
+  }, [intensity, fx, fy, color, count, inner, react, animated, seed, still, velocity])
 
   return (
     <canvas

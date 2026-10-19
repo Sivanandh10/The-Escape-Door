@@ -3,7 +3,7 @@
 import Link from 'next/link'
 import { cacheLife } from 'next/cache'
 import { ArrowUpRight } from 'lucide-react'
-import { Badge } from '@/components/brand/Badge'
+import { BadgeArt } from '@/components/brand/BrandArt'
 import { DISCLAIMER } from '@/lib/seo'
 import { HELP_LINKS, INSTAGRAM_HANDLE, INSTAGRAM_URL, SHOP_CATEGORIES, type NavArc } from './nav'
 import { NewsletterForm } from './NewsletterForm'
@@ -63,7 +63,7 @@ export function Footer({ arcs }: FooterProps) {
             <NewsletterForm className="mt-6" />
           </div>
           <div className="ted-stamp pointer-events-none absolute -right-2 -top-10 w-24 md:-right-6 md:w-32">
-            <Badge title="" className="block h-auto w-full" />
+            <BadgeArt className="block h-auto w-full" />
           </div>
         </div>
 

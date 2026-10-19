@@ -104,7 +104,7 @@ export default async function ArcPage({ params }: Props) {
         style={{ background: c.accentA, color: fg } as CSSProperties}
       >
         <div aria-hidden="true" className="arc-hero-motif pointer-events-none absolute inset-0 -z-10 opacity-80">
-          <ArcMotif motif={c.motif} colorA={c.accentA} colorB={c.accentB} animated width={1600} height={900} density={0.7} seed={`${c.slug}-hero`} />
+          <ArcMotif motif={c.motif} colorA={c.accentA} colorB={c.accentB} animated width={1600} height={900} density={0.7} seed={`${c.slug}-hero`} loading="eager" />
         </div>
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 screentone screentone-mid [--tone-color:var(--color-ink)] [--tone-opacity:0.14]" />
         <div aria-hidden="true" className="pointer-events-none absolute inset-x-0 bottom-0 -z-10 h-1/2 bg-gradient-to-t from-ink/55 to-transparent" />
