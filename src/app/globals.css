@@ -343,10 +343,11 @@ html.lenis, html.lenis body { height: auto; }
 }
 @keyframes ted-failsafe { to { opacity: 1; } }
 
-/* ── custom cursor (#31): hide the native cursor only while ours is live ── */
-html.has-cursor, html.has-cursor body, html.has-cursor a, html.has-cursor button,
-html.has-cursor [role="button"], html.has-cursor label, html.has-cursor summary { cursor: none; }
-html.has-cursor input, html.has-cursor textarea, html.has-cursor select { cursor: auto; }
+/* ── custom cursor (#31): an accent only. Native cursor is hidden over plain content while ours is live;
+   links/buttons keep the native pointer and fields keep the native caret (the custom cursor hides there). ── */
+html.has-cursor body { cursor: none; }
+html.has-cursor :is(a, button:not(:disabled), [role="button"], label, summary, select) { cursor: pointer; }
+html.has-cursor :is(input, textarea, [contenteditable]:not([contenteditable="false"])) { cursor: auto; }
 
 /* ── sonner toasts as manga panels ───────────────────────────────────────── */
 [data-sonner-toaster] [data-sonner-toast].ted-toast {
@@ -371,35 +372,35 @@ html.has-cursor input, html.has-cursor textarea, html.has-cursor select { cursor
   background: var(--color-paper); border: 2px solid var(--color-ink); color: var(--color-ink);
 }
 
-/* ── #53 manga page-turn ink wipe (React <ViewTransition> in PageTransition) ── */
-::view-transition { pointer-events: none; }
+/* ── #53 manga page-turn ink wipe (React <ViewTransition> in PageTransition) ──
+   Speed budget: the whole turn is ≤ 240 ms and never hides the new page — the new root fades in from frame 0
+   while a thin ink sheet streaks across as an accent. Off under reduced motion (below). */
+::view-transition { pointer-events: none; background: var(--color-ink); }
 ::view-transition-group(page-sheet) {
   z-index: 90;
-  animation: ted-sheet 720ms cubic-bezier(0.65, 0, 0.35, 1) both;
+  animation: ted-sheet 240ms cubic-bezier(0.65, 0, 0.35, 1) both;
   background-color: var(--color-ink);
   background-image: radial-gradient(circle at center, var(--color-tone-2) 30%, transparent 34%);
   background-size: 7px 7px;
   box-shadow: -14px 0 0 0 var(--color-volt), -22px 0 0 0 var(--color-ink), 14px 0 0 0 var(--color-door), 22px 0 0 0 var(--color-ink);
 }
 ::view-transition-old(page-sheet), ::view-transition-new(page-sheet) { animation: none; opacity: 0; }
-::view-transition-old(root) { animation: ted-hold-out 720ms linear both; }
-::view-transition-new(root) { animation: ted-hold-in 720ms linear both; }
+::view-transition-old(root) { animation: ted-fade-out 140ms ease-in both; }
+::view-transition-new(root) { animation: ted-fade-in 200ms ease-out both; }
 /* the header stays anchored while the page turns */
 ::view-transition-group(site-header) { animation: none; z-index: 100; }
 ::view-transition-old(site-header) { display: none; }
 ::view-transition-new(site-header) { animation: none; }
 /* links tagged transitionTypes={['morph']} (shared-element morphs) skip the ink sheet */
 html:active-view-transition-type(morph)::view-transition-group(page-sheet) { animation: none; opacity: 0; background: none; box-shadow: none; }
-html:active-view-transition-type(morph)::view-transition-old(root) { animation: ted-fade-out 220ms ease-in both; }
-html:active-view-transition-type(morph)::view-transition-new(root) { animation: ted-fade-in 260ms ease-out 80ms both; }
+html:active-view-transition-type(morph)::view-transition-old(root) { animation: ted-fade-out 160ms ease-in both; }
+html:active-view-transition-type(morph)::view-transition-new(root) { animation: ted-fade-in 200ms ease-out both; }
 
+/* a narrow skewed ink strip that streaks right → left across the viewport; it never parks over the page */
 @keyframes ted-sheet {
-  0% { transform: translateX(calc(100vw + 14vh + 40px)) skewX(-12deg); }
-  44%, 56% { transform: translateX(0) skewX(0deg); }
-  100% { transform: translateX(calc(-100vw - 14vh - 40px)) skewX(-12deg); }
+  0% { transform: translateX(100vw) scaleX(0.18) skewX(-12deg); transform-origin: left center; }
+  100% { transform: translateX(-100vw) scaleX(0.18) skewX(-12deg); transform-origin: left center; }
 }
-@keyframes ted-hold-out { 0%, 49.9% { opacity: 1; } 50%, 100% { opacity: 0; } }
-@keyframes ted-hold-in { 0%, 49.9% { opacity: 0; } 50%, 100% { opacity: 1; } }
 @keyframes ted-fade-in { from { opacity: 0; } }
 @keyframes ted-fade-out { to { opacity: 0; } }
 
@@ -412,8 +413,7 @@ html:active-view-transition-type(morph)::view-transition-new(root) { animation: 
     scroll-behavior: auto !important;
   }
   ::view-transition-group(page-sheet) { animation: none !important; opacity: 0; background: none; box-shadow: none; }
-  ::view-transition-old(root) { animation: ted-fade-out 150ms ease both !important; }
-  ::view-transition-new(root) { animation: ted-fade-in 150ms ease both !important; }
+  ::view-transition-old(root), ::view-transition-new(root) { animation: none !important; }
 }
 
 /* SplitReveal masks: give Anton's tight line-height room so glyphs are not clipped */

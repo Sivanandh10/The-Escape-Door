@@ -1,8 +1,7 @@
 'use client'
 // WhatsApp checkout form (#66 label morph on the send button). Owner: P2.
-// Flow: validate (zod, inline errors) → open a blank tab synchronously (popup-blocker safe) →
-// submitLead('whatsapp_order') capped at ~1.5 s, never blocking → point the tab at wa.me with the
-// order text → track whatsapp_click → hand the order to /checkout-success.
+// Flow: validate (zod, inline errors) → build the order text + wa.me link synchronously → open WhatsApp in the
+// same submit gesture (instant) → submitLead('whatsapp_order') fire-and-forget (keepalive) → track → /checkout-success.
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
@@ -12,6 +11,7 @@ import { z } from 'zod'
 import { DoorIcon } from '@/components/brand/DoorIcon'
 import { submitLead } from '@/lib/leads'
 import { buildOrderMessage, waLink } from '@/lib/whatsapp'
+import { openWhatsApp } from '@/lib/wa-open'
 import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { getAttribution, track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
@@ -43,9 +43,6 @@ function validate(v: Values): Errors {
   }
   return out
 }
-
-const OPENING_HTML =
-  '<!doctype html><title>Opening WhatsApp…</title><body style="margin:0;display:grid;place-items:center;height:100vh;background:#0b0b0f;color:#f4efe6;font:600 16px system-ui,sans-serif"><p>Opening WhatsApp with your order…</p></body>'
 
 export interface CheckoutFormProps {
   items: CartItem[]
@@ -93,83 +90,56 @@ export function CheckoutForm({ items, totals, onBack, onSent, className }: Check
       return
     }
 
-    // 1) the tab must open inside the click/submit gesture or popup blockers eat it
-    let win: Window | null = null
-    try {
-      win = window.open('', '_blank')
-      if (win) {
-        win.opener = null
-        win.document.write(OPENING_HTML)
-        win.document.close()
-      }
-    } catch {
-      win = null
-    }
-    setStatus('sending')
+    // 1) build the message + link synchronously and open WhatsApp inside the submit gesture — no awaits first
     const v = schema.parse(values)
+    const ref = `TED-${Date.now().toString(36).slice(-6).toUpperCase()}`
+    const text = buildOrderMessage({ items, totals, name: v.name, city: v.city, note: v.note, orderRef: ref })
+    const link = waLink(text, waNumber)
+    const opened = openWhatsApp(link, { fallbackSameTab: false })
+    setStatus('sending')
 
-    void (async () => {
-      // 2) save the lead first — capped at ~1.5 s, failure never blocks the order
-      const ctrl = new AbortController()
-      const timer = window.setTimeout(() => ctrl.abort(), 1500)
-      const lead = await submitLead(
-        {
-          kind: 'whatsapp_order',
-          name: v.name,
-          city: v.city,
-          ...(v.phone ? { contact: v.phone } : {}),
-          ...(v.note ? { message: v.note } : {}),
-          payload: slimOrderPayload(items, totals),
-          source: getAttribution(),
-        },
-        { honeypot: honeypot.current?.value ?? '', signal: ctrl.signal },
-      ).catch(() => ({ ok: false as const, stored: false, id: undefined }))
-      window.clearTimeout(timer)
-
-      const ref = lead.id ? `TED-${lead.id.replace(/-/g, '').slice(0, 6).toUpperCase()}` : `TED-${Date.now().toString(36).slice(-6).toUpperCase()}`
-      const text = buildOrderMessage({ items, totals, name: v.name, city: v.city, note: v.note, orderRef: ref })
-      const link = waLink(text, waNumber)
-
-      // 3) send the waiting tab to WhatsApp
-      let opened = false
-      if (win && !win.closed) {
-        try {
-          win.location.href = link
-          opened = true
-        } catch {
-          opened = false
-        }
-      }
-      track('whatsapp_click', {
-        where: 'checkout',
-        pieces: items.reduce((n, i) => n + i.qty, 0),
-        total: totals.total,
-        stored: lead.stored,
-        opened,
-      })
-
-      // 4) hand-off to the success page, then empty the cart
-      saveLastOrder({
-        ref,
-        items,
-        totals: {
-          subtotal: totals.subtotal,
-          savings: totals.savings,
-          total: totals.total,
-          hasPriceOnRequest: totals.hasPriceOnRequest,
-          applied: totals.applied,
-          lines: totals.lines.map((l) => ({ key: l.key, lineTotal: l.lineTotal, saving: l.saving })),
-        },
+    // 2) save the lead in the background (keepalive fetch survives the tab switch); never awaited
+    void submitLead(
+      {
+        kind: 'whatsapp_order',
         name: v.name,
         city: v.city,
-        link,
-        at: Date.now(),
-        opened,
-      })
-      onSent?.()
-      // the success page empties the cart once it has the order (no empty-cart flash here)
-      router.push('/checkout-success')
-    })()
+        ...(v.phone ? { contact: v.phone } : {}),
+        ...(v.note ? { message: v.note } : {}),
+        payload: { ...slimOrderPayload(items, totals), orderRef: ref },
+        source: getAttribution(),
+      },
+      { honeypot: honeypot.current?.value ?? '' },
+    )
+    track('whatsapp_click', {
+      where: 'checkout',
+      pieces: items.reduce((n, i) => n + i.qty, 0),
+      total: totals.total,
+      opened,
+    })
+
+    // 3) hand-off to the success page (the success moment plays AFTER WhatsApp opened), then empty the cart
+    saveLastOrder({
+      ref,
+      items,
+      totals: {
+        subtotal: totals.subtotal,
+        savings: totals.savings,
+        total: totals.total,
+        hasPriceOnRequest: totals.hasPriceOnRequest,
+        applied: totals.applied,
+        lines: totals.lines.map((l) => ({ key: l.key, lineTotal: l.lineTotal, saving: l.saving })),
+      },
+      name: v.name,
+      city: v.city,
+      link,
+      at: Date.now(),
+      opened,
+    })
+    onSent?.()
+    // the success page empties the cart once it has the order (no empty-cart flash here);
+    // if the popup was blocked, it shows the link as a button.
+    router.push('/checkout-success')
   }
 
   const sending = status === 'sending'

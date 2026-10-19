@@ -15,7 +15,8 @@
 //   qty?        number           — default 1
 //   onAdded?    (r: { key: string; qty: number }) => void
 //   onNeedSize? () => void
-//   mode?       'add' | 'buy'    — 'buy' adds then opens the cart drawer (WhatsApp checkout), no flight
+//   mode?       'add' | 'buy'    — 'buy' adds to the cart AND opens WhatsApp with this one item in the same click
+//                                  (message built synchronously; lead saved fire-and-forget), no flight
 //   flyFrom?    RefObject<HTMLElement | null> — element the thumbnail lifts off from (card image / gallery)
 //   scale?      'sm' | 'md' | 'lg'  (default 'md'; sm is still ≥ 44px tall)
 //   tone?       'volt' | 'ink' | 'paper' (default 'volt'; 'buy' mode defaults to 'ink')
@@ -27,9 +28,13 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import gsap from 'gsap'
 import { toast } from 'sonner'
 import { MessageCircle, Plus } from 'lucide-react'
-import type { Product, Variant } from '@/lib/types'
+import type { CartItem, Product, Variant } from '@/lib/types'
 import { useCart, lineKey } from '@/lib/cart'
 import { track } from '@/lib/analytics'
+import { submitLead } from '@/lib/leads'
+import { buildOrderMessage, waLink } from '@/lib/whatsapp'
+import { openWhatsApp } from '@/lib/wa-open'
+import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { registerGsap, useReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { DoorIcon } from '@/components/brand/DoorIcon'
@@ -85,6 +90,7 @@ export function AddToCartButton({
   className,
 }: AddToCartButtonProps) {
   const reduced = useReducedMotion()
+  const waNumber = useWhatsappNumber()
   const btn = useRef<HTMLButtonElement>(null)
   const [phase, setPhase] = useState<Phase>('idle')
   const [status, setStatus] = useState('')
@@ -117,7 +123,7 @@ export function AddToCartButton({
     timers.current.push(window.setTimeout(fn, ms))
   }
 
-  function commit(): { key: string; qty: number } {
+  function commit(): { key: string; qty: number; item: CartItem } {
     const item = {
       productId: product.id,
       slug: product.slug,
@@ -137,7 +143,7 @@ export function AddToCartButton({
     track('add_to_cart', { product: product.slug, variant: v!.id, size: size ?? null, qty, price: item.unitPrice, mode })
     setStatus(`Added ${qty > 1 ? `${qty} × ` : ''}${product.name}${size ? `, size ${size}` : ''} to your cart.`)
     onAdded?.({ key, qty })
-    return { key, qty }
+    return { key, qty, item: { ...item, key } }
   }
 
   function finish() {
@@ -158,9 +164,22 @@ export function AddToCartButton({
     }
 
     if (mode === 'buy') {
-      commit()
-      useCart.getState().setOpen(true)
-      track('checkout_start', { product: product.slug, from: 'buy_now' })
+      // open WhatsApp inside this click — nothing awaited before it
+      const { item } = commit()
+      const orderRef = `TED-${Date.now().toString(36).slice(-6).toUpperCase()}`
+      const link = waLink(buildOrderMessage({ items: [item], orderRef }), waNumber)
+      const opened = openWhatsApp(link)
+      track('whatsapp_click', { where: 'buy_now', product: product.slug, opened })
+      void submitLead({
+        kind: 'whatsapp_order',
+        payload: {
+          from: 'buy_now',
+          orderRef,
+          items: [{ slug: item.slug, variantId: item.variantId, size: item.size ?? null, qty: item.qty, unitPrice: item.unitPrice }],
+        },
+      })
+      setPhase('added')
+      later(() => setPhase('idle'), 1700)
       return
     }
 
@@ -266,7 +285,7 @@ export function AddToCartButton({
     ['idle', idleLabel],
     ['need', 'Pick a size'],
     ['flying', 'Into the door…'],
-    ['added', mode === 'buy' ? 'Opening cart…' : 'Added!'],
+    ['added', mode === 'buy' ? 'Sent to WhatsApp' : 'Added!'],
   ]
 
   return (

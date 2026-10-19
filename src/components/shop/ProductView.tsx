@@ -2,7 +2,7 @@
 // ProductView — PDP interactive column + gallery (owner: P1 shop).
 // Gallery: <ImageCarousel variant="gallery"> — swipe/arrows/pips/thumbs (Front/Back/Detail), ←/→, zoom.
 // Buy box: variant chips, size chips (+ "ask on WhatsApp" size chart), qty stepper, BundleHint,
-// #66 AddToCartButton, "Buy now on WhatsApp" (adds + opens drawer checkout), wishlist, custom card.
+// #66 AddToCartButton, "Buy now on WhatsApp" (adds + opens wa.me in the same click), wishlist, custom card.
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'

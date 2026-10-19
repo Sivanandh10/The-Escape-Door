@@ -91,6 +91,29 @@ export function LeadForm({ variant, className, intro }: { variant: Variant; clas
       ? `Hi The Escape Door! I'm ${values.name || '…'} from ${values.fest || 'our fest'}${values.college ? ` (${values.college})` : ''}. We'd like to talk about a Fandom Partner stall${values.dates ? ` on ${values.dates}` : ''}.`
       : `Hi The Escape Door! I'm ${values.name || '…'}. ${values.message || ''}`.trim()
 
+  const sendLead = (via: 'form' | 'whatsapp') =>
+    submitLead(
+      {
+        kind: 'custom_request',
+        name: values.name.trim(),
+        contact: values.contact.trim(),
+        city: (variant === 'fest' ? values.college : values.city).trim() || undefined,
+        message: values.message.trim() || undefined,
+        payload:
+          variant === 'fest'
+            ? { type: 'fest-partnership', fest: values.fest.trim(), college: values.college.trim(), dates: values.dates.trim(), contact: values.contact.trim(), via }
+            : { type: 'contact', topic: values.topic, via },
+      },
+      { honeypot: honeypot.current?.value ?? '' },
+    )
+
+  // "Or message us on WhatsApp" is a plain <a href> with the final text (opens instantly); when the form is
+  // already filled we also save the lead in the background — never awaited (keepalive fetch).
+  const onWhatsapp = () => {
+    track('whatsapp_click', { from: `${variant}-form` })
+    if (Object.keys(validate(values, cfg.required)).length === 0) void sendLead('whatsapp')
+  }
+
   const onSubmit = async (ev: FormEvent) => {
     ev.preventDefault()
     const errs = validate(values, cfg.required)
@@ -100,27 +123,11 @@ export function LeadForm({ variant, className, intro }: { variant: Variant; clas
       formRef.current?.querySelector<HTMLElement>(`[name="${first}"]`)?.focus()
       return
     }
-    setStatus('sending')
+    // optimistic: the success stamp shows at once; roll back to the error state only if the save fails
+    setStatus('done')
     setServerError('')
-    const payload =
-      variant === 'fest'
-        ? { type: 'fest-partnership', fest: values.fest.trim(), college: values.college.trim(), dates: values.dates.trim(), contact: values.contact.trim() }
-        : { type: 'contact', topic: values.topic }
-    const res = await submitLead(
-      {
-        kind: 'custom_request',
-        name: values.name.trim(),
-        contact: values.contact.trim(),
-        city: (variant === 'fest' ? values.college : values.city).trim() || undefined,
-        message: values.message.trim() || undefined,
-        payload,
-      },
-      { honeypot: honeypot.current?.value ?? '' },
-    )
-    if (res.ok) {
-      setStatus('done')
-      return
-    }
+    const res = await sendLead('form')
+    if (res.ok) return
     if (res.fieldErrors) {
       const fe: Partial<Record<Field, string>> = {}
       for (const [k, msgs] of Object.entries(res.fieldErrors)) if ((cfg.fields as string[]).includes(k)) fe[k as Field] = msgs[0]
@@ -279,7 +286,7 @@ export function LeadForm({ variant, className, intro }: { variant: Variant; clas
                 href={waLink(waText, waNumber)}
                 target="_blank"
                 rel="noopener noreferrer"
-                onClick={() => track('whatsapp_click', { from: `${variant}-form` })}
+                onClick={onWhatsapp}
                 className="focus-ring label inline-flex min-h-11 items-center gap-2 underline decoration-2 underline-offset-4 hover:text-door"
               >
                 <MessageCircle aria-hidden="true" className="size-4" />

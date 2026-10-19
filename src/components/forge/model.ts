@@ -250,7 +250,7 @@ export function buildForgeMessage(
   }
   if (opts.filesPending > 0) {
     out.push('')
-    out.push(`I'll send ${opts.filesPending === 1 ? 'my file' : `${opts.filesPending} files`} here on WhatsApp.`)
+    out.push(`I'll share the design ${opts.filesPending === 1 ? 'file' : `files (${opts.filesPending})`} here in chat.`)
   }
   out.push('')
   if (clean(d.name)) out.push(`Name: ${clean(d.name, 80)}`)

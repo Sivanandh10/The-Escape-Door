@@ -28,11 +28,14 @@ export async function submitLead(input: LeadInput, opts: SubmitLeadOptions = {})
       visitorId: getVisitorId() || undefined,
       company: opts.honeypot ?? '',
     }
+    const json = JSON.stringify(body)
     const res = await fetch('/api/lead', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify(body),
+      body: json,
       signal: opts.signal,
+      // keepalive: a fire-and-forget save still completes while the user hops to WhatsApp (browser cap 64 KB)
+      keepalive: json.length < 60_000,
     })
     const data = (await res.json().catch(() => ({}))) as Partial<LeadResult>
     if (!res.ok) {

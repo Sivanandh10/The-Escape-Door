@@ -41,15 +41,23 @@ import {
 } from './model'
 import { Stage, type Art } from './Stage'
 import { PricePanel, TotalFigure } from './PricePanel'
-import { ACCEPT_ATTR, MAX_FILES, fileProblem, uploadArtwork } from './upload'
+import { ACCEPT_ATTR, MAX_FILES, fileProblem, uploadArtwork, type UploadOutcome } from './upload'
 import { KindIcon } from './KindIcon'
+import { openWhatsApp, openWhatsAppPending } from '@/lib/wa-open'
+import { isSupabaseConfigured } from '@/lib/supabase/env'
 
 interface Attached {
   id: string
   file: File
   url: string
   type: 'image' | 'pdf'
+  /** upload starts the moment the file is picked, so the link is ready by Send */
+  up: 'uploading' | 'ok' | 'failed' | 'skipped'
+  progress: number
 }
+
+/** max wait for still-running uploads after Send before WhatsApp opens without their links */
+const UPLOAD_WAIT_MS = 6000
 
 type Phase = 'idle' | 'uploading' | 'saving' | 'opening' | 'done'
 
@@ -80,7 +88,9 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
   const [stepError, setStepError] = useState<string | null>(null)
   const [errors, setErrors] = useState<ContactErrors>({})
   const [phase, setPhase] = useState<Phase>('idle')
-  const [progress, setProgress] = useState(0)
+  const uploads = useRef(new Map<string, Promise<UploadOutcome>>())
+  const uploaded = useRef(new Map<string, UploadOutcome>())
+  const uploadsOff = useRef(false)
   const [result, setResult] = useState<{ link: string; opened: boolean; pending: number; stored: boolean } | null>(null)
   const started = useRef(false)
   const stepHeading = useRef<HTMLHeadingElement>(null)
@@ -158,7 +168,8 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
     setErrors({})
     setStepError(null)
     setPhase('idle')
-    setProgress(0)
+    uploads.current.clear()
+    uploaded.current.clear()
     setResult(null)
     setD(initialDraft(data))
   }
@@ -180,20 +191,43 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
   }
 
   // ---- files
+  const patchFile = (id: string, patch: Partial<Attached>) =>
+    setFiles((prev) => prev.map((f) => (f.id === id ? { ...f, ...patch } : f)))
+  // uploads start as soon as a file is picked (progress shown on its tile) so links are ready by Send.
+  // No Supabase on this deploy → skip instantly (the message then says the file follows in chat).
+  const startUpload = (a: Attached) => {
+    const p = uploadArtwork(a.file, (pr) => patchFile(a.id, { progress: pr })).then((res) => {
+      uploaded.current.set(a.id, res)
+      if (res.status === 'unconfigured') uploadsOff.current = true
+      patchFile(a.id, res.status === 'ok' ? { up: 'ok', progress: 1 } : { up: res.status === 'unconfigured' ? 'skipped' : 'failed' })
+      return res
+    })
+    uploads.current.set(a.id, p)
+  }
   const addFiles = (list: File[]) => {
     const errs: string[] = []
     const ok: Attached[] = []
+    if (!isSupabaseConfigured()) uploadsOff.current = true
+    const skip = uploadsOff.current
     for (const f of list) {
       const problem = fileProblem(f)
       if (problem) errs.push(problem)
-      else ok.push({ id: nextId(), file: f, url: f.type === 'application/pdf' ? '' : URL.createObjectURL(f), type: f.type === 'application/pdf' ? 'pdf' : 'image' })
+      else
+        ok.push({
+          id: nextId(),
+          file: f,
+          url: f.type === 'application/pdf' ? '' : URL.createObjectURL(f),
+          type: f.type === 'application/pdf' ? 'pdf' : 'image',
+          up: skip ? 'skipped' : 'uploading',
+          progress: 0,
+        })
     }
-    setFiles((prev) => {
-      const room = MAX_FILES - prev.length
-      if (ok.length > room) errs.push(`Up to ${MAX_FILES} files per request — send the rest on WhatsApp.`)
-      ok.slice(room).forEach((f) => f.url && URL.revokeObjectURL(f.url))
-      return [...prev, ...ok.slice(0, Math.max(0, room))]
-    })
+    const room = Math.max(0, MAX_FILES - filesRef.current.length)
+    if (ok.length > room) errs.push(`Up to ${MAX_FILES} files per request — send the rest on WhatsApp.`)
+    ok.slice(room).forEach((f) => f.url && URL.revokeObjectURL(f.url))
+    const accepted = ok.slice(0, room)
+    setFiles((prev) => [...prev, ...accepted])
+    if (!skip) accepted.forEach(startUpload)
     setFileErrors(errs)
     if (ok.length) setSlamKey((k) => k + 1)
   }
@@ -233,6 +267,7 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
 
   // ---- submit
   const busy = phase !== 'idle' && phase !== 'done'
+  const upProgress = files.length ? files.reduce((n, f) => n + (f.up === 'uploading' ? f.progress : 1), 0) / files.length : 1
   const submit = async (e?: React.FormEvent) => {
     e?.preventDefault()
     if (busy || !d.kind) return
@@ -251,84 +286,59 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
     setErrors({})
     const honeypot = (document.getElementById('forge-company') as HTMLInputElement | null)?.value ?? ''
 
-    // open the tab synchronously (popup blockers), point it at WhatsApp when ready
-    let win: Window | null = null
-    try {
-      win = window.open('', '_blank')
-      if (win) {
-        win.document.title = 'Opening WhatsApp…'
-        win.document.body.style.cssText = 'margin:0;display:grid;place-items:center;height:100vh;background:#0B0B0F;color:#F4EFE6;font:600 18px system-ui'
-        win.document.body.textContent = 'Opening WhatsApp…'
-      }
-    } catch {
-      win = null
-    }
+    const current = filesRef.current
+    const kind = d.kind
+    const quantity = Math.max(quote.minQty, d.qty)
 
-    // 1) uploads
-    const fileUrls: string[] = []
-    let pending = 0
-    if (files.length) {
-      setPhase('uploading')
-      setProgress(0)
-      let unconfigured = false
-      for (let i = 0; i < files.length; i++) {
-        if (unconfigured) {
-          pending++
-          continue
-        }
-        const res = await uploadArtwork(files[i].file, (p) => setProgress((i + p) / files.length))
-        if (res.status === 'ok') fileUrls.push(res.url)
-        else {
-          pending++
-          if (res.status === 'unconfigured') unconfigured = true
-        }
+    // Build the message from whatever links are ready, open WhatsApp, save the lead in the background.
+    const send = (open: (link: string) => boolean) => {
+      const fileUrls: string[] = []
+      for (const f of current) {
+        const r = uploaded.current.get(f.id)
+        if (r?.status === 'ok') fileUrls.push(r.url)
       }
-      setProgress(1)
-    }
-
-    // 2) lead (never blocks for more than ~1.5 s)
-    setPhase('saving')
-    const spec = {
-      mode: d.mode,
-      product: d.kind,
-      variant: garmentLabel(d, data),
-      quantity: Math.max(quote.minQty, d.qty),
-      halfHalf: apparel && d.halfHalf,
-      zones: apparel
-        ? (['front', 'back'] as Side[]).filter((s) => d.place[s].on).map((s) => ({ zone: s, x: d.place[s].x, y: d.place[s].y, scale: d.place[s].scale, rotate: d.place[s].rotate }))
-        : [],
-      brief: d.mode === 'company' ? d.brief.trim().slice(0, 1000) : undefined,
-      fileUrls,
-      filesPending: pending,
-      quote: { total: quote.total, lines: quote.lines, estimate: quote.estimate },
-    }
-    const lead = await Promise.race([
-      submitLead(
+      const pending = current.length - fileUrls.length
+      const text = buildForgeMessage(d, data, { fileUrls, filesPending: pending, fileCount: current.length, ref: getAttribution().src })
+      const link = waLink(text, waNumber)
+      const opened = open(link)
+      const spec = {
+        mode: d.mode,
+        product: kind,
+        variant: garmentLabel(d, data),
+        quantity,
+        halfHalf: apparel && d.halfHalf,
+        zones: apparel
+          ? (['front', 'back'] as Side[]).filter((s) => d.place[s].on).map((s) => ({ zone: s, x: d.place[s].x, y: d.place[s].y, scale: d.place[s].scale, rotate: d.place[s].rotate }))
+          : [],
+        brief: d.mode === 'company' ? d.brief.trim().slice(0, 1000) : undefined,
+        fileUrls,
+        filesPending: pending,
+        quote: { total: quote.total, lines: quote.lines, estimate: quote.estimate },
+      }
+      // fire-and-forget (keepalive) — never delays WhatsApp
+      void submitLead(
         { kind: 'custom_request', name: d.name.trim(), city: d.city.trim(), contact: d.phone.trim() || undefined, message: d.notes.trim() || undefined, payload: spec },
         { honeypot },
-      ),
-      new Promise<null>((r) => setTimeout(() => r(null), 1500)),
-    ])
-
-    // 3) WhatsApp
-    setPhase('opening')
-    const text = buildForgeMessage(d, data, { fileUrls, filesPending: pending, fileCount: files.length, ref: getAttribution().src, leadId: lead?.id })
-    const link = waLink(text, waNumber)
-    let opened = false
-    if (win && !win.closed) {
-      try {
-        win.opener = null
-        win.location.replace(link)
-        opened = true
-      } catch {
-        opened = false
-      }
+      )
+      track('custom_submit', { product: kind, mode: d.mode, qty: quantity, total: quote.total ?? undefined, files: current.length, uploaded: fileUrls.length })
+      track('whatsapp_click', { source: 'forge', opened })
+      clearDraft()
+      // the success moment plays AFTER WhatsApp has opened
+      setResult({ link, opened, pending, stored: true })
+      setPhase('done')
     }
-    track('custom_submit', { product: d.kind, mode: d.mode, qty: spec.quantity, total: quote.total ?? undefined, files: files.length, uploaded: fileUrls.length })
-    track('whatsapp_click', { source: 'forge' })
-    clearDraft()
-    setResult({ link, opened, pending, stored: !!lead?.stored })
-    setPhase('done')
+
+    const running = current.map((f) => (f.up === 'uploading' ? uploads.current.get(f.id) : undefined)).filter((p): p is Promise<UploadOutcome> => !!p)
+    if (!running.length) {
+      // links ready (or no files / uploads off): WhatsApp opens inside this click
+      send((link) => openWhatsApp(link))
+      return
+    }
+    // uploads still running: open the tab now (popup-safe), point it at WhatsApp when they land (max 6 s)
+    const tab = openWhatsAppPending()
+    setPhase('uploading')
+    await Promise.race([Promise.all(running), new Promise((r) => window.setTimeout(r, UPLOAD_WAIT_MS))])
+    send((link) => tab.go(link))
   }
 
   // ------------------------------------------------------------------ render
@@ -442,7 +452,7 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
                       <StepCount d={d} data={data} update={update} />
                     ))}
                   {d.step === 3 && (
-                    <StepSend d={d} update={update} errors={errors} setErrors={setErrors} onSubmit={submit} busy={busy} phase={phase} progress={progress} files={files.length} />
+                    <StepSend d={d} update={update} errors={errors} setErrors={setErrors} onSubmit={submit} busy={busy} phase={phase} progress={upProgress} files={files.length} />
                   )}
                 </motion.div>
               </AnimatePresence>
@@ -744,6 +754,15 @@ function Dropzone({ label, files, onAdd, onRemove }: { label: string; files: Att
                 )}
               </div>
               <p className="truncate bg-paper px-1 font-mono text-[10px]">{f.file.name}</p>
+              {f.up === 'uploading' ? (
+                <div role="progressbar" aria-label={`Uploading ${f.file.name}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(f.progress * 100)} className="h-1.5 bg-ink/20">
+                  <div className="h-full bg-door transition-[width] duration-150" style={{ width: `${Math.max(4, f.progress * 100)}%` }} />
+                </div>
+              ) : f.up === 'ok' ? (
+                <p className="bg-volt px-1 font-mono text-[10px] font-bold uppercase">Uploaded ✓</p>
+              ) : f.up === 'failed' ? (
+                <p className="bg-hype px-1 font-mono text-[10px] font-bold uppercase">Send in chat</p>
+              ) : null}
               <button
                 type="button"
                 onClick={() => onRemove(f.id)}

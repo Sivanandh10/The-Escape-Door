@@ -68,7 +68,7 @@ export default async function RootLayout({ children }: LayoutProps<'/'>) {
       lang="en-IN"
       suppressHydrationWarning
       className={`${anton.variable} ${bangers.variable} ${dela.variable} ${dm.variable} ${jbm.variable} ${jp.variable}`}
-      style={{ viewTransitionName: 'root' }}
+      style={{ backgroundColor: '#0B0B0F', colorScheme: 'dark' }}
     >
       <head>
         <script dangerouslySetInnerHTML={{ __html: JS_FLAG }} />
