@@ -107,7 +107,14 @@ export function buildOrderMessage(input: OrderMessageInput): string {
 }
 
 let warned = false
-const digitsOf = (v: string | null | undefined) => (v ?? '').replace(/\D/g, '')
+// Digits only, in international form: a bare 10-digit Indian mobile (6-9…) or a 0-prefixed one
+// gets the 91 country code, because wa.me needs it (9342446559 would otherwise dial +93).
+const digitsOf = (v: string | null | undefined) => {
+  let d = (v ?? '').replace(/\D/g, '')
+  if (/^0[6-9]\d{9}$/.test(d)) d = d.slice(1)
+  if (/^[6-9]\d{9}$/.test(d)) d = `91${d}`
+  return d
+}
 
 /**
  * The shop's WhatsApp number (digits only), or '' when not configured.

@@ -2,6 +2,7 @@
 // P4b — CRUD UI bits on top of P4a's admin kit (docs/CONTRACTS.md §12): sandbox switch, toolbar,
 // filter chips, door-swing drawer, form fields, save bar, load/error switch.
 import { useEffect, useId, useRef, useState, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { FlaskConical, Search, X } from 'lucide-react'
 import { AdminSkeleton } from '../EmptyState'
@@ -106,6 +107,10 @@ export function Drawer({
   const panel = useRef<HTMLDivElement>(null)
   const titleId = useId()
   const lastFocus = useRef<Element | null>(null)
+  // Portal to <body>: admin panels animate with transforms, which would trap a position:fixed drawer.
+  const [mounted, setMounted] = useState(false)
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client mount flag for the portal
+  useEffect(() => setMounted(true), [])
 
   useEffect(() => {
     if (!open) return
@@ -139,7 +144,8 @@ export function Drawer({
     else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus() }
   }
 
-  return (
+  if (!mounted) return null
+  return createPortal(
     <AnimatePresence>
       {open && (
         <div className="fixed inset-0 z-[90]" onKeyDown={onKey}>
@@ -187,7 +193,8 @@ export function Drawer({
           </div>
         </div>
       )}
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body,
   )
 }
 
