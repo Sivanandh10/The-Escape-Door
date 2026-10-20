@@ -55,6 +55,15 @@ export function EntityManager<T>({
     if (!draft) return
     const r = schema.safeParse(draft)
     if (!r.success) { setErrors(issuesToErrors(r.error.issues)); return }
+    // "New" must never overwrite an existing row/item that happens to share the key (saves are upserts)
+    if (isNew) {
+      const k = crud.keyOf(draft)
+      if (k && crud.rows.some((x) => crud.keyOf(x) === k)) {
+        const field = (['id', 'slug', 'type'] as const).find((f) => (draft as Record<string, unknown>)[f] === k) ?? 'id'
+        setErrors({ [field]: `“${k}” already exists — open it from the list to edit it, or pick another` })
+        return
+      }
+    }
     setErrors({})
     setSaving(true)
     if (beforeSave && !(await beforeSave(draft))) { setSaving(false); return }
