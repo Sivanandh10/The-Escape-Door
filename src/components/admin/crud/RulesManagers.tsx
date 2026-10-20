@@ -186,7 +186,7 @@ export function CustomRulesManager({ initial, apparel }: { initial: AdminCustomR
       kicker={`Catalogue · ${crud.rows.length} custom rules`}
       title={<>Custom <em>rules</em></>}
       jp="特注 · ルール"
-      description="Minimums and per-piece prices the Forge (/custom) quotes with, plus the apparel extras. Saves are live on /custom, /fests and the home Forge teaser straight away."
+      description="Minimums and per-piece prices Design Your Own (/custom) quotes with, plus the apparel extras. Saves are live on /custom, /fests and the home Design Your Own teaser straight away."
       actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}
     >
       <AdminPanel index={0} title={<>Minimums &amp; <em className="accent">prices</em></>} jp="最低数量">
@@ -198,7 +198,7 @@ export function CustomRulesManager({ initial, apparel }: { initial: AdminCustomR
           searchText={(r) => `${r.type} ${r.note}`}
           blank={() => ({ type: PRODUCT_TYPES.find((t) => !used.has(t)) ?? 'accessory', minQty: 1, unitPrice: null, note: '' })}
           schema={customSchema}
-          emptyBody="No rules: the Forge quotes every custom piece “on WhatsApp”."
+          emptyBody="No rules: Design Your Own quotes every custom piece “on WhatsApp”."
           columns={[
             { id: 'type', header: 'Type', sortValue: (r) => r.type, cell: (r) => <span className="font-mono text-[13px] font-bold">{r.type}</span> },
             { id: 'min', header: 'Min qty', align: 'right', sortValue: (r) => r.minQty, cell: (r) => <span className="font-mono tabular-nums">{r.minQty}</span> },
@@ -365,7 +365,7 @@ export function PricingManager({ tiers, fits }: { tiers: HoodieTier[]; fits: Tee
             <FormSection title="Fit" jp="フィット">
               <TextField label="Label" value={x.label} error={e.label} onChange={(label) => set(isNew ? { label, id: slugify(label) as TeeFit['id'] } : { label })} placeholder="Oversized" />
               <NumberField label="Price ₹" value={x.price} error={e.price} onChange={(v) => set({ price: v ?? 0 })} />
-              <TextField label="Fit id" mono value={x.id} error={e.id} hint={isNew ? '“oversized”, “regular” and “baby” are the ids the shop knows.' : 'Locked — the Forge and shop look fits up by id.'} onChange={(id) => isNew && set({ id: slugify(id) as TeeFit['id'] })} />
+              <TextField label="Fit id" mono value={x.id} error={e.id} hint={isNew ? '“oversized”, “regular” and “baby” are the ids the shop knows.' : 'Locked — Design Your Own and the shop look fits up by id.'} onChange={(id) => isNew && set({ id: slugify(id) as TeeFit['id'] })} />
               <TextArea className="sm:col-span-2" label="Blurb" rows={2} maxLength={200} value={x.blurb} error={e.blurb} onChange={(blurb) => set({ blurb })} />
             </FormSection>
           )}

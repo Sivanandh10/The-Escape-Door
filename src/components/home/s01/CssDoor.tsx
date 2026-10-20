@@ -82,7 +82,7 @@ export function CssDoor({ children }: { children?: ReactNode }) {
 
         {children}
 
-        <div className="absolute inset-0" style={{ perspective: '900px', perspectiveOrigin: '50% 50%' }}>
+        <div className="absolute inset-0 z-[1]" style={{ perspective: '900px', perspectiveOrigin: '50% 50%' }}>
           <div
             data-leaf
             className="pointer-events-none absolute inset-y-0 left-0 right-[3%] origin-left [transform-style:preserve-3d] motion-reduce:[transform:rotateY(74deg)]"

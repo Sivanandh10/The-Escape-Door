@@ -17,7 +17,8 @@ import {
 import { EntityManager } from './EntityManager'
 import { ColorField, FormSection, NumberField, SandboxSwitch, SelectField, TagsField, TextArea, TextField, Toggle } from './kit'
 import { newId, slugify } from './util'
-import { revalidateCatalog } from './actions'
+import { saveSettingValue } from './settingsActions'
+import { siteSettingsSchema } from './settingsSchemas'
 
 const MOTIFS: Motif[] = ['smoke', 'walls', 'flames', 'waves', 'spiral', 'ribbons', 'speedlines']
 const hex = z.string().regex(/^#[0-9a-f]{6}$/i, 'Use a #RRGGBB colour')
@@ -252,17 +253,10 @@ export function InstagramManager({ initial }: { initial: AdminInsta[] }) {
 }
 
 // ---------------------------------------------------------------- settings
-const settingsSchema = z.object({
-  heroKicker: z.string().trim().min(2).max(60),
-  heroTitle: z.string().trim().min(4, 'The H1 needs words').max(90),
-  heroSub: z.string().trim().max(260),
-  bannerText: z.string().max(120),
-  tickerWords: z.array(z.string().max(40)).min(3, 'At least 3 words keep the ticker moving'),
-  whatsapp: z.string().regex(/^(\+?\d[\d\s-]{8,16})?$/, 'Digits with country code, e.g. +91 98…'),
-  instagram: z.string().regex(/^(https:\/\/(www\.)?instagram\.com\/.+)?$/, 'An instagram.com link'),
-})
+// Same schema the server action re-validates with (settingsSchemas.ts → saveSettingValue('site')).
+const settingsSchema = siteSettingsSchema
 
-export function SettingsManager({ initial }: { initial: SiteSettings }) {
+export function SettingsManager({ initial, updatedAt: loadedAt = null }: { initial: SiteSettings; updatedAt?: string | null }) {
   const crud = useCrud(collectionCfg, [], { perm: 'settings.edit' })
   const mode = crud.mode
   const readOnly = crud.readOnly
@@ -270,6 +264,8 @@ export function SettingsManager({ initial }: { initial: SiteSettings }) {
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [saving, setSaving] = useState(false)
   const [dirty, setDirty] = useState(false)
+  // row version the form is based on: a teammate's newer save is never overwritten silently
+  const [version, setVersion] = useState<string | null>(loadedAt)
   const set = (p: Partial<SiteSettings>) => { setS((x) => ({ ...x, ...p })); setDirty(true) }
 
   const save = async () => {
@@ -284,12 +280,16 @@ export function SettingsManager({ initial }: { initial: SiteSettings }) {
     if (readOnly) return explainReadOnly()
     if (mode === 'sandbox') { setDirty(false); return toast.success('Settings saved', { description: 'Sandbox — local only.' }) }
     setSaving(true)
-    const { error } = await getAdminClient()!.from('settings').upsert({ key: 'site', value: s })
+    // Server action: re-checks settings.edit, re-validates, writes, then expires the 'settings' tag AND every
+    // prerendered route (the hero + banner live in static HTML). The old browser upsert + fire-and-forget
+    // revalidate could report "live" while the cache was never expired.
+    const res = await saveSettingValue('site', r.data, { expectedUpdatedAt: version }).catch((e: unknown) => ({ ok: false as const, error: e instanceof Error ? e.message : 'Network error' }))
     setSaving(false)
-    if (error) return toast.error('Could not save settings', { description: error.message })
+    if (!res.ok) return toast.error('Could not save settings', { description: res.error })
+    setS({ ...s, ...(res.value as SiteSettings) })
+    setVersion(res.updatedAt)
     setDirty(false)
-    void revalidateCatalog(['settings']).catch(() => {})
-    toast.success('Settings saved — live on the site now')
+    toast.success('Settings saved — live on the site now', { description: 'Reload the home page to see it.' })
   }
 
   return (

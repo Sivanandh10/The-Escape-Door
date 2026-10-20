@@ -35,7 +35,8 @@ export function PowerGauge({
             className={cn(
               'absolute flex items-center justify-center font-mono text-[10px] font-bold',
               v ? 'inset-x-0' : 'inset-y-0',
-              i <= active ? 'text-ink' : 'text-paper/50',
+              // the active segment is only part-filled: difference blend keeps its label legible on both halves
+              i < active ? 'text-ink' : i === active ? 'text-paper mix-blend-difference' : 'text-paper/50',
             )}
             style={v ? { bottom: `${(i / n) * 100}%`, height: `${100 / n}%` } : { left: `${(i / n) * 100}%`, width: `${100 / n}%` }}
           >

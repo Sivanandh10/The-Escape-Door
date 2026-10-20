@@ -18,7 +18,7 @@ export default function S04BackPrint({ product }: { product?: Product | null }) 
       </span>
       <p className="mt-6 max-w-[40ch] text-tone-4">
         A small 4×4&nbsp;in mark on the chest. The whole story on the back: prints run up to 12×15&nbsp;in
-        {product ? <>, like {product.designTitle} here</> : null}. Want your own art on either side? The Custom Forge does front and back.
+        {product ? <>, like {product.designTitle} here</> : null}. Want your own art on either side? Design Your Own does front and back.
       </p>
     </header>
   )

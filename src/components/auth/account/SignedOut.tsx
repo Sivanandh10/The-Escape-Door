@@ -13,7 +13,7 @@ export function SignedOutAccount() {
         <h1 className="h-display mt-3 text-[clamp(56px,9vw,128px)]">
           Your <em>account</em>
         </h1>
-        <p lang="ja" className="jp-sub mt-3 text-[13px]">
+        <p lang="ja" className="jp-sub relative z-[1] mt-5 text-[13px] lg:mt-8">
           マイページ
         </p>
         <p className="mt-6 text-paper/85">Log in to see your orders, saved addresses, recently viewed drops and picks matched to the anime you watch.</p>

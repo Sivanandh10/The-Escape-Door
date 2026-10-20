@@ -49,7 +49,7 @@ export default async function NotFound() {
               Shop everything
             </Link>
             <Link href="/custom" className="focus-ring label inline-flex min-h-12 items-center gap-2 border-[3px] border-paper px-4 py-3 hover:bg-paper hover:text-ink">
-              Custom Forge
+              Design Your Own
             </Link>
           </div>
         </div>

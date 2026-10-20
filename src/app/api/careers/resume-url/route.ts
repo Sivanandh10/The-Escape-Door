@@ -1,5 +1,6 @@
 // POST /api/careers/resume-url — signed upload URL for a résumé (private bucket 'careers'). Owner: CAREERS.
-// Body { filename, contentType, size } → { bucket, path, token, maxBytes }.
+// Body { jobId, filename, contentType, size } → { bucket, path, token, maxBytes }. The job must exist and be OPEN,
+// so upload links can't be minted for nothing.
 // The browser then calls supabaseBrowser().storage.from(bucket).uploadToSignedUrl(path, token, file) and passes
 // `path` to POST /api/careers/apply, which checks the object really exists (and its size) before saving.
 // Path: resumes/<yyyy-mm>/<uuid>.<ext> — no user input in the path. pdf/doc/docx only, ≤ 5 MB.
@@ -13,6 +14,7 @@ import { allow, clientKey, json, readJson, sameOrigin } from '../../_lib/guard'
 const BUCKET = 'careers'
 
 const Req = z.object({
+  jobId: z.uuid(),
   filename: z.string().trim().min(1).max(200),
   contentType: z.enum(Object.keys(RESUME_TYPES) as [string, ...string[]], { error: 'Upload a PDF or Word file (.pdf, .doc, .docx).' }),
   size: z.number().int().positive().max(RESUME_MAX_BYTES, { error: 'Max file size is 5 MB.' }),
@@ -20,7 +22,7 @@ const Req = z.object({
 
 export async function POST(req: Request): Promise<Response> {
   if (!sameOrigin(req)) return json({ error: 'forbidden' }, 403)
-  if (!allow(`careers-upload:ip:${clientKey(req)}`, 10, 60 * 60_000)) {
+  if (!allow(`careers-upload:ip:${clientKey(req)}`, 6, 60 * 60_000)) {
     return json({ error: 'rate-limited' }, 429, { 'retry-after': '3600' })
   }
 
@@ -31,6 +33,11 @@ export async function POST(req: Request): Promise<Response> {
 
   const sb = supabaseAdmin()
   if (!sb) return json({ error: 'uploads-unconfigured' }, 503)
+
+  // only for a real, open role (closed / draft / unknown → no upload link)
+  const { data: job, error: jobErr } = await sb.from('jobs').select('id').eq('id', parsed.data.jobId).eq('status', 'open').maybeSingle()
+  if (jobErr) return json({ error: 'uploads-unavailable' }, 503)
+  if (!job) return json({ error: 'job-closed' }, 409)
 
   const ext = RESUME_TYPES[parsed.data.contentType]
   const now = new Date()

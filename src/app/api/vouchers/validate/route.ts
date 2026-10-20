@@ -6,9 +6,11 @@ import { formatINR } from '@/lib/pricing'
 import { voucherValidateSchema } from '@/lib/checkout/schema'
 import { CheckoutError, applyVoucher, getBuyer, priceLines } from '@/lib/checkout/server'
 import { voucherHeadline } from '@/lib/checkout/types'
-import { VOUCHER_MESSAGES } from '@/lib/checkout/voucher'
 import { isSupabaseAdminConfigured } from '@/lib/supabase/env'
 import { allow, clientKey, json, readJson, sameOrigin } from '../../_lib/guard'
+
+const HIDDEN = new Set<string>(['not-found', 'inactive', 'not-started', 'not-yours'])
+const NOT_USABLE = 'That code can’t be used on your account. Check the spelling?'
 
 export async function POST(req: Request): Promise<Response> {
   if (!sameOrigin(req)) return json({ ok: false, error: 'forbidden' }, 403)
@@ -34,7 +36,9 @@ export async function POST(req: Request): Promise<Response> {
   try {
     const { totals } = await priceLines(parsed.data.items)
     const applied = await applyVoucher(parsed.data.code, totals, buyer)
-    if (!applied) return json({ ok: false, error: 'not-found', message: VOUCHER_MESSAGES['not-found'] }, 404)
+    // unknown, paused, not-yet-live and someone-else's codes all get the SAME answer, so the endpoint can't be used
+    // to discover which codes exist (influencer / fest codes)
+    if (!applied || (!applied.result.ok && HIDDEN.has(applied.result.problem))) return json({ ok: false, error: 'not-found', message: NOT_USABLE }, 404)
     const { voucher, result } = applied
     if (!result.ok) return json({ ok: false, error: result.problem, message: result.message }, 422)
     return json({

@@ -169,7 +169,7 @@ export async function PacksStrip({ types, className }: { types?: Product['type']
 }
 
 // ---------------------------------------------------------------- custom CTA
-export function CustomCta({ before = 'Want it ', accent = 'custom', after = '?', body, href = '/custom', cta = 'Open the Custom Forge', id = 'custom' }: {
+export function CustomCta({ before = 'Want it ', accent = 'custom', after = '?', body, href = '/custom', cta = 'Design Your Own', id = 'custom' }: {
   before?: string; accent?: string; after?: string; body?: ReactNode; href?: string; cta?: string; id?: string
 }) {
   return (

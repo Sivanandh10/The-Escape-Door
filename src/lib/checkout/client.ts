@@ -34,9 +34,10 @@ export function cartSignature(items: CartItem[]): string {
 const NONCE_KEY = 'ted-checkout-nonce-v1'
 
 function randomId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) return crypto.randomUUID().replace(/-/g, '')
+  const c: Crypto = globalThis.crypto
+  if (typeof c.randomUUID === 'function') return c.randomUUID().replace(/-/g, '')
   const b = new Uint8Array(16)
-  crypto.getRandomValues(b)
+  c.getRandomValues(b)
   return Array.from(b, (x) => x.toString(16).padStart(2, '0')).join('')
 }
 

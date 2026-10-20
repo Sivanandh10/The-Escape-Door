@@ -12,7 +12,11 @@ export function Funnel({ steps }: { steps: FunnelStep[] }) {
   const ref = useRef<HTMLOListElement>(null)
   const [on, setOn] = useState(false)
   useEffect(() => {
-    if (prefersReducedMotion()) { setOn(true); return }
+    if (prefersReducedMotion()) {
+      // no animation: show the bars on the next frame (never a synchronous setState in the effect)
+      const raf = requestAnimationFrame(() => setOn(true))
+      return () => cancelAnimationFrame(raf)
+    }
     const el = ref.current
     if (!el) return
     const io = new IntersectionObserver((e) => { if (e.some((x) => x.isIntersecting)) { setOn(true); io.disconnect() } }, { threshold: 0.25 })

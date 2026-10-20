@@ -38,7 +38,8 @@ export function ShowcaseDoorway({ items }: { items: ShowcaseItem[] }) {
 
   if (!n) return null
   return (
-    <div aria-hidden="true" className="absolute inset-0">
+    // z-0 + isolate: the cards' own z-index stays inside this layer, so the closed leaf always covers them
+    <div aria-hidden="true" className="absolute inset-0 isolate z-0">
       {/* soft burst behind the card */}
       <div className="absolute left-1/2 top-[46%] aspect-square w-[150%] -translate-x-1/2 -translate-y-1/2 rounded-full bg-paper/35 blur-2xl" />
       {items.map((it, k) =>
@@ -64,7 +65,7 @@ export function ShowcaseDoorway({ items }: { items: ShowcaseItem[] }) {
               loading={k === 0 ? 'eager' : 'lazy'}
               decoding="async"
               draggable={false}
-              className="block h-full w-full object-cover"
+              className={cn('block h-full w-full', it.fit === 'contain' ? 'object-contain p-[6%]' : 'object-cover')}
             />
           </div>
         ) : null,
@@ -81,7 +82,9 @@ export function ShowcaseChip({ items, className }: { items: ShowcaseItem[]; clas
   const reduce = useReducedMotion()
   const root = useRef<HTMLDivElement>(null)
   const [inView, setInView] = useState(false)
-  const [held, setHeld] = useState(false) // hover / focus inside the chip pauses it
+  const [held, setHeld] = useState(false) // hover / focus / a touch inside the chip pauses it
+  const touchHold = useRef<number | undefined>(undefined)
+  useEffect(() => () => window.clearTimeout(touchHold.current), [])
   const n = items.length
   const item = items[Math.min(i, n - 1)]
 
@@ -121,6 +124,13 @@ export function ShowcaseChip({ items, className }: { items: ShowcaseItem[]; clas
       data-showcase-chip
       className={cn('pointer-events-none flex flex-col items-center', className)}
       onPointerEnter={(e) => e.pointerType === 'mouse' && setHeld(true)}
+      onPointerDown={(e) => {
+        // phones have no hover: any touch on the chip holds the slideshow for 6 s
+        if (e.pointerType === 'mouse') return
+        setHeld(true)
+        window.clearTimeout(touchHold.current)
+        touchHold.current = window.setTimeout(() => setHeld(false), 6000)
+      }}
       onPointerLeave={() => setHeld(false)}
       onFocus={() => setHeld(true)}
       onBlur={(e) => !e.currentTarget.contains(e.relatedTarget as Node) && setHeld(false)}
@@ -130,7 +140,7 @@ export function ShowcaseChip({ items, className }: { items: ShowcaseItem[]; clas
           <button
             type="button"
             onClick={() => showcaseStore.set(showcaseStore.i - 1)}
-            className="focus-ring flex w-10 shrink-0 items-center justify-center border-r-[3px] border-ink transition-colors duration-150 hover:bg-volt"
+            className="focus-ring flex w-11 shrink-0 items-center justify-center border-r-[3px] border-ink transition-colors duration-150 hover:bg-volt"
             aria-label="Previous product"
           >
             <ChevronLeft aria-hidden="true" className="size-5" />
@@ -143,11 +153,11 @@ export function ShowcaseChip({ items, className }: { items: ShowcaseItem[]; clas
           aria-label={`${item.name}, ${item.price} — view product`}
         >
           <span className="label hidden shrink-0 bg-volt px-1.5 py-0.5 text-[10px] text-ink min-[400px]:inline">{item.kind}</span>
-          <span key={item.slug} className="min-w-0 truncate font-display text-[17px] uppercase leading-none tracking-[0.02em] motion-safe:animate-[ted-fade-in_.3s_ease-out] sm:text-[19px]">
+          <span key={item.slug} className="line-clamp-2 min-w-0 font-display text-[17px] uppercase leading-[1.05] tracking-[0.02em] motion-safe:animate-[ted-fade-in_.3s_ease-out] sm:line-clamp-none sm:truncate sm:text-[19px] sm:leading-none">
             {item.name}
           </span>
           <span className="shrink-0 bg-ink px-1.5 py-1 font-mono text-[12px] font-bold leading-none text-volt">{item.price}</span>
-          <span aria-hidden="true" className="shrink-0 font-mono text-[15px] transition-transform duration-200 group-hover/chip:translate-x-1">
+          <span aria-hidden="true" className="hidden shrink-0 font-mono text-[15px] transition-transform sm:inline duration-200 group-hover/chip:translate-x-1">
             →
           </span>
         </Link>
@@ -156,7 +166,7 @@ export function ShowcaseChip({ items, className }: { items: ShowcaseItem[]; clas
             <button
               type="button"
               onClick={() => showcaseStore.set(showcaseStore.i + 1)}
-              className="focus-ring flex w-10 shrink-0 items-center justify-center border-l-[3px] border-ink transition-colors duration-150 hover:bg-volt"
+              className="focus-ring flex w-11 shrink-0 items-center justify-center border-l-[3px] border-ink transition-colors duration-150 hover:bg-volt"
               aria-label="Next product"
             >
               <ChevronRight aria-hidden="true" className="size-5" />
@@ -165,7 +175,7 @@ export function ShowcaseChip({ items, className }: { items: ShowcaseItem[]; clas
               <button
                 type="button"
                 onClick={() => showcaseStore.setPaused(!paused)}
-                className="focus-ring hidden w-10 shrink-0 items-center justify-center border-l-[3px] border-ink bg-ink text-paper transition-colors duration-150 hover:bg-tone-2 sm:flex"
+                className="focus-ring flex w-11 shrink-0 items-center justify-center border-l-[3px] border-ink bg-ink text-paper transition-colors duration-150 hover:bg-tone-2"
                 aria-label={paused ? 'Play the product slideshow' : 'Pause the product slideshow'}
                 aria-pressed={paused}
               >

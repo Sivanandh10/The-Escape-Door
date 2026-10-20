@@ -121,6 +121,7 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
     }
     // files never survive a reload → never resume on the Send step with stale state
     next.step = Math.min(next.step, next.maxStep)
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time restore of the saved draft from browser storage
     setD(next)
     setReady(true)
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -365,7 +366,7 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
   return (
     <div ref={studio} className="relative">
       {/* step rail */}
-      <nav aria-label="Forge steps" className="border-4 border-ink bg-ink text-paper shadow-hard">
+      <nav aria-label="Design Your Own steps" className="border-4 border-ink bg-ink text-paper shadow-hard">
         <ol className="grid grid-cols-4">
           {STEPS.map((s, i) => {
             const current = i === d.step
@@ -834,6 +835,7 @@ function Range({ id, label, value, min, max, step, onChange, format }: { id: str
 
 function Stepper({ id, label, value, min, max, onChange, help }: { id: string; label: string; value: number; min: number; max: number; onChange: (v: number) => void; help?: string }) {
   const [text, setText] = useState(String(value))
+  // eslint-disable-next-line react-hooks/set-state-in-effect -- mirror the committed value into the editable text
   useEffect(() => setText(String(value)), [value])
   const commit = (raw: string) => {
     const n = Math.round(Number(raw))
@@ -1185,7 +1187,7 @@ function Success({
         </span>
         <p className="label">Request sent · 送信完了</p>
         <h3 ref={heading} tabIndex={-1} className="h-display mt-3 max-w-[11ch] text-[clamp(48px,8vw,104px)] outline-none">
-          Forged. See you on WhatsApp.
+          Sent. See you on WhatsApp.
         </h3>
         <p className="mt-5 max-w-[46ch] text-[16px] leading-relaxed">
           {result.opened ? 'WhatsApp opened in a new tab with your request typed out — hit send there.' : 'Tap the button below to open WhatsApp with your request typed out, then hit send.'}{' '}
@@ -1201,7 +1203,7 @@ function Success({
             <WaGlyph className="size-5 text-volt" /> {result.opened ? "Didn't open? Tap here" : 'Open WhatsApp'}
           </a>
           <button type="button" onClick={onAgain} className="label focus-ring press min-h-12 border-[3px] border-ink bg-paper px-5 font-bold">
-            Forge another
+            Design another
           </button>
           <Link href="/shop" className="label focus-ring press inline-flex min-h-12 items-center border-[3px] border-ink px-5 font-bold">
             Browse the shop
@@ -1219,7 +1221,7 @@ function Success({
         transition={reduced ? { duration: 0.15 } : { delay: 0.18, type: 'spring', stiffness: 300, damping: 26 }}
         className="relative border-4 border-ink bg-paper p-5 font-mono text-[13px] text-ink shadow-hard lg:col-span-5"
       >
-        <p className="label border-b-2 border-dashed border-ink pb-2">Forge ticket</p>
+        <p className="label border-b-2 border-dashed border-ink pb-2">Design ticket</p>
         <dl className="mt-3 space-y-2">
           <div className="flex justify-between gap-3">
             <dt>Product</dt>

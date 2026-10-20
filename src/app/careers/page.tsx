@@ -16,7 +16,7 @@ import { absUrl, ORG_ID } from '@/lib/seo'
 export const metadata = pageMeta({
   title: 'Careers at The Escape Door — Join the Crew',
   description:
-    'Open roles at The Escape Door: design, print, fest stalls and content for an anime-first merch label from India. See every opening and apply online in minutes.',
+    'Work with The Escape Door: design, print, fest stalls and content for an anime-first merch label from India. Every opening is listed here, and you can apply online in minutes.',
   path: '/careers',
 })
 
@@ -74,9 +74,9 @@ export default async function CareersPage() {
         }
         aside={
           <div className="relative border-4 border-paper bg-door p-6 text-paper shadow-[8px_8px_0_var(--color-volt)]">
-            <p className="label text-volt">Now hiring</p>
+            <p className="label text-volt">{count ? 'Now hiring' : 'No openings right now'}</p>
             <p className="font-display mt-2 text-[clamp(64px,9vw,120px)] leading-[0.85] tabular-nums">{String(count).padStart(2, '0')}</p>
-            <p className="label mt-1">open role{count === 1 ? '' : 's'}</p>
+            <p className="label mt-1">{count ? `open role${count === 1 ? '' : 's'}` : 'check back soon'}</p>
             <Mascot mood={count ? 'wave' : 'peek'} size={120} animate title="" className="absolute -bottom-4 right-4" />
           </div>
         }

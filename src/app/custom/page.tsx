@@ -15,7 +15,7 @@ import { getApparelCustom, getCustomRules, getHoodieTiers, getPartnerships, getT
 import { formatINR } from '@/lib/pricing'
 import { breadcrumbJsonLd, faqJsonLd, serviceJsonLd } from '@/lib/seo'
 
-const TITLE = 'Custom Anime T-Shirt Printing India — Forge | Escape Door'
+const TITLE = 'Custom Anime T-Shirt Printing India — Design Your Own | Escape Door'
 const DESCRIPTION =
   'Print your own design: front 4×4 in, back 12×15 in. Send your art, or we design it for ₹200 extra. Custom polaroids from 20 pcs, badges in bulk.'
 
@@ -54,17 +54,17 @@ export default async function CustomPage() {
   const faq = [
     {
       q: 'Can I print my own artwork on a tee or hoodie?',
-      a: `Yes. Upload your artwork in the Custom Forge, or ask us to draw it for ${fee} extra. The front print area is ${z.front.w}×${z.front.h} inches and the back print area is ${z.back.w}×${z.back.h} inches. The garment you pick sets the final price, and we confirm it on WhatsApp before printing.`,
+      a: `Yes. Upload your artwork in Design Your Own, or ask us to draw it for ${fee} extra. The front print area is ${z.front.w}×${z.front.h} inches and the back print area is ${z.back.w}×${z.back.h} inches. The garment you pick sets the final price, and we confirm it on WhatsApp before printing.`,
     },
     {
       q: 'How many custom polaroids do I need to order?',
       a: polaroid
         ? `Custom polaroid-style prints start at ${polaroid.minQty} pieces, and every piece can be a different design. At ${formatINR(polaroid.unitPrice ?? 0)} each, ${polaroid.minQty} pieces come to ${formatINR((polaroid.unitPrice ?? 0) * polaroid.minQty)}.`
-        : 'Custom polaroid-style prints have a minimum order; the Forge shows it when you pick polaroids.',
+        : 'Custom polaroid-style prints have a minimum order; Design Your Own shows it when you pick polaroids.',
     },
     {
       q: 'How do I pay and confirm a custom order?',
-      a: 'The Forge does not charge you. It sends your request — product, quantity, print placement and files — to us on WhatsApp. We reply with the confirmed price and next steps before anything is printed.',
+      a: 'Design Your Own does not charge you. It sends your request — product, quantity, print placement and files — to us on WhatsApp. We reply with the confirmed price and next steps before anything is printed.',
     },
   ]
 
@@ -72,10 +72,10 @@ export default async function CustomPage() {
     <>
       <JsonLd
         data={[
-          serviceJsonLd({ name: 'Custom Forge — custom anime merch printing', serviceType: 'Custom merchandise printing', path: '/custom', description: DESCRIPTION }),
+          serviceJsonLd({ name: 'Design Your Own — custom anime merch printing', serviceType: 'Custom merchandise printing', path: '/custom', description: DESCRIPTION }),
           breadcrumbJsonLd([
             { name: 'Home', path: '/' },
-            { name: 'Custom Forge', path: '/custom' },
+            { name: 'Design Your Own', path: '/custom' },
           ]),
           faqJsonLd(faq),
         ]}
@@ -94,22 +94,22 @@ export default async function CustomPage() {
               </li>
               <li aria-hidden="true">/</li>
               <li aria-current="page" className="text-paper">
-                Custom Forge
+                Design Your Own
               </li>
             </ol>
           </nav>
           <div className="mt-6 grid items-end gap-8 lg:grid-cols-12">
             <div className="lg:col-span-8">
-              <p className="label text-volt">Custom Forge · 特注工房</p>
+              <p className="label text-volt">Design Your Own · 特注工房</p>
               <h1 id="forge-h1" className="h-display mt-4 max-w-[14ch] text-[clamp(52px,8.4vw,132px)]">
-                The Custom <em>Forge</em>: your design, our press
+                Design your <em>own</em>: your art, our press
               </h1>
               <p className="mt-6 max-w-[56ch] text-[17px] leading-relaxed text-paper/85 sm:text-lg">
                 Put your own art on an oversized tee, a heavyweight hoodie, polaroids, bookmarks, stickers or badges. Upload a file, or tell us the idea and we draw it. You see the
                 price as you go, then send the whole request to us on WhatsApp.
               </p>
             </div>
-            <ul className="flex flex-wrap gap-2 lg:col-span-4 lg:flex-col lg:items-end" aria-label="Forge facts">
+            <ul className="flex flex-wrap gap-2 lg:col-span-4 lg:flex-col lg:items-end" aria-label="Design Your Own facts">
               {[
                 `Front ${z.front.w}×${z.front.h} in`,
                 `Back ${z.back.w}×${z.back.h} in`,
@@ -149,7 +149,7 @@ export default async function CustomPage() {
       <section aria-labelledby="forge-how" className="section-y border-t-4 border-ink bg-paper text-ink grain">
         <div className="container-x">
           <SectionHead id="forge-how" kicker="How it works" jp="三つのステップ" className="[&_.label]:text-door">
-            How the <em>Forge</em> works in three steps
+            How <em>Design Your Own</em> works in three steps
           </SectionHead>
           <ol className="mt-10 grid gap-4 md:grid-cols-3">
             {[
@@ -176,7 +176,7 @@ export default async function CustomPage() {
             </SectionHead>
             <p className="mt-6 max-w-[48ch] text-[16px] leading-relaxed text-paper/85">
               The front zone is a {z.front.w}×{z.front.h} inch square on the chest — right for a mark, a kanji or a small character crest of your own. The back zone is a full{' '}
-              {z.back.w}×{z.back.h} inch panel for the big piece. The Forge preview draws both zones to scale on the garment, so what you place is what we print.
+              {z.back.w}×{z.back.h} inch panel for the big piece. The live preview draws both zones to scale on the garment, so what you place is what we print.
             </p>
             <div className="mt-6 grid gap-3 sm:grid-cols-2">
               <div className="border-[3px] border-paper p-4">
@@ -293,7 +293,7 @@ export default async function CustomPage() {
               Custom for clubs, teams and <em>fests</em>
             </SectionHead>
             <p className="mt-6 max-w-[54ch] text-[16px] leading-relaxed">
-              Committee tees, club hoodies, badge runs for a whole fest, polaroid sets for a farewell — the Forge handles bulk the same way it handles one tee. Pick the product, set the
+              Committee tees, club hoodies, badge runs for a whole fest, polaroid sets for a farewell — Design Your Own handles bulk the same way it handles one tee. Pick the product, set the
               quantity, attach the art. For stalls and fest partnerships, start on the fests page.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
@@ -324,7 +324,7 @@ export default async function CustomPage() {
         <div className="container-x grid gap-10 lg:grid-cols-12">
           <div className="lg:col-span-5">
             <SectionHead id="forge-faq" kicker="Questions" jp="よくある質問">
-              Questions before you <em>forge</em>
+              Questions before you <em>design</em>
             </SectionHead>
             <p className="mt-6 text-[15px] text-paper/75">
               More answers on the{' '}

@@ -65,6 +65,7 @@ export default function Preloader() {
     const on = html.classList.contains('ted-pl')
     if (!on) {
       html.dataset.preloader = 'done'
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time decision from the inline gate class
       setPhase('done')
       return
     }
@@ -243,7 +244,17 @@ export default function Preloader() {
       if (freezeAt != null) tl.pause(freezeAt)
       else tl.play(0)
 
+      // hard stop: GSAP pauses with rAF (background tab, jank), timers don't — the page is never held past budget
+      const hardStop =
+        freezeAt == null
+          ? window.setTimeout(() => {
+              tl.progress(1)
+              finish()
+            }, Math.max(room ?? BUDGET_MS / 1000, 0.3) * 1000 + 450)
+          : undefined
+
       return () => {
+        window.clearTimeout(hardStop)
         el.removeEventListener('click', skip)
         window.removeEventListener('keydown', onKey)
         tl.kill()

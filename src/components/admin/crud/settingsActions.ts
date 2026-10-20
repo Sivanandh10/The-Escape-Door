@@ -7,18 +7,21 @@
 // Stored items the caller's list silently lacks (a stale tab, a teammate's new item, a hand-crafted call)
 // are merged back instead of being dropped — so nobody can delete by omission, and no update is lost.
 // After a write: updateTag('settings') so /, /custom, /fests and S05/S07/S09 update immediately.
-import { updateTag } from 'next/cache'
+import { revalidatePath, updateTag } from 'next/cache'
 import { TAGS } from '@/lib/data/repo'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { supabaseServer } from '@/lib/supabase/server'
 import { checkDelete, checkPerm } from '../server'
 import { SETTING_KEYS, isSettingKey, type SettingKey } from './settingsSchemas'
 
-export type SettingSaveResult = { ok: true; value: unknown } | { ok: false; error: string }
+export type SettingSaveResult = { ok: true; value: unknown; updatedAt: string } | { ok: false; error: string; conflict?: boolean }
 
 export interface SettingSaveOptions {
   /** list keys: ids the caller means to delete (superadmin only). Anything else missing is kept. */
   remove?: string[]
+  /** single-value keys ('site'): the row's updated_at the form was loaded with. If the row changed since (a teammate
+   *  saved), the write is refused instead of silently overwriting their newer values. null = row didn't exist. */
+  expectedUpdatedAt?: string | null
 }
 
 function idsOf(v: unknown): string[] {
@@ -42,6 +45,16 @@ export async function saveSettingValue(key: SettingKey, value: unknown, opts?: S
 
   const sb = supabaseAdmin() ?? (await supabaseServer())
   if (!sb) return { ok: false, error: 'Demo mode — connect Supabase to save changes.' }
+
+  if (!cfg.list && opts && 'expectedUpdatedAt' in opts) {
+    const { data, error } = await sb.from('settings').select('updated_at').eq('key', key).maybeSingle()
+    if (error) return { ok: false, error: `Could not read the current settings: ${error.message}` }
+    const cur = (data as { updated_at?: string } | null)?.updated_at ?? null
+    const exp = opts.expectedUpdatedAt ?? null
+    if (cur !== exp && !(cur && exp && Date.parse(cur) === Date.parse(exp))) {
+      return { ok: false, conflict: true, error: 'Someone saved these settings after you opened this page. Reload to see their version, then make your change again.' }
+    }
+  }
 
   let stored: unknown = parsed.data
   if (cfg.list) {
@@ -70,8 +83,12 @@ export async function saveSettingValue(key: SettingKey, value: unknown, opts?: S
     }
   }
 
-  const { error } = await sb.from('settings').upsert({ key, value: stored })
+  const updatedAt = new Date().toISOString()
+  const { error } = await sb.from('settings').upsert({ key, value: stored, updated_at: updatedAt })
   if (error) return { ok: false, error: `The database refused: ${error.message}` }
   updateTag(TAGS.settings)
-  return { ok: true, value: stored }
+  // 'site' feeds the root layout (banner, WhatsApp number) and the static home hero: also expire every
+  // prerendered route by path, so the CDN copy is regenerated even if a host drops the custom tag purge.
+  if (key === 'site') revalidatePath('/', 'layout')
+  return { ok: true, value: stored, updatedAt }
 }

@@ -309,4 +309,4 @@ export function MdBlocks({ blocks }: { blocks: Block[] }): ReactNode {
 
 /** Body-copy rhythm shared by the public page and the admin preview. */
 export const MD_BODY_CLASS =
-  'max-w-[68ch] text-[17px] leading-[1.65] [&_li]:mt-2 [&_li]:pl-1 [&_ol]:mt-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p+p]:mt-4 [&_ul+p]:mt-4 [&_ol+p]:mt-4 [&_p+ul]:mt-4 [&_ul]:mt-4 [&_ul]:list-[square] [&_ul]:pl-6 [&_li::marker]:text-door'
+  'max-w-[60ch] text-[17px] leading-[1.65] [&_li]:mt-2 [&_li]:pl-1 [&_ol]:mt-4 [&_ol]:list-decimal [&_ol]:pl-6 [&_p+p]:mt-4 [&_ul+p]:mt-4 [&_ol+p]:mt-4 [&_p+ul]:mt-4 [&_ul]:mt-4 [&_ul]:list-[square] [&_ul]:pl-6 [&_li::marker]:text-door'

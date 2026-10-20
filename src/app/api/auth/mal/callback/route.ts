@@ -1,14 +1,15 @@
 // GET /api/auth/mal/callback — MyAnimeList redirects here (owner: AUTH).
 // 1. validate state (cookie) → 2. exchange the code (PKCE plain) → 3. import @me + anime list + suggestions →
 // 4a. signed in already → link MAL to this account, or
-// 4b. signed out → find the account linked to this MAL id, or create one (synthetic never-mailed email,
+// 4b. signed out → find the account linked to this MAL id (staff refused), or create one (random never-mailed email,
 //     email_confirm) → sign in server-side: admin.generateLink(magiclink) → verifyOtp(token_hash) sets the cookies.
 // Stores the import snapshot + the MAL refresh token (server-only column). Never logs tokens.
+import { randomBytes } from 'node:crypto'
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { supabaseServer } from '@/lib/supabase/server'
-import { ensureProfile, getAuthUser, requestOrigin } from '@/lib/auth/customer-server'
+import { ensureProfile, getAuthUser, isStaff, requestOrigin } from '@/lib/auth/customer-server'
 import { malSyntheticEmail, safeNext } from '@/lib/auth/shared'
 import { MAL_COOKIE, MAL_COOKIE_PATH, MalError, exchangeCode, importMal, malConfig, malRedirectUri } from '@/lib/auth/mal'
 
@@ -70,8 +71,10 @@ export async function GET(req: Request) {
     const { data: linked } = await sa.from('mal_accounts').select('user_id').eq('mal_id', me.id).maybeSingle()
     const current = await getAuthUser()
 
-    // ---- 4a. already signed in → link
+    // ---- 4a. already signed in → link (never to a team account: staff are not customers, and a MAL login must
+    //          never become a way into /admin)
     if (current) {
+      if (await isStaff(current.user.id)) return fail('staff')
       if (linked && linked.user_id !== current.user.id) return fail('linked-elsewhere')
       const { error } = await sa.from('mal_accounts').upsert({ user_id: current.user.id, ...malRow }, { onConflict: 'user_id' })
       if (error) return fail('server')
@@ -79,27 +82,30 @@ export async function GET(req: Request) {
       return done(next, 'mal-linked')
     }
 
-    // ---- 4b. signed out → find or create the account
+    // ---- 4b. signed out → the account linked to this MAL id (looked up ONLY via mal_accounts), or a brand-new one.
+    //          The new account's address carries a server-side random nonce, so nobody can pre-register it, and we never
+    //          fall back to "whoever already owns that address".
     let userId = (linked?.user_id as string | undefined) ?? null
     let email: string | null = null
     if (userId) {
+      if (await isStaff(userId)) return fail('staff')
       const { data } = await sa.auth.admin.getUserById(userId)
       email = data.user?.email ?? null
-      if (!email) userId = null // orphaned link → recreate below
+      if (!email) userId = null // orphaned link → create a fresh account below
     }
     if (!userId) {
-      email = malSyntheticEmail(me.id)
+      email = malSyntheticEmail(me.id, randomBytes(12).toString('hex'))
       const meta = { name: me.name, avatar_url: me.picture ?? null, provider: 'myanimelist', mal_id: me.id }
-      const created = await sa.auth.admin.createUser({ email, email_confirm: true, user_metadata: meta, app_metadata: { ted_provider: 'myanimelist' } })
-      if (created.data.user) userId = created.data.user.id
-      // already exists (e.g. a previous half-finished sign-in) → generateLink below returns the user
+      const created = await sa.auth.admin.createUser({ email, email_confirm: true, user_metadata: meta, app_metadata: { ted_provider: 'myanimelist', mal_id: me.id } })
+      if (created.error || !created.data.user) return fail('server')
+      userId = created.data.user.id
     }
-    if (!email) return fail('server')
+    if (!email || !userId) return fail('server')
 
     const link = await sa.auth.admin.generateLink({ type: 'magiclink', email })
     const tokenHash = link.data?.properties?.hashed_token
-    userId = link.data?.user?.id ?? userId
-    if (link.error || !tokenHash || !userId) return fail('session')
+    // the magic link must belong to exactly the account we resolved above
+    if (link.error || !tokenHash || link.data?.user?.id !== userId) return fail('session')
 
     const { error: linkErr } = await sa.from('mal_accounts').upsert({ user_id: userId, ...malRow }, { onConflict: 'user_id' })
     if (linkErr) return fail('server')

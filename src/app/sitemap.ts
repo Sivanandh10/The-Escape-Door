@@ -3,7 +3,8 @@
 // No new Date(): static pages use fixed content dates; products use updatedAt (fallback createdAt).
 import type { MetadataRoute } from 'next'
 import { SHOP_CATEGORIES } from '@/components/layout/nav'
-import { POLICIES } from '@/components/content/policies'
+import { getOpenJobs } from '@/components/careers/data'
+import { getPublicPages } from '@/app/policies/_lib/data'
 import { getCollections, getProducts } from '@/lib/data/repo'
 import { absUrl } from '@/lib/seo'
 
@@ -13,7 +14,7 @@ const CONTENT_UPDATED = '2026-10-19'
 const latest = (dates: string[]) => dates.filter(Boolean).sort().at(-1) ?? CONTENT_UPDATED
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
-  const [collections, products] = await Promise.all([getCollections(), getProducts()])
+  const [collections, products, jobs, pages] = await Promise.all([getCollections(), getProducts(), getOpenJobs(), getPublicPages()])
   const stamp = (p: { updatedAt?: string; createdAt?: string }) => p.updatedAt || p.createdAt || CONTENT_UPDATED
   const catalogueUpdated = latest(products.map(stamp))
 
@@ -38,7 +39,10 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     page('/about', 0.5),
     page('/faq', 0.6),
     page('/contact', 0.4),
-    ...POLICIES.map((p) => page(`/policies/${p.slug}`, 0.2, CONTENT_UPDATED, 'yearly')),
+    page('/careers', 0.5, latest(jobs.map((j) => j.updatedAt?.slice(0, 10) ?? '')), 'weekly'),
+    ...jobs.map((j) => page(`/careers/${j.slug}`, 0.5, j.updatedAt || CONTENT_UPDATED, 'weekly')),
+    // built-in policies + pages added in Admin → Pages (all served under /policies/<slug>)
+    ...pages.map((p) => page(`/policies/${p.slug}`, 0.2, CONTENT_UPDATED, 'yearly')),
     ...products.map((p) => ({
       url: absUrl(`/product/${p.slug}`),
       lastModified: stamp(p),

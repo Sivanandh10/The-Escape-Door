@@ -137,7 +137,7 @@ export function ForgeStage() {
         <div data-burst className="pointer-events-none absolute inset-0 -z-10 opacity-25" aria-hidden="true">
           <SpeedLines intensity={0.9} color="#0B0B0F" count={120} inner={0.34} react={false} seed={9} className="h-full w-full" />
         </div>
-        <span className="label absolute left-4 top-4 z-10 border-2 border-ink bg-paper px-2 py-1 text-ink">Forge · preview</span>
+        <span className="label absolute left-4 top-4 z-10 border-2 border-ink bg-paper px-2 py-1 text-ink">Design · preview</span>
 
         <div className="relative mx-auto w-[min(86%,560px)] py-[9%]">
           <div className="pointer-events-none absolute left-1/2 top-1/2 -z-10 w-[118%] -translate-x-1/2 -translate-y-1/2 text-volt" aria-hidden="true">

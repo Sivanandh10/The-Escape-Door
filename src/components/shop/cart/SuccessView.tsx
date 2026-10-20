@@ -104,7 +104,6 @@ export function SuccessView() {
     if (!order || !order.opened || order.celebrated) return
     patchLastOrder({ celebrated: true })
     return celebrate(2300)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [order])
 
   if (order === undefined) {
@@ -193,7 +192,7 @@ export function SuccessView() {
           <p className="mt-5 max-w-[48ch] text-[17px] text-tone-4">
             {sent ? (
               <>
-                WhatsApp opened in a new tab with your order typed out, {order.name.split(' ')[0]}. Hit <strong className="text-paper">send</strong> there and we&rsquo;ll pick it up in the chat.
+                WhatsApp opened in a new tab with your order typed out{order.name ? `, ${order.name.split(' ')[0]}` : ''}. Hit <strong className="text-paper">send</strong> there and we&rsquo;ll pick it up in the chat.
               </>
             ) : (
               <>Your browser blocked the WhatsApp tab. Your order is saved — tap the button below to open WhatsApp with it typed out.</>
@@ -288,7 +287,7 @@ export function SuccessView() {
                     <span>{stamp}</span>
                   </div>
                   <p className="mt-2 font-mono text-[11.5px] text-tone-2">
-                    {order.name} · {order.city} · {pieces} {pieces === 1 ? 'piece' : 'pieces'}
+                    {[order.name, order.city, `${pieces} ${pieces === 1 ? 'piece' : 'pieces'}`].filter(Boolean).join(' · ')}
                   </p>
 
                   <ul className="mt-3 flex flex-col gap-2 font-mono text-[12.5px]">

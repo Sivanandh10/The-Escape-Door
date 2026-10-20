@@ -3,7 +3,9 @@ import type { Customer } from './contract'
 
 /** MyAnimeList-only accounts get a synthetic, never-mailed address on this domain (MAL doesn't share emails). */
 export const SYNTHETIC_EMAIL_DOMAIN = 'users.the-escape-door.local'
-export const malSyntheticEmail = (malId: number | string) => `mal-${malId}@${SYNTHETIC_EMAIL_DOMAIN}`
+/** `nonce` must be unguessable (server-side random) so nobody can pre-register the address a MAL login will use. */
+export const malSyntheticEmail = (malId: number | string, nonce: string) =>
+  `mal-${malId}-${nonce.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 24)}@${SYNTHETIC_EMAIL_DOMAIN}`
 export const isSyntheticEmail = (email: string | null | undefined) =>
   !!email && email.toLowerCase().endsWith(`@${SYNTHETIC_EMAIL_DOMAIN}`)
 
@@ -14,9 +16,20 @@ export const contactEmail = (email: string | null | undefined) => (email && !isS
 export function safeNext(raw: string | null | undefined, fallback = '/account'): string {
   if (!raw) return fallback
   const s = String(raw).trim()
-  if (!s.startsWith('/') || s.startsWith('//') || s.startsWith('/\\') || /[\r\n]/.test(s)) return fallback
-  if (s.startsWith('/api/') || s.startsWith('/auth/') || s.startsWith('/admin')) return fallback
-  return s.slice(0, 512)
+  // control chars (TAB/CR/LF get stripped by the URL parser, so "/<TAB>/evil.com" would become "//evil.com") and backslashes
+  if (!s.startsWith('/') || /[\u0000-\u001F\u007F\\]/.test(s)) return fallback
+  let out: string
+  try {
+    const base = 'https://x.invalid'
+    const u = new URL(s, base)
+    if (u.origin !== base) return fallback
+    out = u.pathname + u.search + u.hash
+  } catch {
+    return fallback
+  }
+  if (!out.startsWith('/') || out.startsWith('//')) return fallback
+  if (out.startsWith('/api/') || out.startsWith('/auth/') || out.startsWith('/admin')) return fallback
+  return out.length > 512 ? fallback : out
 }
 
 type Meta = Record<string, unknown> | null | undefined

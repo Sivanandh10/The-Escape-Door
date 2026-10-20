@@ -34,7 +34,7 @@ export function EmptyCart({ onNavigate, className, as: H = 'h2' }: { onNavigate?
           onClick={onNavigate}
           className="press flex min-h-12 items-center justify-center border-[3px] border-ink bg-paper px-5 font-mono text-[12px] font-bold uppercase tracking-[0.14em]"
         >
-          Open the Custom Forge
+          Design Your Own
         </Link>
       </div>
     </div>

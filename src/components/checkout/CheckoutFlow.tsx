@@ -30,6 +30,9 @@ import { OrderSummary, payableOf } from './OrderSummary'
 import { VoucherBox, type AppliedVoucher } from './VoucherBox'
 import { TextArea } from './fields'
 
+/** wall-clock fallback for the saved order stamp (event-time only, never during render) */
+const nowMs = () => Date.now()
+
 type Step = 'address' | 'gift' | 'voucher' | 'review'
 const STEPS: Array<{ id: Step; no: string; title: string; jp: string }> = [
   { id: 'address', no: '01', title: 'Deliver to', jp: 'お届け先' },
@@ -67,7 +70,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
   const [phase, setPhase] = useState<'idle' | 'saving' | 'opening'>('idle')
   const [problem, setProblem] = useState<{ message: string; cart?: boolean } | null>(null)
   const [addressError, setAddressError] = useState<string | null>(null)
-  const placed = useRef(false)
+  const [placed, setPlaced] = useState(false)
   const started = useRef(false)
 
   // the selected address must still exist (deleted / not loaded yet → fall back to the default)
@@ -178,7 +181,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
     }
 
     // saved → WhatsApp with the server's order text, then the success moment
-    placed.current = true
+    setPlaced(true)
     setPhase('opening')
     const link = waLink(r.message, waNumber)
     const opened = tab.go(link)
@@ -198,7 +201,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
       name: o.address?.name ?? '',
       city: o.address?.city ?? '',
       link,
-      at: Date.parse(o.createdAt) || Date.now(),
+      at: Date.parse(o.createdAt) || nowMs(),
       opened,
       order: o,
     })
@@ -223,7 +226,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
     )
   }
 
-  if (!items.length && !placed.current) {
+  if (!items.length && !placed) {
     return (
       <div className="panel-paper mx-auto max-w-xl shadow-hard-volt">
         <EmptyCart />

@@ -7,7 +7,8 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ArrowRight, Check, HeartOff, ShoppingBag, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { Mascot } from '@/components/brand/Mascot'
-import { useCart, useHydrated, useWishlist } from '@/lib/cart'
+import { useCart, useHydrated, useWishlist, type AddInput } from '@/lib/cart'
+import { useRequireLogin } from '@/lib/auth/customer'
 import { track } from '@/lib/analytics'
 import { formatINR, variantPriceLabel } from '@/lib/pricing'
 import { useReducedMotion } from '@/lib/motion'
@@ -82,6 +83,7 @@ const TILT = [-1.6, 1.2, -0.8, 1.8, -1.2, 0.9]
 
 function WishCard({ product: p, index }: { product: WishProduct; index: number }) {
   const add = useCart((s) => s.add)
+  const requireLogin = useRequireLogin() // adding to the cart needs login, same as every other add path
   const setOpen = useCart((s) => s.setOpen)
   const toggle = useWishlist((s) => s.toggle)
   const reduced = useReducedMotion()
@@ -102,7 +104,7 @@ function WishCard({ product: p, index }: { product: WishProduct; index: number }
     if (!variant) return
     if (needsPick && !picking) return setPicking(true)
     if (p.sizes?.length && !size) return
-    add({
+    const item: AddInput = {
       productId: p.id,
       slug: p.slug,
       name: p.name,
@@ -114,10 +116,17 @@ function WishCard({ product: p, index }: { product: WishProduct; index: number }
       unitPrice: variant.price,
       image: p.image,
       ...(variant.attrs ? { variantAttrs: variant.attrs } : {}),
-    })
-    track('add_to_cart', { slug: p.slug, variant: variant.id, from: 'wishlist' })
-    unsave('Moved to your cart', false)
-    toast.success('Moved to your cart', { description: p.name, action: { label: 'Open cart', onClick: () => setOpen(true) } })
+    }
+    requireLogin(
+      'Log in to add to your cart',
+      () => {
+        add(item)
+        track('add_to_cart', { slug: p.slug, variant: variant.id, from: 'wishlist' })
+        unsave('Moved to your cart', false)
+        toast.success('Moved to your cart', { description: p.name, action: { label: 'Open cart', onClick: () => setOpen(true) } })
+      },
+      { type: 'cart-add', item },
+    )
   }
 
   return (

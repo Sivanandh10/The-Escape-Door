@@ -24,12 +24,11 @@ export const metadata = pageMeta({
 const GROUP_TONE = ['bg-volt', 'bg-lav', 'bg-pink', 'bg-paper', 'bg-volt'] as const
 
 export default function FaqPage() {
-  let n = 0
-  const groups = FAQ_GROUPS.map((g) => {
+  // running question number per group (pure: count everything in the groups before this one)
+  const groups = FAQ_GROUPS.map((g, gi) => {
     const items = FAQ.filter((f) => f.group === g.id)
-    const startAt = n + 1
-    n += items.length
-    return { ...g, items, startAt }
+    const before = FAQ_GROUPS.slice(0, gi).reduce((sum, p) => sum + FAQ.filter((f) => f.group === p.id).length, 0)
+    return { ...g, items, startAt: before + 1 }
   }).filter((g) => g.items.length)
 
   return (
@@ -130,7 +129,7 @@ export default function FaqPage() {
         jp="アークを選べ"
         primary={{ href: '/shop', label: 'Shop every arc' }}
         links={[
-          { href: '/custom', label: 'Custom Forge' },
+          { href: '/custom', label: 'Design Your Own' },
           { href: '/fests', label: 'Fest stalls' },
           { href: '/cosplay', label: 'Cosplay guide' },
         ]}

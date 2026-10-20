@@ -33,9 +33,9 @@ export default async function S09ForgeTeaser() {
     <section id="forge" aria-labelledby="forge-title" className="section-y relative overflow-hidden border-t-4 border-ink bg-door text-paper">
       <div className="container-x grid items-start gap-10 lg:grid-cols-12 lg:gap-x-12 lg:gap-y-10">
         <div className="lg:col-span-5 lg:pt-4">
-          <p className="label text-volt">Chapter 09 · Custom Forge</p>
+          <p className="label text-volt">Chapter 09 · Design Your Own</p>
           <h2 id="forge-title" className="h-display mt-4 max-w-[14ch] text-h2">
-            Bring your own design to the Custom <em>Forge</em>
+            Design your <em>own</em> — bring the art, we print it
           </h2>
           <span lang="ja" aria-hidden="true" className="jp-sub mt-4 block text-paper/70">
             特注工房
@@ -58,7 +58,7 @@ export default async function S09ForgeTeaser() {
         </div>
 
         <div className="lg:col-span-5">
-          <ol className="grid gap-3" aria-label="How the Forge works">
+          <ol className="grid gap-3" aria-label="How Design Your Own works">
             {steps.map((s, i) => (
               <li
                 key={s.n}

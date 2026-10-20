@@ -112,7 +112,7 @@ function Ticket({ event, index, reminded, onReminded }: { event: FestEvent; inde
                 type="button"
                 aria-expanded={open}
                 aria-controls={formId}
-                onClick={() => (open ? setOpen(false) : requireLogin(`Log in to get a reminder for ${event.name}`, () => setOpen(true)))}
+                onClick={() => (open ? setOpen(false) : requireLogin('Log in to get a reminder', () => setOpen(true)))}
                 className={cn(
                   'press focus-ring inline-flex min-h-12 items-center gap-2 border-[3px] border-ink px-4 font-bold shadow-hard-sm transition-colors duration-150',
                   open ? 'bg-paper text-ink' : 'bg-ink text-paper hover:bg-door',
@@ -176,6 +176,8 @@ export function TicketList({ events }: { events: FestEvent[] }) {
   const [fresh, setFresh] = useState<string[]>([])
 
   useEffect(() => {
+    // localStorage is client-only: one-time sync after mount keeps the server HTML static
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time sync from browser storage
     setStored(readStore())
   }, [])
 

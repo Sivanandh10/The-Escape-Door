@@ -41,7 +41,7 @@ export function WishlistButton({ productId, name, slug, size = 'md', tone = 'pap
     e.preventDefault()
     e.stopPropagation()
     if (!saved) {
-      requireLogin(`Log in to save${name ? ` ${name}` : ' this'} to your wishlist`, () => apply(true), { type: 'wishlist', productId, name })
+      requireLogin('Log in to save to your wishlist', () => apply(true), { type: 'wishlist', productId, name })
       return
     }
     apply(false)

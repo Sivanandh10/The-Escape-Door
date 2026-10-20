@@ -106,13 +106,15 @@ export function ApplyForm({ job }: { job: { id: string; title: string; questions
     const res = await fetch('/api/careers/resume-url', {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ filename: f.name.slice(0, 200), contentType, size: f.size }),
+      body: JSON.stringify({ jobId: job.id, filename: f.name.slice(0, 200), contentType, size: f.size }),
     })
     const data = (await res.json().catch(() => ({}))) as { bucket?: string; path?: string; token?: string; error?: string }
     if (!res.ok || !data.path || !data.token || !data.bucket) {
       throw new Error(
         data.error === 'rate-limited'
           ? 'Too many uploads in a row. Give it a few minutes and try again.'
+          : data.error === 'job-closed'
+            ? 'This role just closed, so it isn’t taking applications any more.'
           : data.error === 'uploads-unconfigured' || data.error === 'uploads-unavailable'
             ? 'Résumé uploads are down right now. Add a portfolio or LinkedIn link instead, or try again later.'
             : 'We couldn’t prepare the upload. Check the file and try again.',

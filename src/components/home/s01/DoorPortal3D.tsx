@@ -87,7 +87,8 @@ function ShowcasePlane({ srcs }: { srcs: string[] }) {
           vec3 cover(sampler2D t, vec2 uv, float asp) {
             float card = CARD.x / CARD.y;
             vec2 s = asp > card ? vec2(card / asp, 1.0) : vec2(1.0, asp / card);
-            return texture2D(t, (uv - 0.5) * s + 0.5).rgb;
+            vec4 tx = texture2D(t, (uv - 0.5) * s + 0.5);
+            return mix(uPaper, tx.rgb, tx.a); // alpha cut-outs (clean product renders) sit on paper
           }
           void main() {
             vec2 p = (vUv - 0.5) * PLANE;
@@ -129,9 +130,13 @@ function ShowcasePlane({ srcs }: { srcs: string[] }) {
     [mat],
   )
 
+  const plane = useRef<THREE.Mesh>(null)
+  // uniforms are written through the mesh ref (mutable by design) — never through the memoised value
   useFrame((_, delta) => {
     const st = state.current
-    const u = mat.uniforms
+    const m = plane.current?.material as THREE.ShaderMaterial | undefined
+    if (!m) return
+    const u = m.uniforms
     const n = srcs.length
     if (!n) return
     const load = (k: number) => {
@@ -188,7 +193,7 @@ function ShowcasePlane({ srcs }: { srcs: string[] }) {
   })
 
   return (
-    <mesh material={mat} position={[0, 0.03, PLANE_Z]}>
+    <mesh ref={plane} material={mat} position={[0, 0.03, PLANE_Z]}>
       <planeGeometry args={[PLANE_W, PLANE_H]} />
     </mesh>
   )
@@ -205,7 +210,7 @@ function useToonRamp() {
 }
 
 function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
-  const { camera, gl } = useThree()
+  const { gl } = useThree()
   const ramp = useToonRamp()
   const leaf = useRef<THREE.Group>(null)
   const lamp = useRef<THREE.PointLight>(null)
@@ -324,8 +329,12 @@ function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
     [mats, wallGeo, ramp],
   )
 
-  const cam = camera as THREE.PerspectiveCamera
+  const wallMesh = useRef<THREE.Mesh>(null)
+  const spillMesh = useRef<THREE.Mesh>(null)
+  const tunnelMesh = useRef<THREE.Mesh>(null)
+  const uni = (r: { current: THREE.Mesh | null }) => (r.current?.material as THREE.ShaderMaterial | undefined)?.uniforms
   useFrame((state, delta) => {
+    const cam = state.camera
     const p = heroProgress.p
     const t = state.clock.elapsedTime
     const creak = smooth(PHASE.creak[0], PHASE.creak[1], p)
@@ -338,10 +347,15 @@ function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
       leaf.current.rotation.y = idle + creak * 0.22 + open * 1.62
     }
     if (lamp.current) lamp.current.intensity = 0.2 + lit * 9
-    mats.wall.uniforms.uOpen.value = lit
-    mats.spill.uniforms.uOpen.value = lit
-    mats.tunnel.uniforms.uBurst.value = dolly
-    mats.tunnel.uniforms.uTime.value += delta
+    const wallU = uni(wallMesh)
+    const spillU = uni(spillMesh)
+    const tunnelU = uni(tunnelMesh)
+    if (wallU) wallU.uOpen.value = lit
+    if (spillU) spillU.uOpen.value = lit
+    if (tunnelU) {
+      tunnelU.uBurst.value = dolly
+      tunnelU.uTime.value += delta
+    }
 
     // dolly: from the doorstep up to the threshold — the doorway (and the product card) fills the frame
     const e = dolly * dolly * (3 - 2 * dolly)
@@ -362,10 +376,10 @@ function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
       <pointLight ref={lamp} position={[0, 0.2, -0.9]} color={HEX.volt} distance={7} decay={1.2} intensity={0.2} />
 
       {/* the void: an ink wall with a door-shaped hole, lit by halftone */}
-      <mesh geometry={wallGeo} material={mats.wall} position={[0, 0, -0.12]} />
+      <mesh ref={wallMesh} geometry={wallGeo} material={mats.wall} position={[0, 0, -0.12]} />
 
       {/* the light beyond: a speed-line tunnel (volt → paper) */}
-      <mesh material={mats.tunnel} position={[0, 0.03, -8.6]} rotation={[Math.PI / 2, 0, 0]}>
+      <mesh ref={tunnelMesh} material={mats.tunnel} position={[0, 0.03, -8.6]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[1.25, 1.25, 16.8, 48, 1, true]} />
       </mesh>
 
@@ -413,7 +427,7 @@ function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
       </group>
 
       {/* halftone light spill on the floor */}
-      <mesh material={mats.spill} position={[0, -1.1, 2.1]} rotation={[-Math.PI / 2, 0, 0]}>
+      <mesh ref={spillMesh} material={mats.spill} position={[0, -1.1, 2.1]} rotation={[-Math.PI / 2, 0, 0]}>
         <planeGeometry args={[6, 4]} />
       </mesh>
     </>

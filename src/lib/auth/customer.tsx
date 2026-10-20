@@ -6,7 +6,8 @@
 //   modal with `reason` and runs `action` right after a successful in-page login. Google / MyAnimeList / magic-link
 //   logins leave the page: pass a serialisable `replay` ({type:'cart-add', item} | {type:'wishlist', productId}) and it is
 //   performed when the shopper comes back signed in.
-// Supabase not configured → nobody can log in, so gates run the action directly (the shop keeps working).
+// Supabase not configured, or no login method switched on yet (GET /api/auth/providers) → nobody can log in, so gates
+// run the action directly (the shop keeps working).
 import {
   createContext,
   useCallback,
@@ -15,7 +16,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type ReactNode,
 } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
@@ -26,6 +26,7 @@ import { useCart, useWishlist } from '@/lib/cart'
 import { clearLocalViews, readLocalViews } from '@/lib/recs/local'
 import type { Customer, CustomerContextValue, CustomerProviderProps, LoginReplay, RequireLogin } from './contract'
 import { firstName, toCustomer } from './shared'
+import { loadAuthProviders, peekAuthProviders } from './providers'
 
 export type { Customer, LoginReplay } from './contract'
 
@@ -64,8 +65,10 @@ export function useRequireLogin(): RequireLogin {
     (reason, action, replay) => {
       if (!internal || !internal.configured) return action()
       if (internal.ref.current) return action()
-      // session check still running (first ~100 ms of a page): decide once it lands
-      void internal.ready().then((c) => (c ? action() : openLogin(reason, action, replay)))
+      // no login method works yet (Google off, MAL not configured, no email delivery) → no gate, the shop keeps working
+      if (peekAuthProviders()?.any === false) return action()
+      // session / provider check still running (first ~100 ms of a page): decide once both land
+      void Promise.all([internal.ready(), loadAuthProviders()]).then(([c, p]) => (c || !p.any ? action() : openLogin(reason, action, replay)))
     },
     [internal, openLogin],
   )
@@ -107,10 +110,15 @@ function takeReplay(): { replay: LoginReplay; path: string } | null {
   }
 }
 
-function performReplay(replay: LoginReplay) {
+function performReplay(replay: LoginReplay, go: (href: string) => void) {
   if (replay.type === 'cart-add') {
     const item = replay.item
     useCart.getState().add(item)
+    if (replay.then === 'checkout') {
+      // "Buy now" before a Google / MAL login → continue straight to checkout
+      go('/checkout')
+      return
+    }
     toast.success(`Added ${item.name} to your cart`, {
       description: 'Picked up right where you left off.',
       action: { label: 'View cart', onClick: () => useCart.getState().setOpen(true) },
@@ -211,7 +219,7 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
       } else if (c && !prevId) {
         // came back from a redirect login → replay the stashed intent on the same page
         const r = takeReplay()
-        if (r && r.path === window.location.pathname) performReplay(r.replay)
+        if (r && r.path === window.location.pathname) performReplay(r.replay, (href) => router.push(href))
       }
       if (prevId !== (c?.id ?? null) && prevId !== null) router.refresh()
     },
@@ -237,11 +245,14 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
 
   useEffect(() => {
     flash.current = readFlash()
+    void loadAuthProviders() // warm: gates decide synchronously once this is known
     const sb = supabaseBrowser()
     if (!sb) {
-      commit(null)
-      return
+      // no Supabase in this build → settle as signed out (deferred: no synchronous setState inside the effect)
+      const t = window.setTimeout(() => commit(null), 0)
+      return () => window.clearTimeout(t)
     }
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- async: state is set after the session read resolves
     void load()
     const { data } = sb.auth.onAuthStateChange((event, session) => {
       // never await Supabase inside this callback (it holds the auth lock) — defer

@@ -10,6 +10,7 @@ import { PageHero } from '@/components/content/PageHero'
 import { SectionHead } from '@/components/content/SectionHead'
 import { InkTimeline } from '@/components/content/InkTimeline'
 import { EventStub } from '@/components/content/EventStub'
+import { RemindMeButton } from '@/components/auth/RemindMeButton'
 import { LeadForm } from '@/components/content/LeadForm'
 import { CountUp } from '@/components/content/CountUp'
 import { CtaPanel } from '@/components/content/CtaPanel'
@@ -184,6 +185,7 @@ export default async function FestsPage() {
               {upcoming.map((e, i) => (
                 <li key={e.id}>
                   <EventStub event={e} index={i} />
+                  <RemindMeButton event={e} />
                 </li>
               ))}
             </Reveal>

@@ -296,7 +296,8 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
             if (lines) tl.to(lines, { opacity: 1, duration: 0.3 }, 0.2)
             if (rays) tl.to(rays, { opacity: 0, duration: 0.2 }, 0.2)
             if (wrap) tl.fromTo(wrap, { scale: 0.96, transformOrigin: '50% 50%' }, { scale: 1.14, duration: 0.7, ease: 'power1.inOut' }, 0)
-            if (chip) tl.fromTo(chip, { autoAlpha: 0, y: 20 }, { autoAlpha: 1, y: 0, duration: 0.1, ease: 'power2.out' }, 0.42)
+            // the chip lands while the leaf is still swinging, so it is up long before the panel unsticks
+            if (chip) tl.fromTo(chip, { autoAlpha: 0, y: 20 }, { autoAlpha: 1, y: 0, duration: 0.08, ease: 'power2.out' }, 0.3)
             const p1Inner = one('[data-p1-inner]')
             if (p1Inner) {
               gsap.to(p1Inner, { y: -36, ease: 'none', scrollTrigger: { trigger: stage, start: 'top top', end: () => `+=${window.innerHeight}`, scrub: true } })

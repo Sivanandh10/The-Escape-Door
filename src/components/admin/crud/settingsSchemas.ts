@@ -3,6 +3,7 @@
 //   tee_fits      TeeFit[]              catalog.edit   (S05, /custom, /fests)
 //   apparel_custom ApparelCustomRules   catalog.edit   (/custom, S05, S09)
 //   qr_links      QrLink[]              qr.use         (/admin/qr saved links)
+//   site          SiteSettings          settings.edit  (hero copy, banner, ticker, WhatsApp, Instagram — every page)
 // Writes go through saveSettingValue() (settingsActions.ts): permission re-check, zod, and — for lists —
 // removing an existing item counts as a delete, so it needs the superadmin (checkDelete).
 import { z } from 'zod'
@@ -64,6 +65,17 @@ export const qrLinkSchema = z.object({
   createdAt: z.string().max(40),
 })
 
+/** Admin → Settings ('site'): hero copy, banner, ticker words, WhatsApp order number, Instagram link. */
+export const siteSettingsSchema = z.object({
+  heroKicker: z.string().trim().min(2, 'A short kicker line').max(60),
+  heroTitle: z.string().trim().min(4, 'The H1 needs words').max(90),
+  heroSub: z.string().trim().max(260),
+  bannerText: z.string().trim().max(120),
+  tickerWords: z.array(z.string().trim().min(1).max(40)).min(3, 'At least 3 words keep the ticker moving').max(24),
+  whatsapp: z.string().trim().regex(/^(\+?\d[\d\s-]{8,16})?$/, 'Digits with country code, e.g. +91 98…'),
+  instagram: z.string().trim().regex(/^(https:\/\/(www\.)?instagram\.com\/.+)?$/, 'An instagram.com link'),
+})
+
 export const SETTING_KEYS = {
   hoodie_tiers: {
     perm: 'catalog.edit' as Perm,
@@ -88,6 +100,12 @@ export const SETTING_KEYS = {
     list: true,
     schema: z.array(qrLinkSchema).max(300).refine(uniqueIds, 'Two links share an id'),
     fallback: [] as unknown,
+  },
+  site: {
+    perm: 'settings.edit' as Perm,
+    list: false,
+    schema: siteSettingsSchema,
+    fallback: null as unknown,
   },
 } as const
 

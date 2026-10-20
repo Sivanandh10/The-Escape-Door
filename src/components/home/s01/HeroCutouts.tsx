@@ -34,7 +34,7 @@ const SLOTS: Slot[] = [
     types: ['tshirt'],
     side: 'back',
     cls: 'right-[-10%] top-[38%] w-[40%] sm:right-[2%] sm:top-[30%] sm:w-[26%] lg:left-[46.5%] lg:right-auto lg:top-[38%] lg:w-[12.5%]',
-    fade: 'opacity-[0.36] lg:opacity-[0.88]',
+    fade: 'opacity-[0.2] sm:opacity-[0.36] lg:opacity-[0.88]',
     rotate: -10,
     depth: 1.8,
     bob: '6.6s',
@@ -42,7 +42,7 @@ const SLOTS: Slot[] = [
   {
     types: ['polaroid'],
     side: 'front',
-    cls: 'hidden lg:block lg:left-[45.2%] lg:top-[65.5%] lg:w-[8%]',
+    cls: 'hidden lg:block lg:left-[48.5%] lg:top-[70%] lg:w-[8%]',
     fade: 'lg:opacity-[0.9]',
     rotate: 7,
     depth: 2.4,

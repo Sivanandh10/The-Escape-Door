@@ -38,15 +38,20 @@ export const getCustomer = cache(async (): Promise<Customer | null> => {
   )
 })
 
-/** true when this auth user is on the team (public.admins). Staff never get a profile automatically. */
+/**
+ * true when this auth user is on the team (public.admins). Staff never get a profile automatically.
+ * Uses the service role when present, else the user's own cookie client (0001 policy "admins read self").
+ * Fails CLOSED: if we can't tell, treat as staff (no profile is created, no MAL link is made).
+ */
 export async function isStaff(userId: string): Promise<boolean> {
   try {
-    const sa = supabaseAdmin()
-    if (!sa) return false
-    const { data } = await sa.from('admins').select('user_id').eq('user_id', userId).maybeSingle()
+    const sb = supabaseAdmin() ?? (await supabaseServer())
+    if (!sb) return false // Supabase not configured at all → there is no team table to be on
+    const { data, error } = await sb.from('admins').select('user_id').eq('user_id', userId).maybeSingle()
+    if (error) return true
     return !!data
   } catch {
-    return false
+    return true
   }
 }
 
@@ -57,18 +62,19 @@ export async function isStaff(userId: string): Promise<boolean> {
 export async function ensureProfile(user: Pick<User, 'id' | 'email' | 'user_metadata'>, extra?: { name?: string | null; avatarUrl?: string | null }): Promise<'created' | 'exists' | 'staff' | 'skipped'> {
   try {
     if (await isStaff(user.id)) return 'staff'
-    const sb = supabaseAdmin() ?? (await supabaseServer())
+    const sa = supabaseAdmin()
+    const sb = sa ?? (await supabaseServer())
     if (!sb) return 'skipped'
     const { data: existing } = await sb.from('profiles').select('id').eq('id', user.id).maybeSingle()
     if (existing) {
-      await sb.from('profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', user.id)
+      // last_seen_at / avatar_url are server-written only (0009: browsers may only write name + phone)
+      if (sa) await sa.from('profiles').update({ last_seen_at: new Date().toISOString() }).eq('id', user.id)
       return 'exists'
     }
     const name = (extra?.name ?? metaName(user.user_metadata))?.slice(0, 80) ?? null
     const avatar = (extra?.avatarUrl ?? metaAvatar(user.user_metadata))?.slice(0, 600) ?? null
-    const { error } = await sb
-      .from('profiles')
-      .upsert({ id: user.id, name, avatar_url: avatar, last_seen_at: new Date().toISOString() }, { onConflict: 'id', ignoreDuplicates: true })
+    const row: Record<string, unknown> = sa ? { id: user.id, name, avatar_url: avatar, last_seen_at: new Date().toISOString() } : { id: user.id, name }
+    const { error } = await sb.from('profiles').upsert(row, { onConflict: 'id', ignoreDuplicates: true })
     return error ? 'skipped' : 'created'
   } catch {
     return 'skipped'

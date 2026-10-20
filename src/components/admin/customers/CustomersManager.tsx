@@ -21,6 +21,18 @@ import { downloadText, toCsv } from '../crud/data'
 import { getCustomerDetail, reloadCustomers } from './actions'
 import type { CustomerDetail, CustomerRow, CustomersData, Provider } from './data'
 
+/** Only avatars from the login providers' own CDNs are loaded in staff browsers (no shopper-chosen URLs). */
+const AVATAR_HOSTS = /(^|\.)(googleusercontent\.com|myanimelist\.net)$/i
+function safeAvatar(u: string | null | undefined): string | null {
+  if (!u) return null
+  try {
+    const url = new URL(u)
+    return url.protocol === 'https:' && AVATAR_HOSTS.test(url.hostname) ? url.href : null
+  } catch {
+    return null
+  }
+}
+
 type Filter = 'all' | 'ordered' | 'none' | 'mal' | 'google' | 'new'
 const WEEK = 7 * 86_400_000
 const REFRESH_MS = 90_000
@@ -124,9 +136,9 @@ export function CustomersManager({ initial, demo }: { initial: CustomersData; de
       cell: (r) => (
         <span className="flex min-w-0 items-center gap-3">
           <span aria-hidden="true" className="grid size-9 shrink-0 place-items-center overflow-hidden border-2 border-ink bg-volt font-display text-[16px] text-ink">
-            {r.avatarUrl ? (
+            {safeAvatar(r.avatarUrl) ? (
               // eslint-disable-next-line @next/next/no-img-element -- third-party avatar
-              <img src={r.avatarUrl} alt="" width={36} height={36} referrerPolicy="no-referrer" className="size-full object-cover" />
+              <img src={safeAvatar(r.avatarUrl)!} alt="" width={36} height={36} referrerPolicy="no-referrer" className="size-full object-cover" />
             ) : (
               (r.name ?? r.email ?? r.malUsername ?? '?')[0]?.toUpperCase()
             )}

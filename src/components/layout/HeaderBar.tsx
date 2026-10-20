@@ -23,6 +23,15 @@ export interface HeaderProps {
   arcs: NavArc[]
 }
 
+/** A pinned section that is laid out under the header (the home door, pinned at `top: header-h`) marks itself
+ *  [data-hold-header]: while it is on screen the header stays put, so no empty strip opens above the pin. */
+function holdHeader(): boolean {
+  const el = document.querySelector('[data-hold-header]')
+  if (!el) return false
+  const r = el.getBoundingClientRect()
+  return r.bottom > 0 && r.top < window.innerHeight
+}
+
 export function HeaderBar({ arcs }: HeaderProps) {
   const [hidden, setHidden] = useState(false)
   const [mega, setMega] = useState(false)
@@ -44,7 +53,7 @@ export function HeaderBar({ arcs }: HeaderProps) {
         const y = window.scrollY
         const dy = y - last
         if (y < 96) setHidden(false)
-        else if (dy > 6 && !lock) setHidden(true)
+        else if (dy > 6 && !lock && !holdHeader()) setHidden(true)
         else if (dy < -6) setHidden(false)
         if (Math.abs(dy) > 6) last = y
       })

@@ -24,7 +24,7 @@ export function ForgeCta() {
         <span className="grid size-9 place-items-center border-[3px] border-ink bg-door text-paper">
           <DoorIcon open={open} size={22} strokeWidth={2.4} />
         </span>
-        Open the Custom Forge
+        Design Your Own
       </Link>
     </Magnetic>
   )

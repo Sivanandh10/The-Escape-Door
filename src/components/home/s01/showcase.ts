@@ -15,6 +15,8 @@ export interface ShowcaseItem {
   /** 4:5 product image (mockup or an admin upload) */
   src: string
   alt: string
+  /** 'contain' for transparent product renders (whole garment visible), 'cover' for photos/mockups */
+  fit?: 'cover' | 'contain'
 }
 
 /** Rotation order: one of each kind before repeating, so a visitor sees the range (tee → hoodie → polaroid …). */
@@ -37,22 +39,40 @@ export function showcaseSrc(src: string): string {
   return m ? `${m[1]}-600.webp` : src
 }
 
-function imageOf(p: Product) {
+/** Server-supplied fallback: a clean product render (no "SAMPLE" stamp) for products that only have seeded mockups. */
+export type BareImage = (p: Product, side: 'front' | 'back') => string | null
+
+const hasReal = (p: Product) => p.images.some((i) => i?.src && !i.sample)
+
+function imageOf(p: Product, bare?: BareImage): { src: string; alt: string; fit?: 'contain' } | null {
   const imgs = p.images.filter((i) => i && typeof i.src === 'string' && i.src)
   if (!imgs.length) return null
   // apparel: the big back print sells it; everything else: the first image
   const apparel = p.type === 'tshirt' || p.type === 'hoodie'
+  // 1) a real (admin-uploaded) photo always wins — back print first for apparel
+  const real = (apparel ? imgs.find((i) => !i.sample && i.side === 'back') : null) ?? imgs.find((i) => !i.sample)
+  if (real) return real
+  // 2) only seeded mockups (they carry a "SAMPLE — replace with real photo" stamp) → the bare render instead
+  const side = apparel ? 'back' : 'front'
+  const clean = bare?.(p, side)
+  if (clean) return { src: clean, alt: p.name, fit: 'contain' }
+  // 3) last resort: the mockup itself
   return (apparel ? imgs.find((i) => i.side === 'back') : null) ?? imgs[0]
 }
 
-/** Up to `limit` products for the doorway: featured first inside each kind, kinds interleaved. */
-export function pickShowcase(products: Product[] | undefined, limit = 8): ShowcaseItem[] {
+/** Up to `limit` products for the doorway: real photos first, then featured inside each kind, kinds interleaved. */
+export function pickShowcase(products: Product[] | undefined, limit = 8, bare?: BareImage): ShowcaseItem[] {
   if (!products?.length) return []
-  const pool = products.filter((p) => p.stock !== 'out' && imageOf(p))
+  const pool = products.filter((p) => p.stock !== 'out' && imageOf(p, bare))
   const queues = BUCKETS.map((b) =>
     pool
       .filter((p) => b.types.includes(p.type))
-      .sort((a, z) => Number(z.featured) - Number(a.featured) || Number(z.dropOfWeek) - Number(a.dropOfWeek)),
+      .sort(
+        (a, z) =>
+          Number(hasReal(z)) - Number(hasReal(a)) ||
+          Number(z.featured) - Number(a.featured) ||
+          Number(z.dropOfWeek) - Number(a.dropOfWeek),
+      ),
   )
   const out: Product[] = []
   for (let round = 0; out.length < limit && queues.some((q) => q.length > round); round++) {
@@ -62,7 +82,7 @@ export function pickShowcase(products: Product[] | undefined, limit = 8): Showca
     }
   }
   return out.map((p) => {
-    const img = imageOf(p)!
+    const img = imageOf(p, bare)!
     return {
       slug: p.slug,
       name: p.name,
@@ -70,6 +90,7 @@ export function pickShowcase(products: Product[] | undefined, limit = 8): Showca
       price: productPriceLabel(p),
       src: showcaseSrc(img.src),
       alt: img.alt || p.name,
+      ...(img.fit ? { fit: img.fit } : {}),
     }
   })
 }

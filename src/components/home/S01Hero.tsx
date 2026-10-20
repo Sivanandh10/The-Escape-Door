@@ -22,7 +22,8 @@ import { HeroMotion, P2_REST } from './s01/HeroMotion'
 import { Portal3DGate } from './s01/Portal3DGate'
 import { HeroCutouts } from './s01/HeroCutouts'
 import { ShowcaseChip, ShowcaseDoorway } from './s01/DoorShowcase'
-import { pickShowcase } from './s01/showcase'
+import { pickShowcase, type BareImage } from './s01/showcase'
+import { productDoc, staticProductImage } from '@/lib/art/static'
 import st from './s01/hero.module.css'
 
 const DEFAULTS = {
@@ -70,15 +71,24 @@ function Title({ text }: { text: string }) {
   )
 }
 
+/** Clean exported render of a catalogue product (no SAMPLE stamp) — used when it has no real photo yet. */
+const bareRender: BareImage = (p, side) => {
+  try {
+    return staticProductImage(productDoc(p, { side }))?.src ?? null
+  } catch {
+    return null
+  }
+}
+
 export default function S01Hero({ settings, products }: { settings?: SiteSettings; products?: Product[] }) {
   // empty admin fields fall back to the defaults (never an empty H1)
   const s = { ...DEFAULTS, ...settings }
   for (const k of ['heroKicker', 'heroTitle', 'heroSub'] as const) if (!s[k]?.trim()) s[k] = DEFAULTS[k]
   const ticker = s.tickerWords?.length ? s.tickerWords : DEFAULTS.tickerWords
-  const showcase = pickShowcase(products)
+  const showcase = pickShowcase(products, 8, bareRender)
 
   return (
-    <section id="hero" aria-labelledby="hero-title" className="relative overflow-x-clip bg-paper">
+    <section id="hero" data-hold-header aria-labelledby="hero-title" className="relative overflow-x-clip bg-paper">
       <HeroMotion className="grain relative bg-paper lg:h-[calc(100svh-var(--header-h))] lg:min-h-[600px]">
         <div data-shake className="flex flex-col gap-3 p-3 pb-0 md:gap-4 md:p-4 md:pb-0 lg:absolute lg:inset-0 lg:block lg:p-0">
           {/* ── vertical rails (#47, ≥1024) ── */}
@@ -142,7 +152,7 @@ export default function S01Hero({ settings, products }: { settings?: SiteSetting
                       data-cursor-jp="ショップ"
                       className={cn(
                         st.cta,
-                        'focus-ring inline-flex min-h-16 w-full items-center justify-center gap-3 border-[3px] border-ink bg-volt px-8 font-display text-[26px] uppercase leading-none tracking-[0.02em] text-ink shadow-hard-paper sm:w-auto lg:min-h-[4.25rem] lg:text-[clamp(24px,2vw,30px)]',
+                        'focus-ring inline-flex min-h-16 w-full items-center justify-center gap-2.5 whitespace-nowrap border-[3px] border-ink bg-volt px-5 font-display text-[clamp(21px,6.4vw,26px)] uppercase leading-none tracking-[0.02em] text-ink shadow-hard-paper sm:w-auto sm:gap-3 sm:px-8 lg:min-h-[4.25rem] lg:text-[clamp(24px,2vw,30px)]',
                       )}
                     >
                       <DoorIcon size={26} strokeWidth={2.4} />
@@ -171,17 +181,12 @@ export default function S01Hero({ settings, products }: { settings?: SiteSetting
                 </Link>
               </div>
               <nav data-soft data-reveal="pending" aria-label="Shop by type" className="mt-4 lg:mt-5">
-                <ul className="-mx-1.5 flex flex-wrap items-center">
-                  {CATEGORIES.map((c, i) => (
+                <ul className="-mx-1 flex flex-wrap items-center gap-x-2">
+                  {CATEGORIES.map((c) => (
                     <li key={c.href} className="flex items-center">
-                      {i > 0 && (
-                        <span aria-hidden="true" className="text-[14px] text-volt">
-                          ·
-                        </span>
-                      )}
                       <Link
                         href={c.href}
-                        className="focus-ring inline-flex min-h-11 items-center px-1.5 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-paper/85 underline decoration-transparent decoration-2 underline-offset-[6px] transition-colors duration-150 hover:text-volt hover:decoration-volt md:text-[13px]"
+                        className="focus-ring inline-flex min-h-11 items-center gap-1.5 px-1 font-mono before:size-1.5 before:shrink-0 before:bg-volt before:content-[''] text-[12px] font-bold uppercase tracking-[0.14em] text-paper/85 underline decoration-transparent decoration-2 underline-offset-[6px] transition-colors duration-150 hover:text-volt hover:decoration-volt md:text-[13px]"
                       >
                         {c.label}
                       </Link>
@@ -202,7 +207,7 @@ export default function S01Hero({ settings, products }: { settings?: SiteSetting
               data-slam="r"
               data-reveal="pending"
               data-3d="off"
-              className={`group/portal z-[3] h-[calc(100svh-var(--header-h)-20px)] max-h-[780px] min-h-[440px] overflow-hidden bg-ink max-lg:sticky max-lg:top-[calc(var(--header-h)+10px)] lg:absolute lg:inset-0 lg:h-auto lg:max-h-none lg:min-h-0 ${CLIP_CLS}`}
+              className={`group/portal z-[3] h-[calc(100svh-var(--header-h)-20px)] max-h-[780px] min-h-[440px] md:max-h-[920px] overflow-hidden bg-ink max-lg:sticky max-lg:top-[calc(var(--header-h)+10px)] lg:absolute lg:inset-0 lg:h-auto lg:max-h-none lg:min-h-0 ${CLIP_CLS}`}
               style={clip(CLIP.m2, CLIP.p2)}
             >
               <div

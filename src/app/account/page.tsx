@@ -76,7 +76,7 @@ async function AccountContent() {
             <h1 className="h-display mt-3 text-[clamp(56px,9vw,132px)]">
               Hey, <em>{first}</em>
             </h1>
-            <p lang="ja" className="jp-sub mt-3 text-[13px]">
+            <p lang="ja" className="jp-sub relative z-[1] mt-5 text-[13px] lg:mt-8">
               マイページ
             </p>
           </div>

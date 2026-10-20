@@ -3,12 +3,13 @@
 // Google (Supabase OAuth) · MyAnimeList (own OAuth, hidden until configured) · email + password (sign in / create
 // account) · forgot password · magic link. Kado reacts (#68 character login): covers up while you type a password,
 // shocked on an error, cheers when you're in. Every action answers within one frame (pressed state + label morph).
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent } from 'react'
 import Link from 'next/link'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowLeft, Eye, EyeOff, Loader2, Mail, MailCheck, Sparkles } from 'lucide-react'
 import { supabaseBrowser } from '@/lib/supabase/client'
 import { safeNext } from '@/lib/auth/shared'
+import { useAuthProviders, type AuthProviders } from '@/lib/auth/providers'
 import { Mascot, type MascotMood } from '@/components/brand/Mascot'
 import { Sfx } from '@/components/fx/Sfx'
 import { cn } from '@/lib/utils'
@@ -36,7 +37,8 @@ const CALLBACK_ERRORS: Record<string, string> = {
   denied: 'Login was cancelled. No worries — pick any way in below.',
   callback: 'We couldn’t finish that login. Please try again.',
   unconfigured: 'Accounts aren’t switched on yet. Try again soon.',
-  'mal-unavailable': 'MyAnimeList login is coming soon. Use Google or email for now.',
+  'mal-unavailable': 'MyAnimeList login is coming soon.',
+  'mal-staff': 'Team accounts can’t use MyAnimeList login. Sign in to the admin with your email and password.',
   'mal-denied': 'MyAnimeList login was cancelled.',
   'mal-state': 'That MyAnimeList login timed out. Tap the button again.',
   'mal-token': 'MyAnimeList didn’t accept the login. Please try again.',
@@ -46,15 +48,24 @@ const CALLBACK_ERRORS: Record<string, string> = {
   'mal-server': 'Something broke on our side. Please try again.',
 }
 
-function friendly(message: string | undefined): string {
+/** "Use Google for now." — only names the login methods that work right now (never sends people in a circle). */
+function otherWays(p: AuthProviders | null, not: 'google' | 'mal' | 'email'): string {
+  const ways = [p?.google && not !== 'google' ? 'Google' : null, p?.mal && not !== 'mal' ? 'MyAnimeList' : null, p?.email && not !== 'email' ? 'email' : null].filter(Boolean)
+  return ways.length ? ` Use ${ways.join(' or ')} for now.` : ' Please try again a little later.'
+}
+
+function friendly(message: string | undefined, p: AuthProviders | null): string {
   const m = (message ?? '').toLowerCase()
   if (m.includes('invalid login')) return 'That email and password don’t match. Try again, or reset your password.'
   if (m.includes('email not confirmed')) return 'Confirm your email first — we sent you a link. (Check spam too.)'
   if (m.includes('rate') || m.includes('too many') || m.includes('security purposes')) return 'Too many tries in a row. Give it a minute, then try again.'
   if (m.includes('password') && (m.includes('short') || m.includes('least') || m.includes('weak'))) return 'Use at least 8 characters for your password.'
   if (m.includes('already registered') || m.includes('already been registered')) return 'That email already has an account — sign in instead.'
-  if (m.includes('signups not allowed') || m.includes('signup is disabled')) return 'New sign-ups are paused right now. Try Google instead.'
-  if (m.includes('provider is not enabled') || m.includes('unsupported provider')) return 'Google login isn’t switched on yet. Use email for now.'
+  if (m.includes('signups not allowed') || m.includes('signup is disabled')) return `New email sign-ups are paused right now.${otherWays(p, 'email')}`
+  // Supabase's built-in mailer only reaches team addresses until custom SMTP is set up (docs/SETUP_LOGIN.md, step 4)
+  if (m.includes('not authorized') || m.includes('error sending') || m.includes('sending confirmation') || m.includes('sending magic link') || m.includes('sending recovery'))
+    return `We can’t send login emails just yet.${otherWays(p, 'email')}`
+  if (m.includes('provider is not enabled') || m.includes('unsupported provider')) return `Google login isn’t switched on yet.${otherWays(p, 'google')}`
   if (m.includes('fetch') || m.includes('network')) return 'We couldn’t reach the server. Check your connection and retry.'
   return 'Something went wrong. Please try again.'
 }
@@ -76,20 +87,12 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
   const [error, setError] = useState<string | null>(errorCode ? CALLBACK_ERRORS[errorCode] ?? CALLBACK_ERRORS.callback : null)
   const [field, setField] = useState<'email' | 'password' | 'name' | null>(null)
   const [sentWhat, setSentWhat] = useState<'confirm' | 'reset' | 'magic'>('confirm')
-  const [mal, setMal] = useState<boolean | null>(null)
+  const providers = useAuthProviders()
+  // null while checking; false = not switched on yet (button shows "Coming soon")
+  const mal = providers ? providers.mal : null
+  const googleOn = providers ? providers.google : null
   const [shake, setShake] = useState(0)
   const emailRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => {
-    let alive = true
-    fetch('/api/auth/mal/status')
-      .then((r) => (r.ok ? r.json() : { enabled: false }))
-      .then((d: { enabled?: boolean }) => alive && setMal(!!d.enabled))
-      .catch(() => alive && setMal(false))
-    return () => {
-      alive = false
-    }
-  }, [])
 
   const target = () => safeNext(next ?? (typeof window !== 'undefined' ? window.location.pathname + window.location.search : '/account'), '/account')
   const origin = () => window.location.origin
@@ -102,6 +105,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
   }
 
   async function google() {
+    if (googleOn === false) return
     const sb = supabaseBrowser()
     if (!sb) return fail('Accounts aren’t switched on yet.')
     setBusy('google')
@@ -111,7 +115,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
       provider: 'google',
       options: { redirectTo: `${origin()}/auth/callback?next=${encodeURIComponent(target())}` },
     })
-    if (e) fail(friendly(e.message))
+    if (e) fail(friendly(e.message, providers))
   }
 
   function myAnimeList() {
@@ -141,7 +145,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
     try {
       if (mode === 'signin') {
         const { error: err } = await sb.auth.signInWithPassword({ email: em, password })
-        if (err) return fail(friendly(err.message), /invalid login/i.test(err.message) ? 'password' : null)
+        if (err) return fail(friendly(err.message, providers), /invalid login/i.test(err.message) ? 'password' : null)
         setBusy(null) // provider picks up SIGNED_IN → success
         return
       }
@@ -155,7 +159,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
             data: name.trim() ? { full_name: name.trim().slice(0, 80) } : undefined,
           },
         })
-        if (err) return fail(friendly(err.message))
+        if (err) return fail(friendly(err.message, providers))
         if (data.session) {
           setBusy(null)
           return
@@ -171,7 +175,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
       }
       if (mode === 'forgot') {
         const { error: err } = await sb.auth.resetPasswordForEmail(em, { redirectTo: `${origin()}/auth/callback?flow=recovery` })
-        if (err) return fail(friendly(err.message))
+        if (err) return fail(friendly(err.message, providers))
         setSentWhat('reset')
         setMode('sent')
         setBusy(null)
@@ -183,13 +187,13 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
           email: em,
           options: { emailRedirectTo: `${origin()}/auth/callback?next=${encodeURIComponent(target())}`, shouldCreateUser: true },
         })
-        if (err) return fail(friendly(err.message))
+        if (err) return fail(friendly(err.message, providers))
         setSentWhat('magic')
         setMode('sent')
         setBusy(null)
       }
     } catch (x) {
-      fail(friendly(x instanceof Error ? x.message : undefined))
+      fail(friendly(x instanceof Error ? x.message : undefined, providers))
     }
   }
 
@@ -227,7 +231,13 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
           <p className="label text-[11px] text-ink/70">
             Members only · <span lang="ja">会員</span>
           </p>
-          <h2 id={titleId} className="mt-1.5 font-display text-[clamp(1.75rem,6vw,2.4rem)] uppercase leading-[0.92] text-ink">
+          <h2
+            id={titleId}
+            className={cn(
+              'mt-1.5 font-display uppercase leading-[0.92] text-ink',
+              headline.length > 28 ? 'text-[clamp(1.35rem,4.6vw,2rem)]' : 'text-[clamp(1.75rem,6vw,2.4rem)]',
+            )}
+          >
             {headline}
           </h2>
         </div>
@@ -239,7 +249,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
         </p>
         {mode !== 'sent' && !success && (
           <p className="text-[15px] leading-snug text-tone-2">
-            Log in to add to cart, keep your wishlist, get fest reminders and picks based on what you watch.
+            Log in to add to cart, keep your wishlist and get fest reminders{mal ? ' — plus picks based on what you watch' : ''}.
           </p>
         )}
 
@@ -267,11 +277,20 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
               <button
                 type="button"
                 onClick={google}
-                disabled={!!busy}
-                className="press focus-ring flex min-h-12 w-full items-center justify-center gap-3 border-[3px] border-ink bg-paper px-4 font-bold text-ink shadow-hard-sm disabled:opacity-60"
+                disabled={!!busy || googleOn === false}
+                aria-describedby={googleOn === false ? `${id}-google-soon` : undefined}
+                className={cn(
+                  'press focus-ring flex min-h-12 w-full items-center justify-center gap-3 border-[3px] border-ink px-4 font-bold shadow-hard-sm disabled:opacity-60',
+                  googleOn === false ? 'cursor-not-allowed bg-tone-4/40 text-ink/70 shadow-none disabled:opacity-100' : 'bg-paper text-ink',
+                )}
               >
                 {busy === 'google' ? <Loader2 aria-hidden="true" className="size-5 animate-spin" /> : <GoogleMark />}
-                {busy === 'google' ? 'Opening Google…' : 'Continue with Google'}
+                <span className="whitespace-nowrap">{busy === 'google' ? 'Opening Google…' : googleOn === false ? 'Google' : 'Continue with Google'}</span>
+                {googleOn === false && (
+                  <span id={`${id}-google-soon`} className="label ml-1 shrink-0 border-2 border-ink bg-volt px-1.5 py-0.5 text-[10px] text-ink">
+                    Coming soon
+                  </span>
+                )}
               </button>
               <button
                 type="button"
@@ -280,13 +299,13 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
                 aria-describedby={mal === false ? `${id}-mal-soon` : undefined}
                 className={cn(
                   'press focus-ring flex min-h-12 w-full items-center justify-center gap-3 border-[3px] border-ink px-4 font-bold shadow-hard-sm',
-                  mal ? 'bg-[#2E51A2] text-paper' : 'cursor-not-allowed bg-tone-4/40 text-ink/60 shadow-none',
+                  mal ? 'bg-[#2E51A2] text-paper' : 'cursor-not-allowed bg-tone-4/40 text-ink/70 shadow-none',
                 )}
               >
                 {busy === 'mal' ? <Loader2 aria-hidden="true" className="size-5 animate-spin" /> : <span aria-hidden="true" className="grid size-6 place-items-center border-2 border-current font-display text-[11px] leading-none">MAL</span>}
-                {busy === 'mal' ? 'Opening MyAnimeList…' : 'Continue with MyAnimeList'}
+                <span className="whitespace-nowrap">{busy === 'mal' ? 'Opening MyAnimeList…' : mal === false ? 'MyAnimeList' : 'Continue with MyAnimeList'}</span>
                 {mal === false && (
-                  <span id={`${id}-mal-soon`} className="label ml-1 border-2 border-ink bg-volt px-1.5 py-0.5 text-[10px] text-ink">
+                  <span id={`${id}-mal-soon`} className="label ml-1 shrink-0 border-2 border-ink bg-volt px-1.5 py-0.5 text-[10px] text-ink">
                     Coming soon
                   </span>
                 )}

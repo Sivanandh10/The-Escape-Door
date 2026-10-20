@@ -396,7 +396,7 @@ function CustomLink({ sticker, className }: { sticker?: boolean; className?: str
     >
       <span className="label block text-ink/70">Custom front / back available</span>
       <span className="mt-1 flex items-center justify-between gap-2 font-display text-[24px] uppercase leading-none">
-        Open the Forge
+        Design Your Own
         <span aria-hidden="true" className="transition-transform duration-200 can-hover:group-hover:translate-x-1">
           →
         </span>

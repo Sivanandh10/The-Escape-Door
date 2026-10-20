@@ -69,7 +69,7 @@ export async function POST(req: Request): Promise<Response> {
     const a = addressFromRow(addrRow as Record<string, unknown>)
     const address: AddressSnapshot = { id: a.id, kind: a.kind, name: a.name, phone: a.phone, line1: a.line1, line2: a.line2, landmark: a.landmark, city: a.city, state: a.state, pin: a.pin }
 
-    const [{ items, totals }, settings] = await Promise.all([priceLines(reqBody.items), loadCheckoutSettings()])
+    const [{ totals }, settings] = await Promise.all([priceLines(reqBody.items), loadCheckoutSettings()])
 
     let discount = 0
     let voucher: Awaited<ReturnType<typeof applyVoucher>> = null
@@ -77,6 +77,10 @@ export async function POST(req: Request): Promise<Response> {
       const applied = await applyVoucher(reqBody.voucherCode, totals, buyer)
       if (!applied) throw new CheckoutError('voucher', VOUCHER_MESSAGES['not-found'], { problem: 'not-found' })
       const res = applied.result
+      // same answer as an unknown code for paused / not-yet-live / someone else's codes (no code enumeration)
+      if (!res.ok && ['inactive', 'not-started', 'not-yours'].includes(res.problem)) {
+        throw new CheckoutError('voucher', VOUCHER_MESSAGES['not-found'], { problem: 'not-found' })
+      }
       if (!res.ok) throw new CheckoutError('voucher', res.message, { problem: res.problem })
       discount = res.discount
       voucher = applied

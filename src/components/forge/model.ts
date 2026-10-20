@@ -222,7 +222,7 @@ export function buildForgeMessage(
   const qty = Math.max(q.minQty, d.qty)
   const z = data.apparel.zones
   const out: string[] = []
-  out.push(`Hi The Escape Door! Custom Forge request${opts.leadId ? ` (ref ${opts.leadId.slice(0, 8)})` : ''}:`)
+  out.push(`Hi The Escape Door! Design Your Own request${opts.leadId ? ` (ref ${opts.leadId.slice(0, 8)})` : ''}:`)
   out.push('')
   out.push(`• Product: ${garmentLabel(d, data)} × ${qty}`)
   out.push(

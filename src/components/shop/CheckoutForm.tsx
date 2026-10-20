@@ -11,6 +11,8 @@ import { useCart } from '@/lib/cart'
 import { track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import { useRequireLogin } from '@/lib/checkout/auth'
+import { peekAuthProviders, useAuthProviders } from '@/lib/auth/providers'
+import { useWhatsAppCartOrder } from '@/lib/checkout/whatsapp-fallback'
 
 export interface CheckoutCtaProps {
   /** where it sits (analytics) */
@@ -26,6 +28,8 @@ export interface CheckoutCtaProps {
 export function CheckoutCta({ where, onNavigate, pieces, total, className }: CheckoutCtaProps) {
   const go = useGoToCheckout()
   const [going, setGoing] = useState(false)
+  const providers = useAuthProviders()
+  const guest = providers?.any === false
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
@@ -49,11 +53,12 @@ export function CheckoutCta({ where, onNavigate, pieces, total, className }: Che
         <span aria-hidden="true" className="grid size-8 place-items-center border-2 border-paper bg-paper">
           <DoorIcon open={going ? 0.95 : 0.15} size={20} light="var(--color-door)" />
         </span>
-        <span className="font-display text-[24px] uppercase leading-none tracking-[0.02em]">{going ? 'Opening checkout…' : 'Checkout'}</span>
+        <span className="font-display text-[24px] uppercase leading-none tracking-[0.02em]">{going ? (guest ? 'Opening WhatsApp…' : 'Opening checkout…') : guest ? 'Order on WhatsApp' : 'Checkout'}</span>
         <ArrowRight aria-hidden="true" className="size-5 text-volt transition-transform duration-200 can-hover:group-hover:translate-x-1" />
       </button>
       <p className="flex items-center justify-center gap-1.5 text-center text-[12px] text-tone-3">
-        <Lock aria-hidden="true" className="size-3 shrink-0" /> Log in · pick an address · pay on WhatsApp — nothing is charged on site
+        <Lock aria-hidden="true" className="size-3 shrink-0" />
+        {guest ? 'Opens WhatsApp with your order typed out — nothing is charged on site' : 'Log in · pick an address · pay on WhatsApp — nothing is charged on site'}
       </p>
     </div>
   )
@@ -63,9 +68,16 @@ export function CheckoutCta({ where, onNavigate, pieces, total, className }: Che
 export function useGoToCheckout() {
   const router = useRouter()
   const requireLogin = useRequireLogin()
+  const guestOrder = useWhatsAppCartOrder()
   return ({ where, pieces, total, onGo }: { where: string; pieces?: number; total?: number; onGo?: () => void }) => {
+    // no customer login method is switched on yet → order straight on WhatsApp (inside this click), as before accounts
+    if (peekAuthProviders()?.any === false) {
+      onGo?.()
+      guestOrder(where)
+      return
+    }
     router.prefetch('/checkout')
-    requireLogin('Log in to check out — your cart stays exactly as it is.', () => {
+    requireLogin('Log in to check out', () => {
       track('checkout_start', { where, pieces: pieces ?? null, total: total ?? null })
       onGo?.()
       useCart.getState().setOpen(false)

@@ -88,5 +88,6 @@ function randomChars(n: number): string {
 /** generateVoucherCode('jjk') → "TED-JJK-7K2Q"; generateVoucherCode() → "TED-7K2Q" */
 export function generateVoucherCode(tag?: string): string {
   const t = (tag ?? '').toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 8)
-  return ['TED', t, randomChars(4)].filter(Boolean).join('-')
+  // 8 random chars from a 31-letter alphabet ≈ 40 bits: not guessable even with the readable TED-<TAG>- prefix
+  return ['TED', t, randomChars(8)].filter(Boolean).join('-')
 }

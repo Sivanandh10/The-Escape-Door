@@ -234,8 +234,12 @@ export async function getSettings(): Promise<SiteSettings> {
   'use cache'
   cacheLife('hours')
   cacheTag(TAGS.settings)
-  const stored = await fetchSetting<Partial<SiteSettings>>('site')
-  const merged: SiteSettings = { ...seed.settings, ...(stored ?? {}) }
+  return mergeSiteSettings(await fetchSetting<Partial<SiteSettings>>('site'))
+}
+
+/** Stored 'site' row → full SiteSettings (seed defaults + env WhatsApp). Pure: shared with the admin's fresh read. */
+export function mergeSiteSettings(stored: Partial<SiteSettings> | null | undefined): SiteSettings {
+  const merged: SiteSettings = { ...seed.settings, ...(stored && typeof stored === 'object' ? stored : {}) }
   if (!Array.isArray(merged.tickerWords) || !merged.tickerWords.length) merged.tickerWords = seed.settings.tickerWords
   if (!merged.whatsapp) merged.whatsapp = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER ?? '').replace(/\D/g, '')
   return merged
@@ -270,24 +274,29 @@ export async function getHoodieTiers(): Promise<HoodieTier[]> {
   'use cache'
   cacheLife('hours')
   cacheTag(TAGS.settings)
-  const stored = await fetchSetting<HoodieTier[]>('hoodie_tiers')
-  return Array.isArray(stored) && stored.length ? stored : seed.hoodieTiers
+  return mergeHoodieTiers(await fetchSetting<HoodieTier[]>('hoodie_tiers'))
 }
+export const mergeHoodieTiers = (stored: unknown): HoodieTier[] =>
+  Array.isArray(stored) && stored.length ? (stored as HoodieTier[]) : seed.hoodieTiers
 
 export async function getTeeFits(): Promise<TeeFit[]> {
   'use cache'
   cacheLife('hours')
   cacheTag(TAGS.settings)
-  const stored = await fetchSetting<TeeFit[]>('tee_fits')
-  return Array.isArray(stored) && stored.length ? stored : seed.teeFits
+  return mergeTeeFits(await fetchSetting<TeeFit[]>('tee_fits'))
 }
+export const mergeTeeFits = (stored: unknown): TeeFit[] => (Array.isArray(stored) && stored.length ? (stored as TeeFit[]) : seed.teeFits)
 
 /** Custom-apparel extras (design fee, half-n-half fee, print zones) — Admin → Custom rules. */
 export async function getApparelCustom(): Promise<ApparelCustomRules> {
   'use cache'
   cacheLife('hours')
   cacheTag(TAGS.settings)
-  const stored = await fetchSetting<Partial<ApparelCustomRules>>('apparel_custom')
+  return mergeApparelCustom(await fetchSetting<Partial<ApparelCustomRules>>('apparel_custom'))
+}
+
+/** Stored 'apparel_custom' → full rules (seed defaults per zone). Pure: shared with the admin's fresh read. */
+export function mergeApparelCustom(stored: Partial<ApparelCustomRules> | null | undefined): ApparelCustomRules {
   if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return seed.apparelCustom
   const zones = stored.zones && typeof stored.zones === 'object' ? stored.zones : seed.apparelCustom.zones
   return {

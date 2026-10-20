@@ -3,8 +3,9 @@
 // detail drawer (contact, order lines, custom files via signed URLs, notes), CSV export, #69 shred + undo,
 // "Add lead" (manual: walk-ins, DMs, calls) and "Edit details" (ManualEntry.tsx).
 // Realtime (CMS + ADMIN-DATA): new leads slide in live (Supabase Realtime INSERT on public.leads, RLS =
-// leads.view) with a toast + a "NEW" flash; the list then re-syncs silently in the background.
-import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react'
+// leads.view) with a toast + a "NEW" flash; the list then re-syncs silently in the background. Without
+// Realtime the inbox re-syncs every 30 s and announces new leads the same way ("AUTO · 30 S" pill).
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react'
 import type { RealtimeChannel } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { ArrowRight, Download, ExternalLink, FileText, Kanban, List, Mail, MessageCircle, PackagePlus, Pencil, Plus, Sparkles } from 'lucide-react'
@@ -37,37 +38,85 @@ function leadTotal(l: AdminLead): number | null {
 
 // ---------------------------------------------------------------- realtime
 const FRESH_MS = 8000
+const POLL_MS = 30_000
+const GIVE_UP_MS = 12_000
+
+type LiveMode = 'off' | 'connecting' | 'live' | 'poll'
 
 /**
  * Live inbox: subscribes to INSERTs on public.leads (Realtime applies RLS, so only leads.view members get
  * rows). A new lead shows at once (overlay row + toast), then a silent re-fetch folds it into the CRUD list
- * (the overlay row is dropped as soon as the list holds it). Our own "Add lead" inserts are ignored (already
- * in the list). Off in demo / sandbox.
+ * (the overlay row is dropped as soon as the list holds it).
+ * Fallback: when Realtime can't connect (not in the publication yet, blocked socket…) the list re-syncs
+ * every 30 s while the tab is visible and announces leads it hadn't seen, with the same toast + NEW flash.
+ * One "seen" set feeds both paths, so a lead is announced once and our own "Add lead" never toasts.
+ * Off in demo / sandbox.
  */
 function useLiveLeads(crud: Crud<AdminLead>, onOpen: (id: string) => void) {
   const canRead = useCan('leads.view')
   const [incoming, setIncoming] = useState<AdminLead[]>([])
   const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set())
-  const [connected, setConnected] = useState(false)
-  const known = useRef<Set<string>>(new Set())
+  const [mode, setMode] = useState<LiveMode>('off')
+  const seen = useRef<Set<string>>(new Set())
+  const baselined = useRef(false)
+  const polled = useRef(false)
   const openRef = useRef(onOpen)
   const reloadRef = useRef(crud.reload)
   const syncTimer = useRef<number | null>(null)
+  const freshTimers = useRef<Set<number>>(new Set())
   const channelName = `leads-live-${useId().replace(/[^a-z0-9]/gi, '')}`
+  const enabled = crud.mode === 'live' && canRead
 
   useEffect(() => {
-    known.current = new Set(crud.rows.map((l) => l.id))
     reloadRef.current = crud.reload
     openRef.current = onOpen
   })
 
+  /** NEW flash + toast for a lead nobody has seen in this tab yet. */
+  const announce = useCallback((lead: AdminLead) => {
+    seen.current.add(lead.id)
+    setFresh((f) => new Set(f).add(lead.id))
+    const t = window.setTimeout(() => {
+      freshTimers.current.delete(t)
+      setFresh((f) => {
+        const next = new Set(f)
+        next.delete(lead.id)
+        return next
+      })
+    }, FRESH_MS)
+    freshTimers.current.add(t)
+    if (lead.status === 'spam') return
+    const k = kindMeta(lead.kind)
+    const total = leadTotal(lead)
+    toast(`New ${k?.short ?? 'lead'}${total != null ? ` · ${formatINR(total)}` : ''}`, {
+      id: `lead-${lead.id}`,
+      description: [lead.name || 'No name', lead.city, lead.src ? `src: ${lead.src}` : ''].filter(Boolean).join(' · '),
+      action: { label: 'Open', onClick: () => openRef.current(lead.id) },
+    })
+  }, [])
+
+  // Track every id the list has shown. After a poll re-sync, ids that weren't there before are new leads.
   useEffect(() => {
-    if (crud.mode !== 'live' || !canRead) return
+    if (!enabled || crud.status !== 'ready') return
+    const wasPoll = polled.current
+    polled.current = false
+    for (const l of crud.rows) {
+      if (seen.current.has(l.id)) continue
+      if (wasPoll && baselined.current) announce(l)
+      else seen.current.add(l.id)
+    }
+    baselined.current = true
+  }, [enabled, crud.status, crud.rows, announce])
+
+  // Realtime subscription
+  useEffect(() => {
+    if (!enabled) return
     const sb = getAdminClient()
     if (!sb) return
     let alive = true
     let channel: RealtimeChannel | null = null
-    const timers = new Set<number>()
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- reflects the socket we are opening right now
+    setMode('connecting')
     ;(async () => {
       try {
         const { data } = await sb.auth.getSession()
@@ -79,27 +128,9 @@ function useLiveLeads(crud: Crud<AdminLead>, onOpen: (id: string) => void) {
           .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload: { new?: Record<string, unknown> }) => {
             if (!payload.new) return
             const lead = leadCfg.fromRow(payload.new as Row)
-            if (!lead.id || known.current.has(lead.id)) return
+            if (!lead.id || seen.current.has(lead.id)) return
             setIncoming((xs) => (xs.some((x) => x.id === lead.id) ? xs : [lead, ...xs]))
-            setFresh((f) => new Set(f).add(lead.id))
-            const t = window.setTimeout(() => {
-              timers.delete(t)
-              setFresh((f) => {
-                const next = new Set(f)
-                next.delete(lead.id)
-                return next
-              })
-            }, FRESH_MS)
-            timers.add(t)
-            if (lead.status !== 'spam') {
-              const k = kindMeta(lead.kind)
-              const total = leadTotal(lead)
-              toast(`New ${k?.short ?? 'lead'}${total != null ? ` · ${formatINR(total)}` : ''}`, {
-                id: `lead-${lead.id}`,
-                description: [lead.name || 'No name', lead.city, lead.src ? `src: ${lead.src}` : ''].filter(Boolean).join(' · '),
-                action: { label: 'Open', onClick: () => openRef.current(lead.id) },
-              })
-            }
+            announce(lead)
             // fold it into the real list (coalesced when several land together)
             if (syncTimer.current) window.clearTimeout(syncTimer.current)
             syncTimer.current = window.setTimeout(() => {
@@ -109,20 +140,47 @@ function useLiveLeads(crud: Crud<AdminLead>, onOpen: (id: string) => void) {
           })
           .subscribe((status) => {
             if (!alive) return
-            setConnected(status === 'SUBSCRIBED')
+            if (status === 'SUBSCRIBED') setMode('live')
+            else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') setMode('poll')
           })
       } catch {
-        if (alive) setConnected(false)
+        if (alive) setMode('poll')
       }
     })()
+    // never sit on "connecting" forever
+    const giveUp = window.setTimeout(() => alive && setMode((m) => (m === 'connecting' ? 'poll' : m)), GIVE_UP_MS)
+    const fresh = freshTimers.current
     return () => {
       alive = false
-      timers.forEach((t) => window.clearTimeout(t))
+      window.clearTimeout(giveUp)
+      fresh.forEach((t) => window.clearTimeout(t))
+      fresh.clear()
       if (syncTimer.current) window.clearTimeout(syncTimer.current)
-      setConnected(false)
+      setMode('off')
       if (channel) void sb.removeChannel(channel)
     }
-  }, [crud.mode, canRead, channelName])
+  }, [enabled, channelName, announce])
+
+  // Polling fallback: re-sync every 30 s while visible; once on coming back to the tab.
+  useEffect(() => {
+    if (!enabled || mode !== 'poll') return
+    let last = Date.now()
+    const sync = () => {
+      if (document.visibilityState === 'hidden') return
+      last = Date.now()
+      polled.current = true
+      reloadRef.current()
+    }
+    const id = window.setInterval(sync, POLL_MS)
+    const onVis = () => {
+      if (document.visibilityState === 'visible' && Date.now() - last >= POLL_MS) sync()
+    }
+    document.addEventListener('visibilitychange', onVis)
+    return () => {
+      window.clearInterval(id)
+      document.removeEventListener('visibilitychange', onVis)
+    }
+  }, [enabled, mode])
 
   const rows = useMemo(() => {
     if (!incoming.length) return crud.rows
@@ -131,22 +189,32 @@ function useLiveLeads(crud: Crud<AdminLead>, onOpen: (id: string) => void) {
     return extra.length ? [...extra, ...crud.rows] : crud.rows
   }, [incoming, crud.rows])
 
-  return { rows, fresh, connected }
+  return { rows, fresh, mode }
 }
 
-function LivePill({ on }: { on: boolean }) {
-  if (!on) return null
+function LivePill({ mode }: { mode: LiveMode }) {
+  if (mode === 'off') return null
+  const live = mode === 'live'
   return (
     <span
       role="status"
-      title="Realtime connected — new leads appear here without a reload."
-      className="inline-flex min-h-11 items-center gap-2 border-2 border-hype px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-paper"
+      title={
+        live
+          ? 'Realtime connected — new leads appear here without a reload.'
+          : mode === 'poll'
+            ? 'Realtime unavailable — the inbox checks for new leads every 30 s.'
+            : 'Connecting to Realtime…'
+      }
+      className={cn(
+        'inline-flex min-h-11 items-center gap-2 border-2 px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em]',
+        live ? 'border-hype text-paper' : 'border-paper/25 text-paper/70',
+      )}
     >
       <span aria-hidden="true" className="relative grid size-2.5 place-items-center">
-        <span className="absolute inset-0 rounded-full bg-hype opacity-70 motion-safe:animate-ping" />
-        <span className="relative size-2.5 rounded-full bg-hype" />
+        {live && <span className="absolute inset-0 rounded-full bg-hype opacity-70 motion-safe:animate-ping" />}
+        <span className={cn('relative size-2.5 rounded-full', live ? 'bg-hype' : mode === 'poll' ? 'bg-volt' : 'bg-paper/40')} />
       </span>
-      Live
+      {live ? 'Live' : mode === 'poll' ? 'Auto · 30 s' : 'Connecting…'}
     </span>
   )
 }
@@ -218,7 +286,7 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
         actions={
           <>
             <SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />
-            <LivePill on={live.connected} />
+            <LivePill mode={live.mode} />
             <div role="radiogroup" aria-label="View" className="flex border-2 border-paper/20">
               {(['board', 'list'] as const).map((v) => (
                 <button key={v} type="button" role="radio" aria-checked={view === v} onClick={() => setView(v)} className={cn('grid min-h-11 min-w-11 place-items-center px-3 focus-ring', view === v ? 'bg-paper text-ink' : 'text-paper/70 can-hover:hover:text-paper')}>

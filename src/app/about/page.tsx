@@ -224,7 +224,7 @@ export default async function AboutPage() {
         jp="扉を開けて"
         primary={{ href: '/shop', label: 'Shop every arc' }}
         links={[
-          { href: '/custom', label: 'Custom Forge' },
+          { href: '/custom', label: 'Design Your Own' },
           { href: '/faq', label: 'FAQ' },
           { href: '/contact', label: 'Contact' },
           { href: INSTAGRAM_URL, label: 'Instagram', external: true },

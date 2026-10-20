@@ -61,7 +61,7 @@ export interface CustomerContextValue {
  *   cart-add → adds the item to the cart (+ toast) · wishlist → saves the product · none → "welcome back" toast only.
  */
 export type LoginReplay =
-  | { type: 'cart-add'; item: import('@/lib/cart').AddInput }
+  | { type: 'cart-add'; item: import('@/lib/cart').AddInput; /** 'checkout' = Buy now: go to /checkout after adding */ then?: 'checkout' }
   | { type: 'wishlist'; productId: string; name?: string }
   | { type: 'none' }
 export type UseCustomer = () => CustomerContextValue

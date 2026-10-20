@@ -171,6 +171,7 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
             qty={qty}
             tone="ink"
             label="Buy now"
+            replayThen="checkout"
             block
             onAdded={() => {
               track('checkout_start', { where: 'buy_now', product: p.slug })
@@ -190,7 +191,7 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
             <Wand2 aria-hidden="true" className="h-8 w-8 shrink-0" strokeWidth={2.2} />
             <span className="flex-1">
               <span className="h-display block text-2xl leading-none">Make it custom</span>
-              <span className="mt-1 block text-sm text-paper/85">Your art or ours on this {p.type === 'tshirt' ? 'tee' : p.type} — open the Custom Forge.</span>
+              <span className="mt-1 block text-sm text-paper/85">Your art or ours on this {p.type === 'tshirt' ? 'tee' : p.type} — Design Your Own.</span>
             </span>
             <ArrowRight aria-hidden="true" className="h-6 w-6 transition-transform group-hover:translate-x-1" strokeWidth={2.6} />
           </Link>

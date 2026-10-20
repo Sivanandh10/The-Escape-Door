@@ -49,6 +49,8 @@ export interface AddToCartButtonProps {
   size?: string | null
   qty?: number
   onAdded?: (r: { key: string; qty: number }) => void
+  /** after a redirect login (Google / MAL) the add is replayed; 'checkout' also continues to /checkout (Buy now) */
+  replayThen?: 'checkout'
   onNeedSize?: () => void
   mode?: 'add' | 'buy'
   flyFrom?: RefObject<HTMLElement | null>
@@ -81,6 +83,7 @@ export function AddToCartButton({
   size,
   qty = 1,
   onAdded,
+  replayThen,
   onNeedSize,
   mode = 'add',
   flyFrom,
@@ -172,9 +175,9 @@ export function AddToCartButton({
     }
     // signed out → login modal; the add/buy continues right after login (Google/MAL: replayed on return)
     requireLogin(
-      mode === 'buy' ? `Log in to buy ${product.name}` : `Log in to add ${product.name} to your cart`,
+      mode === 'buy' ? 'Log in to buy this' : 'Log in to add to your cart',
       proceed,
-      { type: 'cart-add', item: buildItem() },
+      { type: 'cart-add', item: buildItem(), ...(replayThen ? { then: replayThen } : {}) },
     )
   }
 
