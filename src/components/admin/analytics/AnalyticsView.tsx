@@ -8,7 +8,7 @@ import { ErrorState } from '../ErrorState'
 import { formatINR } from '@/lib/pricing'
 import { cn } from '@/lib/utils'
 import { BarList } from './BarList'
-import { KpiStrip, NoTraffic } from './DashboardView'
+import { KpiStrip, NoTraffic, SnapshotWarnings } from './DashboardView'
 import { Funnel } from './Funnel'
 import type { AnalyticsSnapshot, Ranked, SrcRow } from './types'
 
@@ -25,13 +25,13 @@ function rankedCols(label: string, unit: string, total: number, mono = false, ex
   ]
 }
 
-const srcCols: DataTableColumn<SrcRow>[] = [
+const srcCols = (real: boolean): DataTableColumn<SrcRow>[] => [
   { id: 'src', header: 'src', cell: (r) => <span className="font-mono font-bold text-volt">{r.src}</span>, sortValue: (r) => r.src },
   { id: 'visits', header: 'Visits (sessions)', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.visits)}</span>, sortValue: (r) => r.visits },
   { id: 'uniques', header: 'Uniques', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.uniques)}</span>, sortValue: (r) => r.uniques },
   { id: 'leads', header: 'Leads', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.leads)}</span>, sortValue: (r) => r.leads },
   { id: 'orders', header: 'Orders', align: 'right', cell: (r) => <span className="font-mono tabular-nums">{nf.format(r.orders)}</span>, sortValue: (r) => r.orders },
-  { id: 'revenue', header: 'Revenue (est.)', align: 'right', cell: (r) => <span className="font-mono font-bold tabular-nums">{formatINR(r.revenue)}</span>, sortValue: (r) => r.revenue },
+  { id: 'revenue', header: real ? 'Revenue' : 'Revenue (est.)', align: 'right', cell: (r) => <span className="font-mono font-bold tabular-nums">{formatINR(r.revenue)}</span>, sortValue: (r) => r.revenue },
 ]
 
 const sum = (r: Ranked[]) => r.reduce((s, x) => s + x.value, 0)
@@ -44,6 +44,7 @@ export function AnalyticsView({ s }: { s: AnalyticsSnapshot }) {
 
   return (
     <>
+      <SnapshotWarnings s={s} />
       <KpiStrip s={s} />
       {empty && <NoTraffic />}
 
@@ -61,7 +62,7 @@ export function AnalyticsView({ s }: { s: AnalyticsSnapshot }) {
           caption="Attribution by src"
           rows={s.srcs}
           rowKey={(r) => r.src}
-          columns={srcCols}
+          columns={srcCols(s.revenueSource === 'orders')}
           initialSort={{ id: 'visits', dir: 'desc' }}
           search={{ placeholder: 'Find a src…', text: (r) => r.src }}
           dense

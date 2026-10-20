@@ -39,6 +39,7 @@ import { computeTotals } from '@/lib/pricing'
 import { registerGsap, useReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { DoorIcon } from '@/components/brand/DoorIcon'
+import { useRequireLogin } from '@/lib/auth/customer'
 import { Sfx } from '@/components/fx/Sfx'
 import './shop.css'
 
@@ -91,6 +92,7 @@ export function AddToCartButton({
   className,
 }: AddToCartButtonProps) {
   const reduced = useReducedMotion()
+  const requireLogin = useRequireLogin() // login is mandatory to add / buy (AUTH)
   const waNumber = useWhatsappNumber()
   const bundleRules = useBundleRules()
   const btn = useRef<HTMLButtonElement>(null)
@@ -125,8 +127,8 @@ export function AddToCartButton({
     timers.current.push(window.setTimeout(fn, ms))
   }
 
-  function commit(): { key: string; qty: number; item: CartItem } {
-    const item = {
+  function buildItem() {
+    return {
       productId: product.id,
       slug: product.slug,
       name: product.name,
@@ -140,6 +142,10 @@ export function AddToCartButton({
       image: cartThumb(product),
       qty,
     }
+  }
+
+  function commit(): { key: string; qty: number; item: CartItem } {
+    const item = buildItem()
     useCart.getState().add(item)
     const key = lineKey(item)
     track('add_to_cart', { product: product.slug, variant: v!.id, size: size ?? null, qty, price: item.unitPrice, mode })
@@ -164,7 +170,15 @@ export function AddToCartButton({
       later(() => setPhase((p) => (p === 'need' ? 'idle' : p)), 1400)
       return
     }
+    // signed out → login modal; the add/buy continues right after login (Google/MAL: replayed on return)
+    requireLogin(
+      mode === 'buy' ? `Log in to buy ${product.name}` : `Log in to add ${product.name} to your cart`,
+      proceed,
+      { type: 'cart-add', item: buildItem() },
+    )
+  }
 
+  function proceed() {
     if (mode === 'buy') {
       // open WhatsApp inside this click — nothing awaited before it
       const { item } = commit()

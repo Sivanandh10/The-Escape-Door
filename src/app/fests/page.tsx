@@ -162,14 +162,83 @@ export default async function FestsPage() {
         </div>
       </section>
 
-      {/* 02 — What a stall brings */}
-      <section aria-labelledby="stall" className="section-y relative bg-ink text-paper">
+      {/* 02 — Catch us live: upcoming stalls come right after the pitch so visitors see dates first */}
+      <section id="live" aria-labelledby="live-title" className="section-y relative scroll-mt-20 border-b-4 border-ink bg-volt text-ink">
         <div className="container-x">
           <SectionHead
             n="02"
+            label="Upcoming stalls"
+            jp="次の屋台"
+            id="live-title"
+            tone="paper"
+            intro={
+              <p>
+                These dates come from our stall list. Years are still being confirmed, so check Instagram before you travel.
+              </p>
+            }
+          >
+            Catch us <em>live</em>: upcoming stalls
+          </SectionHead>
+          {upcoming.length ? (
+            <Reveal as="ul" stagger={0.1} className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+              {upcoming.map((e, i) => (
+                <li key={e.id}>
+                  <EventStub event={e} index={i} />
+                </li>
+              ))}
+            </Reveal>
+          ) : (
+            <p className="mt-10 border-4 border-ink bg-paper p-6 text-[17px] shadow-hard">
+              No stalls are announced right now. New dates land on Instagram first.
+            </p>
+          )}
+          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-4">
+            {popups.length > 0 && (
+              <p className="flex flex-wrap items-center gap-2">
+                <span className="label mr-1">Past pop-ups</span>
+                {popups.map((p) => (
+                  <span key={p.id} className="label border-[3px] border-ink bg-paper px-2.5 py-1.5">
+                    {p.city}
+                  </span>
+                ))}
+              </p>
+            )}
+            <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="focus-ring label inline-flex min-h-11 items-center gap-2 underline decoration-2 underline-offset-4 hover:text-door">
+              <Camera aria-hidden="true" className="size-4" />
+              Follow @escapedoor.in for live updates
+            </a>
+          </div>
+        </div>
+      </section>
+
+      {/* 03 — Fests we've opened doors at */}
+      <section aria-labelledby="history" className="section-y relative bg-ink text-paper">
+        <div className="container-x grid gap-12 lg:grid-cols-12">
+          <SectionHead
+            n="03"
+            label="The story so far"
+            jp="これまでの物語"
+            id="history"
+            className="lg:sticky lg:top-28 lg:col-span-5 lg:self-start"
+            intro={<p>Stalls, gifting and cosplay competitions, panel by panel. Fest names are text only: we never use fest or institute logos.</p>}
+          >
+            Fests we&apos;ve already <em>opened</em> doors at
+          </SectionHead>
+          <div className="lg:col-span-7">
+            <InkTimeline items={sorted} />
+          </div>
+        </div>
+      </section>
+
+      {/* 04 — What a stall brings */}
+      <section aria-labelledby="stall" className="section-y relative border-t-4 border-ink bg-paper text-ink grain">
+        <div className="container-x">
+          <SectionHead
+            n="04"
             label="On the table"
             jp="屋台の中身"
             id="stall"
+            tone="paper"
             intro={<p>Everything on a stall comes from the same catalogue as the shop, at the same prices.</p>}
           >
             What a stall brings to your <em>campus</em>
@@ -177,7 +246,7 @@ export default async function FestsPage() {
           <Reveal as="ul" stagger={0.08} className="mt-12 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {STALL.map((x) => (
               <li key={x.t} className="group">
-                <Panel tone={x.tone} shadow="paper" className="h-full transition-transform duration-200 can-hover:group-hover:-translate-y-1" innerClassName="flex h-full flex-col p-5 sm:p-6">
+                <Panel tone={x.tone} shadow="ink" className="h-full transition-transform duration-200 can-hover:group-hover:-translate-y-1" innerClassName="flex h-full flex-col p-5 sm:p-6">
                   <p className="font-display text-[34px] uppercase leading-[0.9]">{x.t}</p>
                   {x.p && <p className="font-mono mt-3 inline-block self-start border-[3px] border-ink bg-ink px-2 py-1 text-[15px] font-bold text-volt">{x.p}</p>}
                   <p className="mt-4 text-[15px]">{x.d}</p>
@@ -188,11 +257,11 @@ export default async function FestsPage() {
         </div>
       </section>
 
-      {/* 03 — Custom merch for your fest */}
-      <section aria-labelledby="fest-custom" className="section-y relative border-y-4 border-ink bg-lav text-ink">
+      {/* 05 — Custom merch for your fest */}
+      <section aria-labelledby="fest-custom" className="section-y relative border-t-4 border-ink bg-lav text-ink">
         <div className="container-x grid gap-12 lg:grid-cols-12 lg:items-end">
           <SectionHead
-            n="03"
+            n="05"
             label="Made for your fest"
             jp="フェス特注"
             id="fest-custom"
@@ -218,77 +287,9 @@ export default async function FestsPage() {
               ))}
             </ul>
             <Link href="/custom" className="press focus-ring label mt-6 inline-flex min-h-12 items-center gap-2 border-[3px] border-ink bg-ink px-5 py-3 font-bold text-paper shadow-hard-sm hover:bg-door">
-              Plan custom fest merch in the Custom Forge
+              Plan custom fest merch: Design Your Own
               <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
-          </div>
-        </div>
-      </section>
-
-      {/* 04 — Catch us live */}
-      <section id="live" aria-labelledby="live-title" className="section-y relative scroll-mt-20 bg-paper text-ink grain">
-        <div className="container-x">
-          <SectionHead
-            n="04"
-            label="Upcoming stalls"
-            jp="次の屋台"
-            id="live-title"
-            tone="paper"
-            intro={
-              <p>
-                These dates come from our stall list. Years are still being confirmed, so check Instagram before you travel.
-              </p>
-            }
-          >
-            Catch us <em>live</em>: upcoming stalls
-          </SectionHead>
-          {upcoming.length ? (
-            <Reveal as="ul" stagger={0.1} className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {upcoming.map((e, i) => (
-                <li key={e.id}>
-                  <EventStub event={e} index={i} />
-                </li>
-              ))}
-            </Reveal>
-          ) : (
-            <p className="mt-10 border-4 border-ink bg-volt p-6 text-[17px] shadow-hard">
-              No stalls are announced right now. New dates land on Instagram first.
-            </p>
-          )}
-          <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-4">
-            {popups.length > 0 && (
-              <p className="flex flex-wrap items-center gap-2">
-                <span className="label mr-1">Past pop-ups</span>
-                {popups.map((p) => (
-                  <span key={p.id} className="label border-[3px] border-ink bg-paper px-2.5 py-1.5">
-                    {p.city}
-                  </span>
-                ))}
-              </p>
-            )}
-            <a href={INSTAGRAM_URL} target="_blank" rel="noopener noreferrer" className="focus-ring label inline-flex min-h-11 items-center gap-2 underline decoration-2 underline-offset-4 hover:text-door">
-              <Camera aria-hidden="true" className="size-4" />
-              Follow @escapedoor.in for live updates
-            </a>
-          </div>
-        </div>
-      </section>
-
-      {/* 05 — Fests we've opened doors at */}
-      <section aria-labelledby="history" className="section-y relative border-t-4 border-ink bg-ink text-paper">
-        <div className="container-x grid gap-12 lg:grid-cols-12">
-          <SectionHead
-            n="05"
-            label="The story so far"
-            jp="これまでの物語"
-            id="history"
-            className="lg:sticky lg:top-28 lg:col-span-5 lg:self-start"
-            intro={<p>Stalls, gifting and cosplay competitions, panel by panel. Fest names are text only: we never use fest or institute logos.</p>}
-          >
-            Fests we&apos;ve already <em>opened</em> doors at
-          </SectionHead>
-          <div className="lg:col-span-7">
-            <InkTimeline items={sorted} />
           </div>
         </div>
       </section>
@@ -326,7 +327,7 @@ export default async function FestsPage() {
         kicker="Next chapter · 次の章"
         title="Dress the whole committee"
         jp="チーム全員に"
-        primary={{ href: '/custom', label: 'Open the Custom Forge' }}
+        primary={{ href: '/custom', label: 'Design Your Own' }}
         links={[
           { href: '/shop/badges', label: 'Anime badges' },
           { href: '/shop/polaroids', label: 'Polaroid prints' },

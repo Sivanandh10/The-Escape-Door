@@ -2,7 +2,7 @@
 // Dashboard body (P4a): KPI strip (#17), visits chart, funnel, top lists, sources, QR srcs, devices, regions.
 import dynamic from 'next/dynamic'
 import Link from 'next/link'
-import { ArrowRight, Eye, FileText, IndianRupee, Inbox, Info, MessageCircle, ShoppingCart, Users } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Eye, FileText, IndianRupee, Inbox, Info, MessageCircle, ShoppingCart, Users } from 'lucide-react'
 import { AdminPanel } from '../AdminPage'
 import { AdminSkeleton, EmptyState } from '../EmptyState'
 import { ErrorState } from '../ErrorState'
@@ -34,8 +34,18 @@ export function KpiStrip({ s }: { s: AnalyticsSnapshot }) {
       <StatCard index={2} label="Page views" jp="閲覧数" value={k.pageViews} delta={delta(k, prev, 'pageViews')} icon={<FileText className="size-4" />} hint={`${perVisit} per visit`} />
       <StatCard index={3} label="Add-to-cart rate" jp="カート率" value={k.addToCartRate} format="pct" delta={delta(k, prev, 'addToCartRate')} icon={<ShoppingCart className="size-4" />} hint={`${nf.format(k.cartSessions)} visits · ${nf.format(k.addToCart)} adds`} />
       <StatCard index={4} tone="lav" label="WhatsApp clicks" jp="送信" value={k.whatsappClicks} delta={delta(k, prev, 'whatsappClicks')} icon={<MessageCircle className="size-4" />} hint={`visits · ${nf.format(k.whatsappRaw)} clicks total`} />
-      <StatCard index={5} label="Leads" jp="問い合わせ" value={k.leads} delta={delta(k, prev, 'leads')} icon={<Inbox className="size-4" />} hint={`${nf.format(k.orders)} orders`} />
-      <StatCard index={6} tone="door" label="Revenue" jp="売上" value={k.revenueEstimate} format="inr" delta={delta(k, prev, 'revenueEstimate')} icon={<IndianRupee className="size-4" />} hint="estimate · WhatsApp order totals" />
+      <StatCard index={5} label="Leads" jp="問い合わせ" value={k.leads} delta={delta(k, prev, 'leads')} icon={<Inbox className="size-4" />} hint={s.revenueSource === 'orders' ? `${nf.format(k.orders)} orders placed` : `${nf.format(k.orders)} WhatsApp orders`} />
+      <StatCard
+        index={6}
+        tone="door"
+        label={s.revenueSource === 'orders' ? 'Revenue' : 'Revenue (est.)'}
+        jp="売上"
+        value={k.revenueEstimate}
+        format="inr"
+        delta={delta(k, prev, 'revenueEstimate')}
+        icon={<IndianRupee className="size-4" />}
+        hint={s.revenueSource === 'orders' ? `${nf.format(k.orders)} orders · cancelled excluded` : 'estimate · WhatsApp order totals (no orders yet)'}
+      />
       <HowWeCount />
     </div>
   )
@@ -55,6 +65,21 @@ function HowWeCount() {
         <div className="text-paper/50">Your own browser stops being counted once it opens /admin.</div>
       </dl>
     </div>
+  )
+}
+
+/** Partial failures (leads / orders didn't load) — said out loud instead of showing a quiet zero. */
+export function SnapshotWarnings({ s }: { s: AnalyticsSnapshot }) {
+  if (!s.warnings?.length) return null
+  return (
+    <ul role="status" className="space-y-2">
+      {s.warnings.map((w) => (
+        <li key={w} className="flex items-start gap-2 border-2 border-ink bg-volt px-3 py-2 text-[13.5px] font-semibold text-ink shadow-[4px_4px_0_var(--color-hype)]">
+          <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0" />
+          {w}
+        </li>
+      ))}
+    </ul>
   )
 }
 
@@ -80,6 +105,7 @@ export function DashboardView({ s }: { s: AnalyticsSnapshot }) {
 
   return (
     <>
+      <SnapshotWarnings s={s} />
       <KpiStrip s={s} />
       {empty ? (
         <NoTraffic />

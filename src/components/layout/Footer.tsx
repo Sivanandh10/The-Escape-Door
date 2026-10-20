@@ -82,7 +82,7 @@ export function Footer({ arcs }: FooterProps) {
                 {a.name}
               </FLink>
             ))}
-            <FLink href="/custom">Custom Forge</FLink>
+            <FLink href="/custom">Design Your Own</FLink>
           </Column>
           <Column title="Help" jp="ヘルプ">
             {HELP_LINKS.map((c) => (

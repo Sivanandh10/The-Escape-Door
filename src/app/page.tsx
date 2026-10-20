@@ -57,7 +57,7 @@ export default async function HomePage() {
   return (
     <>
       <S00Preloader />
-      <S01Hero settings={settings} />
+      <S01Hero settings={settings} products={products} />
       <S02ChooseArc collections={collections} />
       <S03Drop product={drop} />
       <S04BackPrint product={drop} />

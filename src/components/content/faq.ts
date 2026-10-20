@@ -31,7 +31,7 @@ export const FAQ: FaqItem[] = [
     q: 'How much does an anime oversized t-shirt cost?',
     accent: 'cost',
     a: 'At The Escape Door, an anime oversized t-shirt costs ₹800, which keeps it under ₹1000. Regular-fit anime t-shirts cost ₹600 and baby tees cost ₹400. Every design is fan-inspired and original, chosen from a library of around 2000 t-shirt designs spanning anime, shows, movies, games, sports and more.',
-    more: 'Any tee can also carry your own artwork through the Custom Forge.',
+    more: 'Any tee can also carry your own artwork: tap Design Your Own.',
     link: { href: '/shop/oversized-t-shirts', label: 'Browse anime oversized t-shirts' },
   },
   {
@@ -75,9 +75,9 @@ export const FAQ: FaqItem[] = [
     group: 'custom',
     q: 'Can I print my own design on a t-shirt or hoodie?',
     accent: 'design',
-    a: 'Yes. In the Custom Forge you can send your own artwork, or have The Escape Door create the design for ₹200 extra. The front print area is 4×4 inches and the back print area is 12×15 inches. The final price depends on the garment you choose.',
+    a: 'Yes. With Design Your Own you can send your own artwork, or have The Escape Door create the design for ₹200 extra. The front print area is 4×4 inches and the back print area is 12×15 inches. The final price depends on the garment you choose.',
     more: 'Upload your file, place it on the garment and send the request on WhatsApp.',
-    link: { href: '/custom', label: 'Open the Custom Forge' },
+    link: { href: '/custom', label: 'Design Your Own' },
   },
   {
     id: 'custom-polaroid-minimum',
@@ -85,7 +85,7 @@ export const FAQ: FaqItem[] = [
     q: 'What is the minimum order for custom polaroids?',
     accent: 'polaroids',
     a: 'Custom polaroid-style prints start at a minimum of 20 pieces. The designs can be all the same or all different. At ₹50 each, 20 custom pieces cost ₹1000. Ready-made polaroids from the 1500-design library cost ₹50 each or ₹100 for a set of three, covering anime, K-pop, K-drama, F1 and films.',
-    more: 'Ready-made sets ship from the catalogue; custom sets start in the Forge.',
+    more: 'Ready-made sets ship from the catalogue; custom sets start in Design Your Own.',
     link: { href: '/shop/polaroids', label: 'Shop polaroid-style prints' },
   },
   {

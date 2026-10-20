@@ -1,10 +1,10 @@
 // Scoped CSS for S07 (keyframes + var-driven transforms that Tailwind can't express cleanly).
 // Everything animated per frame is transform / clip-path / opacity, driven by --g and --sp on #gsm.
 export const S07_CSS = `
-#gsm { --S: 140px; --sp-k: .62; --ax: 40%; }
-@media (min-width: 640px) { #gsm { --S: 180px; --sp-k: .8; --ax: 46%; } }
-@media (min-width: 1024px) { #gsm { --S: 200px; --sp-k: 1; --ax: 44%; } }
-@media (min-width: 1280px) { #gsm { --S: 212px; } }
+#gsm { --st: 4px; --dw: min(50vw, 196px); }
+@media (min-width: 640px) { #gsm { --st: 5px; --dw: 244px; } }
+@media (min-width: 1024px) { #gsm { --st: 6px; --dw: min(19vw, 300px); } }
+@media (max-height: 820px) and (min-width: 1024px) { #gsm { --dw: min(17vw, 250px); } }
 
 #gsm .s07-tone {
   background-image: radial-gradient(circle at center, var(--color-tone-2) 30%, transparent 34%);
@@ -14,49 +14,30 @@ export const S07_CSS = `
   opacity: .55;
 }
 #gsm .s07-stage { background: var(--color-ink); }
-#gsm .s07-anchor { left: var(--ax); top: 66%; }
 
-#gsm .s07-layer { transform: translate3d(0, calc(var(--i) * var(--sp) * var(--sp-k) * -1px), 0); }
-#gsm .s07-drop {
+/* hoodie deck: real product image per tier. Shifted up-left so the fabric layers (bottom-right) stay centred. */
+#gsm .s07-deck-wrap { padding: 44px 16px 36px; }
+#gsm .s07-deck {
+  width: var(--dw);
+  aspect-ratio: 4 / 5;
+  translate: calc(var(--st) * -3) calc(var(--st) * -2);
+}
+#gsm .s07-card {
+  transform-origin: 50% 100%;
   opacity: 0;
-  transform: translate3d(0, -120px, 0);
-  transition: opacity .22s linear, transform .55s var(--ease-slam);
+  transform: translate3d(0, 40px, 0) scale(.94);
 }
-#gsm .s07-drop.s07-on { opacity: 1; transform: none; }
-#gsm .s07-face, #gsm .s07-edge {
-  position: absolute;
-  width: var(--S); height: var(--S);
-  left: calc(var(--S) / -2); top: calc(var(--S) / -2);
-  transform: rotateX(60deg) rotateZ(-45deg);
-  border: 3px solid var(--color-ink);
+#gsm .s07-deck[data-armed] .s07-card[data-pos="on"] { opacity: 1; transform: none; }
+#gsm .s07-deck[data-armed] .s07-card[data-pos="past"] {
+  opacity: calc(1 - var(--d) * .28);
+  transform: translate3d(calc(var(--d) * -15%), calc(var(--d) * 2%), 0) rotate(calc(var(--d) * -6deg)) scale(calc(1 - var(--d) * .07));
+  filter: grayscale(.55) brightness(.62);
 }
-#gsm .s07-edge { background: var(--color-ink); translate: 0 var(--t); border-color: var(--color-ink); }
-#gsm .s07-face {
-  background-image:
-    radial-gradient(circle at center, rgba(11,11,15,.22) 26%, transparent 30%),
-    repeating-linear-gradient(0deg, rgba(11,11,15,.07) 0 2px, transparent 2px 7px),
-    repeating-linear-gradient(90deg, rgba(11,11,15,.07) 0 2px, transparent 2px 7px);
-  background-size: 7px 7px, auto, auto;
+#gsm .s07-deck[data-armed] .s07-card[data-pos="next"] {
+  opacity: 0;
+  transform: translate3d(calc(var(--d) * 14%), 8%, 0) rotate(calc(var(--d) * 5deg)) scale(.9);
 }
-#gsm .s07-top { background-image: radial-gradient(circle at center, rgba(11,11,15,.14) 26%, transparent 30%); background-size: 7px 7px; }
-
-#gsm .s07-dim {
-  --h: calc((var(--n) - 1) * var(--sp) * var(--sp-k));
-  position: absolute; left: calc(var(--S) * .78); top: 0; width: 0; height: 0;
-  opacity: 0; transition: opacity .3s linear .35s;
-}
-#gsm .s07-dim-on { opacity: 1; }
-#gsm .s07-dim-line {
-  position: absolute; left: 0; bottom: 0; width: 3px; height: 100px;
-  background: var(--color-volt); transform-origin: 50% 100%;
-  transform: scaleY(calc(var(--h) / 100));
-}
-#gsm .s07-dim-cap { position: absolute; left: -6px; bottom: -1px; width: 15px; height: 3px; background: var(--color-volt); }
-#gsm .s07-dim-cap-top { transform: translateY(calc(var(--h) * -1px)); }
-#gsm .s07-dim-label {
-  position: absolute; left: 14px; bottom: 0; white-space: nowrap;
-  transform: translateY(calc(var(--h) * -.5px + 50%));
-}
+#gsm[data-max] .s07-card[data-pos="on"] { border-color: var(--color-volt); }
 
 #gsm .s07-fill {
   background-color: var(--color-volt);
@@ -75,6 +56,9 @@ export const S07_CSS = `
 
 @media (prefers-reduced-motion: no-preference) {
   #gsm .s07-float { animation: s07-float 5s var(--ease-inout) infinite alternate; }
+  #gsm .s07-card {
+    transition: transform .55s var(--ease-slam), opacity .3s linear, filter .3s linear, box-shadow .45s var(--ease-expo);
+  }
   #gsm .s07-tone { animation: s07-drift 18s linear infinite; }
   #gsm .s07-dot { animation: s07-blink 1s steps(2, jump-none) infinite; }
   #gsm .s07-fill { animation: s07-charge 1.2s linear infinite; }

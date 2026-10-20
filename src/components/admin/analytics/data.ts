@@ -5,7 +5,10 @@
 //   page views = page_view rows de-duplicated to one per session + path (reloads don't inflate) ·
 //   funnel / WhatsApp / add-to-cart = distinct sessions. Rows on /admin, /lab, /api and every row of a
 //   visitor id that ever opened /admin (staff browsers) are ignored.
+// Revenue: real orders (public.orders.total, status ≠ cancelled) as soon as the orders table has any row;
+// before that, the sum of WhatsApp-order lead totals, labelled as an estimate (`revenueSource`).
 // Demo mode (Supabase missing): deterministic seeded sample data, clearly flagged `demo: true` — never real.
+// When Supabase IS configured the sample data is never used: a failed query returns zeros + `error`.
 import { connection } from 'next/server'
 import { getAdminContext } from '../server'
 import { supabaseServer } from '@/lib/supabase/server'
@@ -36,6 +39,10 @@ interface EventRow {
   city: string | null
 }
 interface LeadRow { kind: string; src: string | null; payload: unknown; created_at: string }
+interface OrderRow { total: number | null; status: string; src: string | null; created_at: string }
+type Fetched<T> = { rows: T[]; error: string | null; capped: boolean }
+/** orders that never count as revenue */
+const NOT_REVENUE = new Set(['cancelled'])
 
 const dayKey = (t: number) => new Date(t).toISOString().slice(0, 10)
 const dayLabel = (k: string) => new Date(`${k}T00:00:00Z`).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', timeZone: 'UTC' })
@@ -157,16 +164,74 @@ async function leadsClient() {
   return supabaseServer()
 }
 
-async function fetchLeads(fromIso: string, toIso: string): Promise<LeadRow[]> {
+async function fetchLeads(fromIso: string, toIso: string): Promise<Fetched<LeadRow>> {
   const sb = await leadsClient()
-  if (!sb) return []
-  const { data } = await sb.from('leads').select('kind,src,payload,created_at').gte('created_at', fromIso).lt('created_at', toIso).limit(5000)
-  return (data ?? []) as LeadRow[]
+  if (!sb) return { rows: [], error: 'Supabase client unavailable', capped: false }
+  const rows: LeadRow[] = []
+  // page through (Supabase caps one response at 1000 rows) — a silent cap would undercount leads
+  for (let i = 0; i < 20 * PAGE; i += PAGE) {
+    const { data, error } = await sb
+      .from('leads')
+      .select('kind,src,payload,created_at')
+      .gte('created_at', fromIso)
+      .lt('created_at', toIso)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(i, i + PAGE - 1)
+    if (error) return { rows, error: error.message, capped: false }
+    rows.push(...((data ?? []) as LeadRow[]))
+    if (!data || data.length < PAGE) return { rows, error: null, capped: false }
+  }
+  return { rows, error: null, capped: true }
 }
+
+/** Same rule as leads: orders.view reads under RLS; insight-only members get server-side counts (service role). */
+async function ordersClient() {
+  const ctx = await getAdminContext()
+  const perms = ctx.session?.perms ?? []
+  const insights = (['dashboard.view', 'analytics.view', 'qr.use'] as const).some((p) => can(perms, p))
+  if (insights && !can(perms, 'orders.view')) {
+    const sa = supabaseAdmin()
+    if (sa) return sa
+  }
+  return supabaseServer()
+}
+
+/** Does the orders table hold any order yet? Decides the revenue source for every range (deltas compare like with like). */
+async function ordersExist(): Promise<{ yes: boolean; error: string | null }> {
+  const sb = await ordersClient()
+  if (!sb) return { yes: false, error: 'Supabase client unavailable' }
+  const { count, error } = await sb.from('orders').select('id', { count: 'exact', head: true })
+  if (error) return { yes: false, error: error.message }
+  return { yes: (count ?? 0) > 0, error: null }
+}
+
+async function fetchOrders(fromIso: string, toIso: string): Promise<Fetched<OrderRow>> {
+  const sb = await ordersClient()
+  if (!sb) return { rows: [], error: 'Supabase client unavailable', capped: false }
+  const rows: OrderRow[] = []
+  for (let i = 0; i < 20 * PAGE; i += PAGE) {
+    const { data, error } = await sb
+      .from('orders')
+      .select('total,status,src,created_at')
+      .gte('created_at', fromIso)
+      .lt('created_at', toIso)
+      .order('created_at', { ascending: true })
+      .order('id', { ascending: true })
+      .range(i, i + PAGE - 1)
+    if (error) return { rows, error: error.message, capped: false }
+    rows.push(...((data ?? []) as OrderRow[]).filter((o) => !NOT_REVENUE.has(o.status)))
+    if (!data || data.length < PAGE) return { rows, error: null, capped: false }
+  }
+  return { rows, error: null, capped: true }
+}
+
+const orderValue = (o: OrderRow) => (typeof o.total === 'number' && Number.isFinite(o.total) && o.total > 0 ? o.total : 0)
 
 const pvKey = (r: EventRow) => `${r.session_id}\u0000${r.path}`
 
-function kpisFrom(rows: EventRow[], leads: LeadRow[]): Kpis {
+/** `orders` = real (non-cancelled) orders when the orders table is the revenue source, else null → lead estimate. */
+function kpisFrom(rows: EventRow[], leads: LeadRow[], orders: OrderRow[] | null): Kpis {
   const visitors = new Set<string>(), sessions = new Set<string>(), cartSessions = new Set<string>(), waSessions = new Set<string>()
   const pageViews = new Set<string>()
   let adds = 0, wa = 0
@@ -177,7 +242,7 @@ function kpisFrom(rows: EventRow[], leads: LeadRow[]): Kpis {
     else if (r.name === 'add_to_cart') { adds++; cartSessions.add(r.session_id) }
     else if (r.name === 'whatsapp_click') { wa++; waSessions.add(r.session_id) }
   }
-  const orders = leads.filter((l) => l.kind === 'whatsapp_order')
+  const waOrders = leads.filter((l) => l.kind === 'whatsapp_order')
   return {
     visits: sessions.size,
     uniques: visitors.size,
@@ -189,8 +254,8 @@ function kpisFrom(rows: EventRow[], leads: LeadRow[]): Kpis {
     whatsappClicks: waSessions.size,
     whatsappRaw: wa,
     leads: leads.length,
-    orders: orders.length,
-    revenueEstimate: orders.reduce((s, l) => s + orderTotal(l.payload), 0),
+    orders: orders ? orders.length : waOrders.length,
+    revenueEstimate: orders ? orders.reduce((s, o) => s + orderValue(o), 0) : waOrders.reduce((s, l) => s + orderTotal(l.payload), 0),
   }
 }
 
@@ -213,15 +278,29 @@ async function realSnapshot(days: number): Promise<AnalyticsSnapshot> {
   const end = startOfUtcDay(Date.now()) + DAY
   const from = end - days * DAY
   const prevFrom = from - days * DAY
-  const [cur, prev, leads, prevLeads, collections, products, staff] = await Promise.all([
-    fetchEvents(new Date(from).toISOString(), new Date(end).toISOString()),
-    fetchEvents(new Date(prevFrom).toISOString(), new Date(from).toISOString()),
-    fetchLeads(new Date(from).toISOString(), new Date(end).toISOString()),
-    fetchLeads(new Date(prevFrom).toISOString(), new Date(from).toISOString()),
+  const iso = (t: number) => new Date(t).toISOString()
+  const [cur, prev, leadsRes, prevLeadsRes, collections, products, staff, hasOrders] = await Promise.all([
+    fetchEvents(iso(from), iso(end)),
+    fetchEvents(iso(prevFrom), iso(from)),
+    fetchLeads(iso(from), iso(end)),
+    fetchLeads(iso(prevFrom), iso(from)),
     getCollections(),
     getProducts(),
     fetchStaffVisitors(),
+    ordersExist(),
   ])
+  const [ordersRes, prevOrdersRes] = hasOrders.yes
+    ? await Promise.all([fetchOrders(iso(from), iso(end)), fetchOrders(iso(prevFrom), iso(from))])
+    : [null, null]
+  const leads = leadsRes.rows
+  const prevLeads = prevLeadsRes.rows
+  const orders = ordersRes && !ordersRes.error ? ordersRes.rows : null
+  const prevOrders = prevOrdersRes && !prevOrdersRes.error ? prevOrdersRes.rows : null
+  const revenueSource: 'orders' | 'leads' = orders ? 'orders' : 'leads'
+  const warnings: string[] = []
+  if (leadsRes.error) warnings.push(`Leads didn’t load (${leadsRes.error}) — lead counts and the revenue estimate are incomplete.`)
+  if (hasOrders.error || ordersRes?.error) warnings.push(`Orders didn’t load (${hasOrders.error ?? ordersRes?.error}) — revenue falls back to WhatsApp order estimates.`)
+  if (leadsRes.capped || ordersRes?.capped) warnings.push('More than 20,000 leads or orders in this range — pick a shorter range for exact totals.')
   const rows = publicRows(cur.rows, staff)
   const prevRows = publicRows(prev.rows, staff)
   const colName = new Map(collections.map((c) => [c.slug, c.name]))
@@ -300,18 +379,31 @@ async function realSnapshot(days: number): Promise<AnalyticsSnapshot> {
     if (!l.src) continue
     const s = srcRow(l.src)
     s.leads++
-    if (l.kind === 'whatsapp_order') { s.orders++; s.revenue += orderTotal(l.payload) }
+    if (!orders && l.kind === 'whatsapp_order') { s.orders++; s.revenue += orderTotal(l.payload) }
+  }
+  if (orders) {
+    for (const o of orders) {
+      if (!o.src) continue
+      const s = srcRow(o.src)
+      s.orders++
+      s.revenue += orderValue(o)
+    }
   }
 
-  const prevK = kpisFrom(prevRows, prevLeads)
+  // previous range compares like with like (same revenue source); no deltas at all when a query failed
+  const prevK = kpisFrom(prevRows, prevLeads, orders ? (prevOrders ?? []) : null)
+  const prevOk = !prev.error && !prevLeadsRes.error && (!orders || !!prevOrders)
   return {
     demo: false,
     error: cur.error,
     days,
     from: dayKey(from),
     to: dayKey(end - DAY),
-    kpis: kpisFrom(rows, leads),
-    prev: prev.error ? null : prevK,
+    kpis: kpisFrom(rows, leads, orders),
+    prev: prevOk ? prevK : null,
+    revenueSource,
+    warnings,
+    generatedAt: new Date().toISOString(),
     series: [...byDay.entries()].map(([date, x]) => ({ date, label: dayLabel(date), visits: x.v, uniques: x.u.size, whatsapp: x.w.size })),
     topPages: top(pages, 10, (k) => k, pageUniques),
     topCollections: top(cols, 8, (k) => colName.get(k) ?? k),
@@ -409,6 +501,9 @@ async function demoSnapshot(days: number): Promise<AnalyticsSnapshot> {
     to: dayKey(end - DAY),
     kpis: k,
     prev: prev.kpis,
+    revenueSource: 'leads',
+    warnings: [],
+    generatedAt: new Date().toISOString(),
     series: cur.series,
     topPages: pageList.map((p, i) => ({ key: p, label: p, value: pagesV[i], extra: Math.round(pagesV[i] * 0.82) })),
     topCollections: collections.map((c, i) => ({ key: c.slug, label: c.name, value: colV[i] })).sort((a, b) => b.value - a.value),
@@ -475,7 +570,25 @@ function limitSnapshot(s: AnalyticsSnapshot, perms: readonly string[]): Analytic
   }
 }
 
-/** Snapshot for the last `days` days (UTC). Demo data when Supabase is unconfigured. Never throws. */
+/** All-zero snapshot for a failed real query: the error is shown instead — never sample numbers. */
+function emptySnapshot(days: number, error: string): AnalyticsSnapshot {
+  const end = startOfUtcDay(Date.now()) + DAY
+  const from = end - days * DAY
+  const zero: Kpis = {
+    visits: 0, uniques: 0, sessions: 0, pageViews: 0, addToCart: 0, cartSessions: 0, addToCartRate: 0,
+    whatsappClicks: 0, whatsappRaw: 0, leads: 0, orders: 0, revenueEstimate: 0,
+  }
+  const series: SeriesPoint[] = []
+  for (let t = from; t < end; t += DAY) series.push({ date: dayKey(t), label: dayLabel(dayKey(t)), visits: 0, uniques: 0, whatsapp: 0 })
+  return {
+    demo: false, error, days, from: dayKey(from), to: dayKey(end - DAY), kpis: zero, prev: null,
+    revenueSource: 'leads', warnings: [], generatedAt: new Date().toISOString(), series,
+    topPages: [], topCollections: [], topProducts: [], funnel: [], sources: [], srcs: [], devices: [],
+    countries: [], regions: [], cities: [], leadsByKind: [], integrations: integrations(true), scanned: 0, capped: false,
+  }
+}
+
+/** Snapshot for the last `days` days (UTC). Demo data ONLY when Supabase is unconfigured. Never throws. */
 export async function getAnalytics(days: number): Promise<AnalyticsSnapshot> {
   await connection() // request-time: uses Date.now() for the range
   const ctx = await getAdminContext()
@@ -484,7 +597,6 @@ export async function getAnalytics(days: number): Promise<AnalyticsSnapshot> {
   try {
     return limitSnapshot(await realSnapshot(days), perms)
   } catch (e) {
-    const empty = await demoSnapshot(days)
-    return limitSnapshot({ ...empty, demo: false, error: e instanceof Error ? e.message : 'Analytics query failed' }, perms)
+    return limitSnapshot(emptySnapshot(days, e instanceof Error ? e.message : 'Analytics query failed'), perms)
   }
 }

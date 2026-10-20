@@ -2,6 +2,7 @@
 // App-wide client providers. Owner: F1.
 // SmoothScroll (Lenis) · Cursor (#31) · sonner Toaster (manga panels) · ArcTheme (--arc-a/--arc-b tween)
 // · analytics init · cart/wishlist rehydration · lazy CartDrawer · route effects (aria-current, refresh).
+// · CustomerProvider (customer login + login modal — owner: AUTH, see src/lib/auth/customer.tsx).
 import {
   createContext,
   Suspense,
@@ -25,6 +26,7 @@ import { prefersReducedMotion, registerGsap } from '@/lib/motion'
 import { initAnalytics } from '@/lib/analytics'
 import { ensureHydrated, useCart } from '@/lib/cart'
 import { SiteSettingsProvider } from '@/components/SiteSettingsProvider'
+import { CustomerProvider } from '@/lib/auth/customer'
 import type { BundleRule } from '@/lib/types'
 
 export { useBundleRules, useSiteSettings, useWhatsappNumber } from '@/components/SiteSettingsProvider'
@@ -149,6 +151,7 @@ export function Providers({ children, arcs = [], whatsapp = '', bundleRules }: P
     <SiteSettingsProvider whatsapp={whatsapp} bundleRules={bundleRules}>
     <ArcThemeContext.Provider value={arcTheme}>
       <MotionConfig reducedMotion="user">
+        <CustomerProvider>
         <SmoothScroll>
           <Suspense fallback={null}>
             <RouteEffects onRoute={onRoute} />
@@ -165,6 +168,7 @@ export function Providers({ children, arcs = [], whatsapp = '', bundleRules }: P
             toastOptions={{ className: 'ted-toast', duration: 4000 }}
           />
         </SmoothScroll>
+        </CustomerProvider>
       </MotionConfig>
     </ArcThemeContext.Provider>
     </SiteSettingsProvider>

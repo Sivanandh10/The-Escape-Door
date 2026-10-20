@@ -1,10 +1,13 @@
 'use client'
 // /checkout-success — #71 success moment: the order slip prints (#70), the stamp slams, confetti
 // once (palette colours, never under reduced motion), Kado cheers. Reads the hand-off from
-// sessionStorage (never from the URL — order data must not be cached or shared). Owner: P2.
+// sessionStorage; with ?order=<id> (checkout orders) and no hand-off in this tab, it loads that order from the
+// database under RLS (customers read only their own orders) — nothing personal is rendered on the server.
+// Owner: CHECKOUT (was P2).
 import Link from 'next/link'
+import { useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, ExternalLink, RotateCcw } from 'lucide-react'
+import { ArrowRight, ExternalLink, Gift, MapPin, Package, RotateCcw } from 'lucide-react'
 import { toast } from 'sonner'
 import { Mascot } from '@/components/brand/Mascot'
 import { useCart } from '@/lib/cart'
@@ -12,12 +15,21 @@ import { formatINR, formatINRRange, parseRange } from '@/lib/pricing'
 import { prefersReducedMotion } from '@/lib/motion'
 import { track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
+import { supabaseBrowser } from '@/lib/supabase/client'
+import { waLink } from '@/lib/whatsapp'
+import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
+import { buildCheckoutMessage } from '@/lib/checkout/message'
+import { addressLines, formatPhone } from '@/lib/checkout/schema'
+import { orderSnapshotFromRow, statusMeta } from '@/lib/checkout/types'
 import { detailBits, patchLastOrder, readLastOrder, restoreOrder, type LastOrder } from './order'
 import s from './receipt.module.css'
 
 const PALETTE = ['#FFE14D', '#C9B8FF', '#FFB8DE', '#6D3BFF', '#F4EFE6']
 
 export function SuccessView() {
+  const params = useSearchParams()
+  const orderId = params.get('order')
+  const waNumber = useWhatsappNumber()
   const [order, setOrder] = useState<LastOrder | null | undefined>(undefined)
   const [sent, setSent] = useState(false)
   const [restored, setRestored] = useState(false)
@@ -26,15 +38,52 @@ export function SuccessView() {
 
   useEffect(() => {
     const o = readLastOrder()
-    // eslint-disable-next-line react-hooks/set-state-in-effect -- sessionStorage is client-only
-    setOrder(o)
-    if (!o) return
-    setSent(o.opened)
-    if (!o.cleared) {
-      useCart.getState().clear()
-      patchLastOrder({ cleared: true })
+    const mine = o && (!orderId || o.order?.id === orderId) ? o : null
+    if (mine || !orderId) {
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- sessionStorage is client-only
+      setOrder(mine)
+      if (!mine) return
+      setSent(mine.opened)
+      if (!mine.cleared) {
+        useCart.getState().clear()
+        patchLastOrder({ cleared: true })
+      }
+      return
     }
-  }, [])
+    // reopened later / another tab: load the order (RLS: own orders only)
+    let alive = true
+    ;(async () => {
+      const sb = supabaseBrowser()
+      const { data } = sb && /^[0-9a-f-]{36}$/i.test(orderId) ? await sb.from('orders').select('*').eq('id', orderId).maybeSingle() : { data: null }
+      if (!alive) return
+      if (!data) return setOrder(null)
+      const snap = orderSnapshotFromRow(data as Record<string, unknown>)
+      setSent(true)
+      setOrder({
+        ref: snap.ref,
+        items: snap.items,
+        totals: {
+          subtotal: snap.totals.subtotal,
+          savings: snap.totals.savings,
+          total: snap.totals.payable,
+          hasPriceOnRequest: snap.totals.hasPriceOnRequest,
+          applied: snap.totals.applied,
+          lines: snap.items.map((l) => ({ key: l.key, lineTotal: l.lineTotal ?? null, saving: l.saving ?? 0 })),
+        },
+        name: snap.address?.name ?? '',
+        city: snap.address?.city ?? '',
+        link: waLink(buildCheckoutMessage(snap), waNumber),
+        at: Date.parse(snap.createdAt) || 0,
+        opened: true,
+        celebrated: true,
+        cleared: true,
+        order: snap,
+      })
+    })()
+    return () => {
+      alive = false
+    }
+  }, [orderId, waNumber])
 
   const celebrate = (delay: number) => {
     if (prefersReducedMotion()) return
@@ -119,6 +168,8 @@ export function SuccessView() {
   const priced = order.items.filter((i) => i.unitPrice != null)
   const quoted = order.items.filter((i) => i.unitPrice == null)
   const pieces = order.items.reduce((n, i) => n + i.qty, 0)
+  const snap = order.order ?? null
+  const status = snap ? statusMeta(snap.status) : null
 
   return (
     <div className="container-x relative pb-24 pt-10 md:pt-16">
@@ -173,6 +224,19 @@ export function SuccessView() {
               Continue shopping <ArrowRight aria-hidden="true" className="size-4" />
             </Link>
           </div>
+
+          {snap && (
+            <div className="mt-8 flex flex-wrap items-center gap-3 border-[3px] border-paper/80 p-3">
+              <Package aria-hidden="true" className="size-6 shrink-0 text-volt" />
+              <p className="min-w-0 flex-1 text-[14px] leading-snug">
+                <span className="font-mono font-bold text-volt">{snap.ref}</span> is saved
+                {status ? <> · <span className="font-semibold">{status.label}</span></> : null}. {status?.customer}
+              </p>
+              <Link href="/account" className="press inline-flex min-h-11 items-center gap-1.5 border-2 border-paper px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em]">
+                Track in my account <ArrowRight aria-hidden="true" className="size-3.5" />
+              </Link>
+            </div>
+          )}
 
           <ol className="mt-10 grid gap-3 sm:grid-cols-3">
             {[
@@ -271,14 +335,47 @@ export function SuccessView() {
                         <dd>−{formatINR(a.saving)}</dd>
                       </div>
                     ))}
-                    {priced.length > 0 && (
+                    {snap && snap.totals.discount > 0 && (
+                      <div className="flex justify-between">
+                        <dt>Voucher {snap.totals.voucher?.code ?? snap.voucherCode ?? ''}</dt>
+                        <dd>−{formatINR(snap.totals.discount)}</dd>
+                      </div>
+                    )}
+                    {snap && snap.totals.giftFee > 0 && (
+                      <div className="flex justify-between">
+                        <dt>Gift wrap</dt>
+                        <dd>{formatINR(snap.totals.giftFee)}</dd>
+                      </div>
+                    )}
+                    {(priced.length > 0 || (snap?.totals.giftFee ?? 0) > 0) && (
                       <div className="mt-2 flex items-end justify-between border-t-[3px] border-ink pt-2">
-                        <dt className="label text-[11px]">Total</dt>
+                        <dt className="label text-[11px]">{snap ? 'Total to pay' : 'Total'}</dt>
                         <dd className="font-display text-[34px] leading-none">{formatINR(order.totals.total)}</dd>
                       </div>
                     )}
                     {order.totals.hasPriceOnRequest && <p className="mt-1 text-right text-[11px] text-tone-2">+ quoted items</p>}
                   </dl>
+                  {snap?.address && (
+                    <div className="mt-4 border-t-2 border-dashed border-ink/50 pt-2 text-[12.5px] leading-snug">
+                      <p className="label flex items-center gap-1.5 text-[10px] text-tone-3">
+                        <MapPin aria-hidden="true" className="size-3" /> Deliver to
+                      </p>
+                      <p className="mt-1 font-semibold">{snap.address.name} · <span className="font-mono">{formatPhone(snap.address.phone)}</span></p>
+                      {addressLines(snap.address).map((l) => (
+                        <p key={l}>{l}</p>
+                      ))}
+                    </div>
+                  )}
+                  {snap?.gift?.enabled && (
+                    <div className="mt-3 border-2 border-ink bg-pink/60 p-2 text-[12.5px] leading-snug">
+                      <p className="label flex items-center gap-1.5 text-[10px]">
+                        <Gift aria-hidden="true" className="size-3" /> Packed as a gift
+                      </p>
+                      {snap.gift.receiverName && <p className="mt-1">For {snap.gift.receiverName}</p>}
+                      {snap.gift.note && <p className="italic">“{snap.gift.note}”</p>}
+                      {snap.gift.hidePrices && <p>Prices hidden on the slip</p>}
+                    </div>
+                  )}
                   {/* decorative barcode from the ref */}
                   <div aria-hidden="true" className="mt-5 flex h-10 items-stretch justify-center gap-[2px]">
                     {Array.from((order.ref ?? 'TED').repeat(4)).map((ch, i) => (

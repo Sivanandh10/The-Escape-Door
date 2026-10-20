@@ -25,6 +25,7 @@ import { useBundleRules } from '@/components/SiteSettingsProvider'
 import { Tilt } from '@/components/motion/Tilt'
 import { PriceTag } from './PriceTag'
 import { WishlistButton } from './WishlistButton'
+import { ShareButton } from './ShareButton'
 import { AddToCartButton } from './AddToCartButton'
 import { ImageCarousel } from './ImageCarousel'
 import './shop.css'
@@ -149,6 +150,11 @@ export function ProductCard({
           slug={p.slug}
           size="sm"
           className={cn('!absolute right-2 z-[2]', multi ? 'top-4' : 'top-2')}
+        />
+        <ShareButton
+          product={p}
+          size="sm"
+          className={cn('!absolute right-2 z-[2]', multi ? 'top-[4.25rem]' : 'top-[3.5rem]')}
         />
         {stock && (
           <span className={cn('label pointer-events-none absolute left-2 z-[2] border-2', multi ? 'top-12' : 'top-10', ' border-ink px-2 py-1 text-[0.625rem]', stock.cls)}>

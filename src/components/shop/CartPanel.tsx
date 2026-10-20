@@ -1,53 +1,37 @@
 'use client'
-// The cart itself — shared by the door drawer and the /cart page. Owner: P2.
-// drawer: scrolling lines + pinned totals footer, then a "details" step with the WhatsApp form.
-// page:   lines + deals on the left, sticky receipt-panel with totals + form on the right.
+// The cart itself — shared by the door drawer and the /cart page. Owner: CHECKOUT (was P2).
+// drawer: scrolling lines + pinned totals footer with the login-gated "Checkout" button.
+// page:   lines + deals on the left, sticky receipt-panel with totals + "Checkout" on the right.
+// Checkout itself (address, gift, voucher, order + WhatsApp) lives on /checkout.
 import Link from 'next/link'
-import { useEffect, useMemo, useRef } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
-import { ArrowRight, Lock } from 'lucide-react'
+import { useMemo } from 'react'
+import { AnimatePresence } from 'motion/react'
+import { ArrowRight } from 'lucide-react'
 import { useCart, useHydrated } from '@/lib/cart'
 import { computeTotals } from '@/lib/pricing'
 import { useBundleRules } from '@/components/SiteSettingsProvider'
-import { track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
-import { CheckoutForm } from './CheckoutForm'
+import { CheckoutCta } from './CheckoutForm'
 import { CartLine } from './cart/CartLine'
 import { Deals, TotalsStack } from './cart/Totals'
 import { EmptyCart } from './cart/EmptyCart'
-import { Rupees, SkeletonLines, Thumb } from './cart/bits'
+import { SkeletonLines } from './cart/bits'
 
-export type CartStep = 'cart' | 'details'
+/** kept for older imports — the drawer has a single step now */
+export type CartStep = 'cart'
 
 export interface CartPanelProps {
   variant?: 'drawer' | 'page'
-  /** drawer only (controlled by CartDrawer) */
-  step?: CartStep
-  onStepChange?: (s: CartStep) => void
   /** close the drawer when a link inside is followed */
   onNavigate?: () => void
 }
 
-export function CartPanel({ variant = 'page', step = 'cart', onStepChange, onNavigate }: CartPanelProps) {
+export function CartPanel({ variant = 'page', onNavigate }: CartPanelProps) {
   const hydrated = useHydrated()
   const items = useCart((s) => s.items)
   const bundleRules = useBundleRules()
   const totals = useMemo(() => computeTotals(items, bundleRules), [items, bundleRules])
   const pieces = items.reduce((n, i) => n + i.qty, 0)
-  const startedRef = useRef(false)
-
-  const startCheckout = () => {
-    if (!startedRef.current) {
-      startedRef.current = true
-      track('checkout_start', { where: variant, pieces, total: totals.total })
-    }
-  }
-
-  // the page variant shows the form straight away — count the checkout start once the form is seen
-  useEffect(() => {
-    if (variant === 'page' && hydrated && items.length) startCheckout()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [variant, hydrated, items.length > 0])
 
   if (!hydrated) {
     return (
@@ -89,59 +73,20 @@ export function CartPanel({ variant = 'page', step = 'cart', onStepChange, onNav
   // ── drawer ────────────────────────────────────────────────────────────
   if (variant === 'drawer') {
     return (
-      <AnimatePresence mode="wait" initial={false}>
-        {step === 'cart' ? (
-          <motion.div
-            key="cart"
-            className="flex min-h-0 flex-1 flex-col"
-            initial={{ x: -24, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: -24, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-5" data-lenis-prevent="">
-              {lines(true)}
-              <Deals totals={totals} className="mt-4" />
-              {onRequestNote && <div className="mt-3">{onRequestNote}</div>}
-            </div>
-            <div className="border-t-4 border-ink bg-paper px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
-              <TotalsStack totals={totals} />
-              <button
-                type="button"
-                onClick={() => {
-                  startCheckout()
-                  onStepChange?.('details')
-                }}
-                className="press group mt-3 flex min-h-14 w-full items-center justify-center gap-3 border-[3px] border-ink bg-ink px-5 text-paper shadow-[5px_5px_0_0_var(--color-door)]"
-              >
-                <span className="font-display text-[24px] uppercase leading-none tracking-[0.02em]">Checkout on WhatsApp</span>
-                <ArrowRight aria-hidden="true" className="size-5 text-volt transition-transform duration-200 can-hover:group-hover:translate-x-1" />
-              </button>
-              <div className="mt-2 flex items-center justify-between">
-                <Link href="/cart" onClick={onNavigate} className="label inline-flex min-h-11 items-center text-[10.5px] underline decoration-2 underline-offset-4 can-hover:hover:text-door">
-                  View full cart
-                </Link>
-                <span className="label inline-flex items-center gap-1.5 text-[10.5px] text-tone-3">
-                  <Lock aria-hidden="true" className="size-3" /> No payment on site
-                </span>
-              </div>
-            </div>
-          </motion.div>
-        ) : (
-          <motion.div
-            key="details"
-            className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-[max(24px,env(safe-area-inset-bottom))] pt-4"
-            data-lenis-prevent=""
-            initial={{ x: 24, opacity: 0 }}
-            animate={{ x: 0, opacity: 1 }}
-            exit={{ x: 24, opacity: 0 }}
-            transition={{ duration: 0.2 }}
-          >
-            <OrderStrip totals={totals} pieces={pieces} />
-            <CheckoutForm items={items} totals={totals} onBack={() => onStepChange?.('cart')} onSent={onNavigate} className="mt-4" />
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <div className="flex min-h-0 flex-1 flex-col">
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 pb-6 pt-5" data-lenis-prevent="">
+          {lines(true)}
+          <Deals totals={totals} className="mt-4" />
+          {onRequestNote && <div className="mt-3">{onRequestNote}</div>}
+        </div>
+        <div className="border-t-4 border-ink bg-paper px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
+          <TotalsStack totals={totals} />
+          <CheckoutCta where="drawer" pieces={pieces} total={totals.total} onNavigate={onNavigate} className="mt-3" />
+          <Link href="/cart" onClick={onNavigate} className="label mt-1 inline-flex min-h-11 items-center text-[10.5px] underline decoration-2 underline-offset-4 can-hover:hover:text-door">
+            View full cart
+          </Link>
+        </div>
+      </div>
     )
   }
 
@@ -169,29 +114,12 @@ export function CartPanel({ variant = 'page', step = 'cart', onStepChange, onNav
           </div>
           <div className="p-4 sm:p-5">
             <TotalsStack totals={totals} size="lg" />
+            <p className="mt-3 text-[13px] leading-snug text-tone-2">Vouchers, gift wrap and your delivery address come next, at checkout.</p>
             <div className="my-5 h-0 border-t-[3px] border-dashed border-ink/40" />
-            <CheckoutForm items={items} totals={totals} />
+            <CheckoutCta where="page" pieces={pieces} total={totals.total} />
           </div>
         </div>
       </aside>
-    </div>
-  )
-}
-
-function OrderStrip({ totals, pieces }: { totals: ReturnType<typeof computeTotals>; pieces: number }) {
-  const priced = totals.lines.some((l) => l.unitPrice != null)
-  return (
-    <div className="flex items-center gap-3 border-[3px] border-ink bg-volt p-2.5 text-ink shadow-hard-sm">
-      <div className="flex -space-x-5">
-        {totals.lines.slice(0, 3).map((l) => (
-          <Thumb key={l.key} src={l.image} className="w-10 border-2" sizes="40px" />
-        ))}
-      </div>
-      <p className="flex-1 text-[13.5px] font-bold leading-tight">
-        {pieces} {pieces === 1 ? 'piece' : 'pieces'}
-        {totals.savings > 0 && <span className="block font-mono text-[11.5px] font-medium">bundle savings applied</span>}
-      </p>
-      <p className="font-display text-[26px] leading-none">{priced ? <Rupees value={totals.total} /> : 'Quote'}</p>
     </div>
   )
 }

@@ -1,6 +1,9 @@
 'use client'
 // S00 preloader overlay + choreography (#01 branded preloader, #24 ink stroke-draw, #06 0→100 counter, #03 door/curtain).
-// ≤ 2 s typical: draw + count (min 1.0 s) → gate on real progress (fonts + hero poster, capped) → ドン! slam → doors open.
+// Hard budget ≈ 1.2 s from navigation start (UX pass): draw + count → brief gate on real progress (fonts + hero
+// poster, ≤ 0.1 s) → ドン! slam → doors open. If React hydrated late, the timeline is sped up to fit what is left
+// of the budget, or skipped with a 180 ms fade. First visit only (localStorage 'ted:pl'). The SSR overlay already
+// shows a type-only brand mark, so the very first paint is branded even before JS arrives.
 // Overlay only: the hero is already rendered underneath. Scroll is locked (Lenis stop + overflow) and the page behind
 // is inert while it runs. Click / Esc / Enter / Space fast-forwards. `?preload=force&t=1.2` freezes the timeline (lab QA).
 import { useEffect, useMemo, useRef, useState } from 'react'
@@ -41,7 +44,12 @@ function useBurst() {
   }, [])
 }
 
-type Phase = 'pending' | 'run' | 'done'
+type Phase = 'pending' | 'run' | 'skip' | 'done'
+
+/** total ms the intro may hold the page, measured from the cover's first paint (inline gate) */
+const BUDGET_MS = 1200
+/** below this much remaining budget the intro is skipped (quick fade) instead of compressed */
+const MIN_RUN_MS = 420
 
 export default function Preloader() {
   const root = useRef<HTMLDivElement>(null)
@@ -49,17 +57,39 @@ export default function Preloader() {
   const lenis = useLenis()
   const burst = useBurst()
 
+  const budget = useRef<number | null>(null)
+
   // decide once on mount: the inline gate already chose (html.ted-pl)
   useEffect(() => {
-    const on = document.documentElement.classList.contains('ted-pl')
+    const html = document.documentElement
+    const on = html.classList.contains('ted-pl')
     if (!on) {
-      document.documentElement.dataset.preloader = 'done'
+      html.dataset.preloader = 'done'
       setPhase('done')
       return
     }
     try {
+      localStorage.setItem('ted:pl', '1')
       sessionStorage.setItem('ted:pl', '1')
     } catch {}
+    const frozen = /[?&]t=/.test(location.search)
+    // budget runs from when the cover first painted (the gate), not from navigation start
+    const shownAt = (window as Window & { __tedPlT?: number }).__tedPlT ?? 0
+    const left = BUDGET_MS - (performance.now() - shownAt)
+    if (!frozen && left < MIN_RUN_MS) {
+      // hydrated late: no show now; fade the cover away and hand over the page
+      setPhase('skip')
+      const t = window.setTimeout(() => {
+        html.classList.remove('ted-pl')
+        html.dataset.preloader = 'done'
+        window.dispatchEvent(new CustomEvent('ted:preloader-done'))
+        setPhase('done')
+        requestAnimationFrame(() => ScrollTrigger.refresh())
+      }, 190)
+      return () => window.clearTimeout(t)
+    }
+    html.dataset.preloader = 'run' // tells the gate's 1.2 s release timer that we own the exit now
+    budget.current = frozen ? null : left / 1000
     setPhase('run')
   }, [])
 
@@ -144,46 +174,50 @@ export default function Preloader() {
       const tl = gsap.timeline({ paused: true, defaults: { ease: 'expo.out' }, onComplete: finish })
 
       // 1 · ink brush draws the door-bracket wordmark (#24) — panel wipe, outlines, then fills pop
-      tl.to(q('.s00-mark [data-panel]'), { clipPath: 'inset(0 0% 0 0)', duration: 0.5, ease: 'power3.out' }, 0)
-        .to(q('.s00-mark [data-draw]'), { strokeDashoffset: 0, duration: 0.42, ease: 'ted-ink', stagger: 0.03 }, 0.05)
-        .to(q('.s00-mark [data-shadow], .s00-mark [data-fill], .s00-mark [data-pop]'), { opacity: 1, duration: 0.14, ease: 'none', stagger: 0.012 }, 0.5)
+      tl.to(q('.s00-mark [data-panel]'), { clipPath: 'inset(0 0% 0 0)', duration: 0.34, ease: 'power3.out' }, 0)
+        .to(q('.s00-mark [data-draw]'), { strokeDashoffset: 0, duration: 0.28, ease: 'ted-ink', stagger: { amount: 0.1 } }, 0.03)
+        .to(q('.s00-mark [data-shadow], .s00-mark [data-fill], .s00-mark [data-pop]'), { opacity: 1, duration: 0.1, ease: 'none', stagger: { amount: 0.08 } }, 0.34)
         // Kado peeks up from below and opens his door-head while we count
-        .fromTo(q('.s00-kado'), { yPercent: 110 }, { yPercent: 0, duration: 0.55, ease: 'back.out(1.6)' }, 0.12)
-        .fromTo(kado, { '--kado-open': 0 }, { '--kado-open': 0.85, duration: 0.8, ease: 'power2.inOut' }, 0.3)
-        // 2 · counter 0 → 90 (#06), then wait for real progress (≤ 0.3 s), then → 100
-        .to(counter, { v: 90, duration: 0.95, ease: 'power2.inOut', onUpdate: render }, 0.05)
+        .fromTo(q('.s00-kado'), { yPercent: 110 }, { yPercent: 0, duration: 0.4, ease: 'back.out(1.6)' }, 0.06)
+        .fromTo(kado, { '--kado-open': 0 }, { '--kado-open': 0.85, duration: 0.5, ease: 'power2.inOut' }, 0.18)
+        // 2 · counter 0 → 90 (#06), then wait for real progress (≤ 0.1 s), then → 100
+        .to(counter, { v: 90, duration: 0.5, ease: 'power2.inOut', onUpdate: render }, 0.04)
       if (freezeAt == null) {
-        tl.addPause(1.0, () => {
+        tl.addPause(0.54, () => {
           if (ready) return tl.resume()
-          const deadline = gsap.delayedCall(0.3, () => tl.resume())
+          const deadline = gsap.delayedCall(0.1, () => tl.resume())
           void assets.then(() => {
             deadline.kill()
             tl.resume()
           })
         })
       }
-      tl.to(counter, { v: 100, duration: 0.14, ease: 'power1.out', onUpdate: render }, 1.0)
+      tl.to(counter, { v: 100, duration: 0.08, ease: 'power1.out', onUpdate: render }, 0.54)
 
       // 3 · SLAM — impact frame: 2-frame invert, scale 1.08 → 1, 2-frame shake, speed-line burst, ドン!
-      tl.addLabel('slam', 1.14)
+      tl.addLabel('slam', 0.62)
         .set(q('.s00-flash'), { opacity: 1 }, 'slam')
-        .set(q('.s00-flash'), { opacity: 0 }, 'slam+=0.066')
-        .fromTo(q('.s00-mark'), { scale: 1.08 }, { scale: 1, duration: 0.34, ease: 'power4.out' }, 'slam')
+        .set(q('.s00-flash'), { opacity: 0 }, 'slam+=0.05')
+        .fromTo(q('.s00-mark'), { scale: 1.08 }, { scale: 1, duration: 0.26, ease: 'power4.out' }, 'slam')
         .to(q('.s00-shake'), { x: 11, y: -7, duration: 0.033, ease: 'none' }, 'slam')
         .to(q('.s00-shake'), { x: -9, y: 6, duration: 0.033, ease: 'none' })
         .to(q('.s00-shake'), { x: 0, y: 0, duration: 0.033, ease: 'none' })
-        .fromTo(q('.s00-burst'), { scale: 0.5, opacity: 1 }, { scale: 1.35, opacity: 0, duration: 0.5, ease: 'power2.out' }, 'slam')
-        .fromTo(q('.s00-don'), { scale: 2.6, rotate: -26, opacity: 0 }, { scale: 1, rotate: 0, opacity: 1, duration: 0.26, ease: 'back.out(2.4)' }, 'slam')
-        .to(q('.s00-kado'), { y: -16, duration: 0.1, ease: 'power2.out', yoyo: true, repeat: 1 }, 'slam')
-        .to(kado, { '--kado-open': 1, duration: 0.18, ease: 'power3.out' }, 'slam')
+        .fromTo(q('.s00-burst'), { scale: 0.5, opacity: 1 }, { scale: 1.35, opacity: 0, duration: 0.4, ease: 'power2.out' }, 'slam')
+        .fromTo(q('.s00-don'), { scale: 2.6, rotate: -26, opacity: 0 }, { scale: 1, rotate: 0, opacity: 1, duration: 0.2, ease: 'back.out(2.4)' }, 'slam')
+        .to(q('.s00-kado'), { y: -16, duration: 0.08, ease: 'power2.out', yoyo: true, repeat: 1 }, 'slam')
+        .to(kado, { '--kado-open': 1, duration: 0.14, ease: 'power3.out' }, 'slam')
 
       // 4 · the door OPENS (#03): content punches forward, leaves swing out, halftone light spills through
-      tl.addLabel('open', 'slam+=0.3')
-        .to(q('.s00-content'), { scale: 1.07, opacity: 0, duration: 0.26, ease: 'power2.in' }, 'open')
-        .to(q('.s00-leaf-l'), { rotateY: 104, duration: 0.58, ease: 'expo.inOut' }, 'open')
-        .to(q('.s00-leaf-r'), { rotateY: -104, duration: 0.58, ease: 'expo.inOut' }, 'open')
-        .fromTo(q('.s00-spill'), { scaleX: 0, opacity: 1 }, { scaleX: 1.3, duration: 0.42, ease: 'power2.out' }, 'open+=0.08')
-        .to(q('.s00-spill'), { opacity: 0, duration: 0.2, ease: 'power1.in' }, 'open+=0.34')
+      tl.addLabel('open', 'slam+=0.16')
+        .to(q('.s00-content'), { scale: 1.07, opacity: 0, duration: 0.2, ease: 'power2.in' }, 'open')
+        .to(q('.s00-leaf-l'), { rotateY: 104, duration: 0.4, ease: 'expo.inOut' }, 'open')
+        .to(q('.s00-leaf-r'), { rotateY: -104, duration: 0.4, ease: 'expo.inOut' }, 'open')
+        .fromTo(q('.s00-spill'), { scaleX: 0, opacity: 1 }, { scaleX: 1.3, duration: 0.3, ease: 'power2.out' }, 'open+=0.05')
+        .to(q('.s00-spill'), { opacity: 0, duration: 0.14, ease: 'power1.in' }, 'open+=0.24')
+
+      // fit the remaining budget: if hydration ate into it, play faster (never slower than designed)
+      const room = budget.current
+      if (room != null && freezeAt == null) tl.timeScale(Math.max(1, tl.duration() / Math.max(room, 0.3)))
 
       el.dataset.state = 'run'
 
@@ -195,7 +229,7 @@ export default function Preloader() {
           counter.v = 100
           render()
         }
-        tl.timeScale(1.6).play()
+        tl.timeScale(Math.max(tl.timeScale(), 1.8)).play()
       }
       const onKey = (e: KeyboardEvent) => {
         if (e.key === 'Escape' || e.key === 'Enter' || e.key === ' ') {
@@ -269,7 +303,15 @@ export default function Preloader() {
             </svg>
             <div className="s00-mark">
               {/* perf: the 79 KB wordmark only exists while the intro actually runs (never in the SSR HTML) */}
-              {phase === 'run' && <Wordmark variant="full" title="" className="relative block size-full" />}
+              {phase === 'run' ? (
+                <Wordmark variant="full" title="" className="relative block size-full" />
+              ) : (
+                // type-only mark in the SSR HTML: the cover is branded on the very first paint, before JS
+                <span className="s00-ssr" aria-hidden="true">
+                  <span>The Escape</span>
+                  <span className="s00-ssr-door">Door</span>
+                </span>
+              )}
             </div>
             <div className="s00-don pointer-events-none absolute -right-[4%] -top-[14%] origin-center md:-right-[16%]">
               <Sfx text="ドン!" size="lg" tone="hype" rotate={-9} />

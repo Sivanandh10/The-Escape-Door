@@ -2,7 +2,10 @@
 // P4b — Leads: pipeline board (drag between New → Contacted → Won / Lost) + list view, filters,
 // detail drawer (contact, order lines, custom files via signed URLs, notes), CSV export, #69 shred + undo,
 // "Add lead" (manual: walk-ins, DMs, calls) and "Edit details" (ManualEntry.tsx).
-import { useEffect, useMemo, useState, type DragEvent } from 'react'
+// Realtime (CMS + ADMIN-DATA): new leads slide in live (Supabase Realtime INSERT on public.leads, RLS =
+// leads.view) with a toast + a "NEW" flash; the list then re-syncs silently in the background.
+import { useEffect, useId, useMemo, useRef, useState, type DragEvent } from 'react'
+import type { RealtimeChannel } from '@supabase/supabase-js'
 import { toast } from 'sonner'
 import { ArrowRight, Download, ExternalLink, FileText, Kanban, List, Mail, MessageCircle, PackagePlus, Pencil, Plus, Sparkles } from 'lucide-react'
 import type { CartItem, CartTotals } from '@/lib/types'
@@ -12,7 +15,7 @@ import { adminBtn, adminInput, adminPill } from '../ui'
 import { AdminPage } from '../AdminPage'
 import { ConfirmShred } from '../ConfirmShred'
 import { EmptyState } from '../EmptyState'
-import { downloadText, getAdminClient, signCustomUpload, toCsv, useCrud, explainDemo, explainReadOnly, type Crud } from './data'
+import { downloadText, getAdminClient, signCustomUpload, toCsv, useCrud, explainDemo, explainReadOnly, type Crud, type Row } from './data'
 import { READONLY_NOTE, useCan } from '../AdminContext'
 import {
   LEAD_KINDS, LEAD_STATUSES, SPAM_STATUS, fileRefs, leadCfg, orderCfg, orderFromLead,
@@ -32,6 +35,122 @@ function leadTotal(l: AdminLead): number | null {
   return typeof t === 'number' ? t : null
 }
 
+// ---------------------------------------------------------------- realtime
+const FRESH_MS = 8000
+
+/**
+ * Live inbox: subscribes to INSERTs on public.leads (Realtime applies RLS, so only leads.view members get
+ * rows). A new lead shows at once (overlay row + toast), then a silent re-fetch folds it into the CRUD list
+ * (the overlay row is dropped as soon as the list holds it). Our own "Add lead" inserts are ignored (already
+ * in the list). Off in demo / sandbox.
+ */
+function useLiveLeads(crud: Crud<AdminLead>, onOpen: (id: string) => void) {
+  const canRead = useCan('leads.view')
+  const [incoming, setIncoming] = useState<AdminLead[]>([])
+  const [fresh, setFresh] = useState<ReadonlySet<string>>(() => new Set())
+  const [connected, setConnected] = useState(false)
+  const known = useRef<Set<string>>(new Set())
+  const openRef = useRef(onOpen)
+  const reloadRef = useRef(crud.reload)
+  const syncTimer = useRef<number | null>(null)
+  const channelName = `leads-live-${useId().replace(/[^a-z0-9]/gi, '')}`
+
+  useEffect(() => {
+    known.current = new Set(crud.rows.map((l) => l.id))
+    reloadRef.current = crud.reload
+    openRef.current = onOpen
+  })
+
+  useEffect(() => {
+    if (crud.mode !== 'live' || !canRead) return
+    const sb = getAdminClient()
+    if (!sb) return
+    let alive = true
+    let channel: RealtimeChannel | null = null
+    const timers = new Set<number>()
+    ;(async () => {
+      try {
+        const { data } = await sb.auth.getSession()
+        if (!alive) return
+        if (data.session) await sb.realtime.setAuth(data.session.access_token)
+        if (!alive) return
+        channel = sb
+          .channel(channelName)
+          .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'leads' }, (payload: { new?: Record<string, unknown> }) => {
+            if (!payload.new) return
+            const lead = leadCfg.fromRow(payload.new as Row)
+            if (!lead.id || known.current.has(lead.id)) return
+            setIncoming((xs) => (xs.some((x) => x.id === lead.id) ? xs : [lead, ...xs]))
+            setFresh((f) => new Set(f).add(lead.id))
+            const t = window.setTimeout(() => {
+              timers.delete(t)
+              setFresh((f) => {
+                const next = new Set(f)
+                next.delete(lead.id)
+                return next
+              })
+            }, FRESH_MS)
+            timers.add(t)
+            if (lead.status !== 'spam') {
+              const k = kindMeta(lead.kind)
+              const total = leadTotal(lead)
+              toast(`New ${k?.short ?? 'lead'}${total != null ? ` · ${formatINR(total)}` : ''}`, {
+                id: `lead-${lead.id}`,
+                description: [lead.name || 'No name', lead.city, lead.src ? `src: ${lead.src}` : ''].filter(Boolean).join(' · '),
+                action: { label: 'Open', onClick: () => openRef.current(lead.id) },
+              })
+            }
+            // fold it into the real list (coalesced when several land together)
+            if (syncTimer.current) window.clearTimeout(syncTimer.current)
+            syncTimer.current = window.setTimeout(() => {
+              syncTimer.current = null
+              reloadRef.current()
+            }, 1500)
+          })
+          .subscribe((status) => {
+            if (!alive) return
+            setConnected(status === 'SUBSCRIBED')
+          })
+      } catch {
+        if (alive) setConnected(false)
+      }
+    })()
+    return () => {
+      alive = false
+      timers.forEach((t) => window.clearTimeout(t))
+      if (syncTimer.current) window.clearTimeout(syncTimer.current)
+      setConnected(false)
+      if (channel) void sb.removeChannel(channel)
+    }
+  }, [crud.mode, canRead, channelName])
+
+  const rows = useMemo(() => {
+    if (!incoming.length) return crud.rows
+    const ids = new Set(crud.rows.map((l) => l.id))
+    const extra = incoming.filter((l) => !ids.has(l.id))
+    return extra.length ? [...extra, ...crud.rows] : crud.rows
+  }, [incoming, crud.rows])
+
+  return { rows, fresh, connected }
+}
+
+function LivePill({ on }: { on: boolean }) {
+  if (!on) return null
+  return (
+    <span
+      role="status"
+      title="Realtime connected — new leads appear here without a reload."
+      className="inline-flex min-h-11 items-center gap-2 border-2 border-hype px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em] text-paper"
+    >
+      <span aria-hidden="true" className="relative grid size-2.5 place-items-center">
+        <span className="absolute inset-0 rounded-full bg-hype opacity-70 motion-safe:animate-ping" />
+        <span className="relative size-2.5 rounded-full bg-hype" />
+      </span>
+      Live
+    </span>
+  )
+}
+
 export function LeadsManager({ initial }: { initial: AdminLead[] }) {
   const crud = useCrud(leadCfg, initial, { perm: 'leads.edit' })
   const [view, setView] = useState<View>('board')
@@ -41,6 +160,8 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
   const [showSpam, setShowSpam] = useState(false)
   const [openId, setOpenId] = useState<string | null>(null)
   const [editing, setEditing] = useState<{ lead: AdminLead; isNew: boolean } | null>(null)
+  const live = useLiveLeads(crud, setOpenId)
+  const all = live.rows
 
   // small screens start in list view
   useEffect(() => {
@@ -48,10 +169,10 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
     if (window.matchMedia('(max-width: 1023px)').matches) setView('list')
   }, [])
 
-  const srcs = useMemo(() => [...new Set(crud.rows.map((l) => l.src || '(direct)'))].sort(), [crud.rows])
+  const srcs = useMemo(() => [...new Set(all.map((l) => l.src || '(direct)'))].sort(), [all])
   const filtered = useMemo(() => {
     const terms = q.toLowerCase().split(/\s+/).filter(Boolean)
-    return crud.rows.filter((l) => {
+    return all.filter((l) => {
       if (!showSpam && l.status === 'spam') return false
       if (kind !== 'all' && l.kind !== kind) return false
       if (src !== 'all' && (l.src || '(direct)') !== src) return false
@@ -61,15 +182,15 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
       }
       return true
     })
-  }, [crud.rows, q, kind, src, showSpam])
+  }, [all, q, kind, src, showSpam])
 
   const counts = useMemo(() => {
     const c: Record<string, number> = {}
-    for (const l of crud.rows) c[l.kind] = (c[l.kind] ?? 0) + 1
+    for (const l of all) c[l.kind] = (c[l.kind] ?? 0) + 1
     return c
-  }, [crud.rows])
+  }, [all])
 
-  const open = crud.rows.find((l) => l.id === openId) ?? null
+  const open = all.find((l) => l.id === openId) ?? null
 
   const setStatus = (id: string, status: LeadStatus) => {
     const l = crud.rows.find((x) => x.id === id)
@@ -90,13 +211,14 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
   return (
       <AdminPage
         no="04"
-        kicker={`Inbox · ${crud.rows.filter((l) => l.status === 'new').length} new`}
+        kicker={`Inbox · ${all.filter((l) => l.status === 'new').length} new`}
         title={<>Lead <em>inbox</em></>}
         jp="問い合わせ · パイプライン"
         description="Every WhatsApp order, custom request, “remind me” and newsletter sign-up lands here. Drag cards along the pipeline, or open one to reply."
         actions={
           <>
             <SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />
+            <LivePill on={live.connected} />
             <div role="radiogroup" aria-label="View" className="flex border-2 border-paper/20">
               {(['board', 'list'] as const).map((v) => (
                 <button key={v} type="button" role="radio" aria-checked={view === v} onClick={() => setView(v)} className={cn('grid min-h-11 min-w-11 place-items-center px-3 focus-ring', view === v ? 'bg-paper text-ink' : 'text-paper/70 can-hover:hover:text-paper')}>
@@ -128,7 +250,7 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
               value={kind}
               onChange={setKind}
               className="min-w-0 flex-1 basis-full lg:basis-auto"
-              options={[{ id: 'all' as const, label: 'All', count: crud.rows.length }, ...LEAD_KINDS.map((k) => ({ id: k.id, label: k.short, count: counts[k.id] ?? 0 }))]}
+              options={[{ id: 'all' as const, label: 'All', count: all.length }, ...LEAD_KINDS.map((k) => ({ id: k.id, label: k.short, count: counts[k.id] ?? 0 }))]}
             />
             <label className="label inline-flex min-h-10 cursor-pointer items-center gap-2 text-paper/60">
               <input type="checkbox" checked={showSpam} onChange={(e) => setShowSpam(e.target.checked)} className="size-4 accent-[var(--color-hype)]" />
@@ -137,8 +259,9 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
           </Toolbar>
         }
       >
-      <StateSwitch status={crud.status} error={crud.error} onRetry={crud.reload}>
-        {crud.rows.length === 0 ? (
+      {/* a background re-sync (realtime) keeps showing the rows it already has — no skeleton flash */}
+      <StateSwitch status={crud.status === 'loading' && all.length > 0 ? 'ready' : crud.status} error={crud.error} onRetry={crud.reload}>
+        {all.length === 0 ? (
           <EmptyState
             title="Inbox zero"
             body="No leads yet. They appear here the moment someone taps “Buy on WhatsApp”, sends a custom request or asks to be reminded about a stall."
@@ -147,9 +270,9 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
         ) : filtered.length === 0 ? (
           <EmptyState mood="peek" sfx="…?" title="No door leads there" body="No leads match these filters." action={<button type="button" className={adminBtn({ variant: 'ghost' })} onClick={() => { setQ(''); setKind('all'); setSrc('all') }}>Reset filters</button>} />
         ) : view === 'board' ? (
-          <Board leads={filtered} onOpen={setOpenId} onMove={setStatus} showSpam={showSpam} readOnly={crud.readOnly} />
+          <Board leads={filtered} onOpen={setOpenId} onMove={setStatus} showSpam={showSpam} readOnly={crud.readOnly} fresh={live.fresh} />
         ) : (
-          <ListView leads={filtered} onOpen={setOpenId} onStatus={setStatus} crud={crud} />
+          <ListView leads={filtered} onOpen={setOpenId} onStatus={setStatus} crud={crud} fresh={live.fresh} />
         )}
       </StateSwitch>
 
@@ -170,13 +293,14 @@ export function LeadsManager({ initial }: { initial: AdminLead[] }) {
 
 // ---------------------------------------------------------------- board
 function Board({
-  leads, onOpen, onMove, showSpam, readOnly,
+  leads, onOpen, onMove, showSpam, readOnly, fresh,
 }: {
   leads: AdminLead[]
   onOpen: (id: string) => void
   onMove: (id: string, s: LeadStatus) => void
   showSpam: boolean
   readOnly?: boolean
+  fresh?: ReadonlySet<string>
 }) {
   const [over, setOver] = useState<LeadStatus | null>(null)
   const cols = showSpam ? STATUS_ALL : LEAD_STATUSES
@@ -212,7 +336,7 @@ function Board({
             <ul className="flex flex-1 flex-col gap-2 p-2">
               {items.map((l) => (
                 <li key={l.id}>
-                  <LeadCard lead={l} onOpen={() => onOpen(l.id)} draggable={!readOnly} />
+                  <LeadCard lead={l} onOpen={() => onOpen(l.id)} draggable={!readOnly} fresh={fresh?.has(l.id)} />
                 </li>
               ))}
               {items.length === 0 && (
@@ -228,7 +352,7 @@ function Board({
   )
 }
 
-function LeadCard({ lead: l, onOpen, draggable }: { lead: AdminLead; onOpen: () => void; draggable?: boolean }) {
+function LeadCard({ lead: l, onOpen, draggable, fresh }: { lead: AdminLead; onOpen: () => void; draggable?: boolean; fresh?: boolean }) {
   const k = kindMeta(l.kind)
   const total = leadTotal(l)
   return (
@@ -241,8 +365,12 @@ function LeadCard({ lead: l, onOpen, draggable }: { lead: AdminLead; onOpen: () 
         e.dataTransfer.effectAllowed = 'move'
       }}
       onClick={onOpen}
-      className="group relative block w-full cursor-pointer border-2 data-[drag=true]:cursor-grab border-ink bg-paper p-3 text-left text-ink shadow-[3px_3px_0_var(--color-ink)] transition-[translate,box-shadow] duration-150 focus-ring active:cursor-grabbing can-hover:hover:-translate-x-0.5 can-hover:hover:-translate-y-0.5 can-hover:hover:shadow-[5px_5px_0_var(--color-door)]"
+      className={cn(
+        'group relative block w-full cursor-pointer border-2 data-[drag=true]:cursor-grab border-ink bg-paper p-3 text-left text-ink shadow-[3px_3px_0_var(--color-ink)] transition-[translate,box-shadow] duration-150 focus-ring active:cursor-grabbing can-hover:hover:-translate-x-0.5 can-hover:hover:-translate-y-0.5 can-hover:hover:shadow-[5px_5px_0_var(--color-door)]',
+        fresh && 'admin-rise shadow-[5px_5px_0_var(--color-hype)] outline-[3px] outline-offset-2 outline-volt',
+      )}
     >
+      {fresh && <FreshSticker />}
       <span className="flex items-center justify-between gap-2">
         <span className={adminPill(l.kind === 'whatsapp_order' ? 'volt' : l.kind === 'custom_request' ? 'lav' : l.kind === 'remind_me' ? 'pink' : 'paper')}>{k?.short ?? l.kind}</span>
         <span className="font-mono text-[10.5px] text-ink/50">{fmtDate(l.createdAt)}</span>
@@ -258,14 +386,27 @@ function LeadCard({ lead: l, onOpen, draggable }: { lead: AdminLead; onOpen: () 
   )
 }
 
+/** "NEW" sticker slapped on a lead that just arrived live (decorative; the toast announces it). */
+function FreshSticker() {
+  return (
+    <span
+      aria-hidden="true"
+      className="pointer-events-none absolute -left-2 -top-3 z-10 rotate-[-8deg] border-2 border-ink bg-hype px-1.5 font-sfx text-[15px] leading-tight tracking-wide text-paper shadow-[2px_2px_0_var(--color-ink)] motion-safe:animate-[admin-slam_320ms_cubic-bezier(0.34,1.56,0.64,1)_both]"
+    >
+      NEW!
+    </span>
+  )
+}
+
 // ---------------------------------------------------------------- list
 function ListView({
-  leads, onOpen, onStatus, crud,
+  leads, onOpen, onStatus, crud, fresh,
 }: {
   leads: AdminLead[]
   onOpen: (id: string) => void
   onStatus: (id: string, s: LeadStatus) => void
   crud: Crud<AdminLead>
+  fresh?: ReadonlySet<string>
 }) {
   return (
     <ul className="space-y-2">
@@ -274,7 +415,8 @@ function ListView({
         const s = statusMeta(l.status)
         return (
           <li key={l.id} className="admin-rise" style={{ ['--d' as string]: `${Math.min(i, 10) * 35}ms` }}>
-              <div className="grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-2 border-paper/12 bg-[#121218] p-3 transition-colors duration-150 can-hover:hover:border-paper/35 md:grid-cols-[110px_minmax(0,1.4fr)_minmax(0,1fr)_120px_150px_auto]">
+              <div className={cn('relative grid grid-cols-[1fr_auto] items-center gap-x-3 gap-y-2 border-2 bg-[#121218] p-3 transition-colors duration-150 can-hover:hover:border-paper/35 md:grid-cols-[110px_minmax(0,1.4fr)_minmax(0,1fr)_120px_150px_auto]', fresh?.has(l.id) ? 'border-volt shadow-[4px_4px_0_var(--color-hype)]' : 'border-paper/12')}>
+                {fresh?.has(l.id) && <FreshSticker />}
                 <span className={cn(adminPill(l.kind === 'whatsapp_order' ? 'volt' : l.kind === 'custom_request' ? 'lav' : l.kind === 'remind_me' ? 'pink' : 'paper'), 'w-fit')}>{kindMeta(l.kind)?.short}</span>
                 <button type="button" onClick={() => onOpen(l.id)} className="col-span-2 min-w-0 text-left focus-ring md:col-span-1">
                   <span className="block truncate text-[15px] font-bold text-paper underline-offset-4 can-hover:hover:underline">{l.name || 'No name'}</span>

@@ -25,7 +25,8 @@ export interface Kpis {
   whatsappRaw: number
   leads: number
   orders: number
-  /** sum of whatsapp_order lead totals (₹) — an estimate, not settled revenue */
+  /** ₹ — real order totals (status ≠ cancelled) when `revenueSource` is 'orders', else the sum of
+   *  whatsapp_order lead totals (an estimate, not settled revenue). Name kept for older callers. */
   revenueEstimate: number
 }
 
@@ -46,6 +47,12 @@ export interface AnalyticsSnapshot {
   to: string
   kpis: Kpis
   prev: Kpis | null
+  /** where revenue / order counts come from: real public.orders rows, or WhatsApp-order lead estimates */
+  revenueSource: 'orders' | 'leads'
+  /** partial failures (e.g. leads or orders didn't load) — shown above the KPIs, never hidden behind zeros */
+  warnings: string[]
+  /** ISO time the server built this snapshot ("updated 14:32:05") */
+  generatedAt: string
   series: SeriesPoint[]
   topPages: Ranked[]
   topCollections: Ranked[]

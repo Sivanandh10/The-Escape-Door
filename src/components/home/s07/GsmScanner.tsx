@@ -1,5 +1,5 @@
 'use client'
-// S07 scanner island. One scalar `g` (0..1) drives everything through CSS vars (--g, --sp) and direct
+// S07 scanner island (real hoodie per tier via HoodieDeck). One scalar `g` (0..1) drives everything through CSS vars (--g, --sp) and direct
 // text writes, so scrolling never re-renders React; only a tier change (4×) does.
 // ≥1024 + motion: pinned (#10) — scroll scans LV.1 → LV.4, then holds on the last tier.
 // <1024: no pin — a one-shot "power up" charge on enter, tiers by tap. Reduced motion: static, LV.4 shown.
@@ -15,16 +15,18 @@ import { SpeedLines } from '@/components/fx/SpeedLines'
 import { Sfx } from '@/components/fx/Sfx'
 import { SplitReveal } from '@/components/motion/SplitReveal'
 import { cn, clamp, lerp } from '@/lib/utils'
-import { FabricStack, sheetsFor } from './FabricStack'
+import { HoodieDeck, sheetsFor, type TierShot } from './HoodieDeck'
 import { PowerGauge } from './PowerGauge'
 import { S07_CSS } from './styles'
 
 registerGsap()
 
+export type { TierShot }
+
 /** share of the pinned scroll that scans; the rest holds on the top tier */
 const SCAN = 0.86
 
-export default function GsmScanner({ tiers }: { tiers: HoodieTier[] }) {
+export default function GsmScanner({ tiers, shots = [] }: { tiers: HoodieTier[]; shots?: Array<TierShot | null> }) {
   const n = tiers.length
   const root = useRef<HTMLElement>(null)
   const pinEl = useRef<HTMLDivElement>(null)
@@ -41,6 +43,7 @@ export default function GsmScanner({ tiers }: { tiers: HoodieTier[] }) {
   const [armed, setArmed] = useState(false)
   const reduced = useReducedMotion()
   const t = tiers[active]
+  const shot = shots[active] ?? null
   const isMax = active === n - 1
 
   const apply = useCallback(
@@ -52,7 +55,6 @@ export default function GsmScanner({ tiers }: { tiers: HoodieTier[] }) {
       const tier = tiers[idx]
       const gsm = Math.round(lerp(tier.gsmMin, tier.gsmMax, clamp(gv * n - idx, 0, 1)))
       el.style.setProperty('--g', gv.toFixed(4))
-      el.style.setProperty('--sp', (14 + gv * 22).toFixed(2))
       el.querySelectorAll<HTMLElement>('[data-gsm-num]').forEach((node) => {
         node.textContent = String(gsm)
       })
@@ -134,7 +136,8 @@ export default function GsmScanner({ tiers }: { tiers: HoodieTier[] }) {
               scale: 0.97,
               opacity: 0.45,
               ease: 'none',
-              scrollTrigger: { trigger: el, start: 'bottom bottom', end: 'bottom top', scrub: true },
+              // created before the pin below → refresh after it so the pin spacer is counted (else it dims mid-pin)
+              scrollTrigger: { trigger: el, start: 'bottom bottom', end: 'bottom top', scrub: true, refreshPriority: -1 },
             })
 
           if (desk) {
@@ -200,7 +203,7 @@ export default function GsmScanner({ tiers }: { tiers: HoodieTier[] }) {
       id="gsm"
       aria-labelledby="gsm-title"
       className="s07 relative border-t-4 border-ink bg-ink text-paper"
-      style={{ '--g': 0, '--sp': 14, '--n': sheetsFor(active) } as CSSProperties}
+      style={{ '--g': 0, '--n': sheetsFor(active) } as CSSProperties}
       data-max={isMax || undefined}
     >
       <style>{S07_CSS}</style>
@@ -261,7 +264,7 @@ export default function GsmScanner({ tiers }: { tiers: HoodieTier[] }) {
             </ul>
           </div>
 
-          {/* ── centre: the scanner stage with the exploded fabric stack (#23) ─── */}
+          {/* ── centre: the scanner stage — a real hoodie per tier, layered by fabric weight ─── */}
           <div className="flex min-w-0 flex-col lg:col-span-5">
             <div
               ref={stage}
@@ -278,7 +281,7 @@ export default function GsmScanner({ tiers }: { tiers: HoodieTier[] }) {
               />
               <ScanFrame active={active} n={n} isMax={isMax} />
               <div ref={shake} className="absolute inset-0">
-                <FabricStack count={sheetsFor(active)} max={sheetsFor(n - 1)} armed={armed} label={t.gsmLabel} />
+                <HoodieDeck tiers={tiers} shots={shots} active={active} armed={armed} />
               </div>
               {isMax && (
                 <span aria-hidden="true" className="s07-sfx absolute right-[5%] top-[13%] z-10">
@@ -292,6 +295,15 @@ export default function GsmScanner({ tiers }: { tiers: HoodieTier[] }) {
               </p>
               <p className="mt-1 font-display text-[clamp(30px,3vw,42px)] uppercase leading-none">{t.name}</p>
               <p className="mt-2 max-w-[48ch] text-[15px] leading-[1.5] text-paper/75">{t.feel}</p>
+              {shot && (
+                <Link
+                  href={`/product/${shot.slug}`}
+                  data-cursor="VIEW"
+                  className="focus-ring label mt-3 inline-flex min-h-11 items-center gap-2 text-paper underline decoration-volt decoration-2 underline-offset-4 can-hover:hover:text-volt"
+                >
+                  On the stand: {shot.name} hoodie <span aria-hidden="true">→</span>
+                </Link>
+              )}
             </div>
           </div>
 
@@ -381,8 +393,8 @@ function ScanFrame({ active, n, isMax }: { active: number; n: number; isMax: boo
       <span className="label absolute right-4 top-3 tabular-nums text-paper/60">
         {String(active + 1).padStart(2, '0')}/{String(n).padStart(2, '0')}
       </span>
-      <span className="label absolute bottom-3 left-4 max-w-[30ch] normal-case tracking-[0.04em] text-paper/45">
-        Illustration: more sheets = heavier fabric
+      <span className="label absolute bottom-3 left-4 hidden max-w-[30ch] normal-case sm:block tracking-[0.04em] text-paper/45">
+        More layers = heavier fabric
       </span>
     </div>
   )

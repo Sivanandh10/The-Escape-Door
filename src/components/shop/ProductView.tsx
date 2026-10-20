@@ -2,10 +2,12 @@
 // ProductView — PDP interactive column + gallery (owner: P1 shop).
 // Gallery: <ImageCarousel variant="gallery"> — swipe/arrows/pips/thumbs (Front/Back/Detail), ←/→, zoom.
 // Buy box: variant chips, size chips (+ "ask on WhatsApp" size chart), qty stepper, BundleHint,
-// #66 AddToCartButton, "Buy now on WhatsApp" (adds + opens wa.me in the same click), wishlist, custom card.
+// #66 AddToCartButton, "Buy now" (login → adds to the cart → /checkout: address, gift, voucher, then WhatsApp —
+// buy-handler owned by CHECKOUT), wishlist, custom card.
 import { useEffect, useRef, useState } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { Minus, Plus, Ruler, Wand2, ArrowRight } from 'lucide-react'
 import type { Product } from '@/lib/types'
 import { track } from '@/lib/analytics'
@@ -15,6 +17,7 @@ import { cn } from '@/lib/utils'
 import { AddToCartButton } from './AddToCartButton'
 import { PriceTag } from './PriceTag'
 import { WishlistButton } from './WishlistButton'
+import { ShareButton } from './ShareButton'
 import { BundleHint } from './BundleHint'
 import { ImageCarousel } from './ImageCarousel'
 import './shop.css'
@@ -28,6 +31,7 @@ export interface ProductViewProps {
 
 export function ProductView({ product: p, collectionName, collectionJp, accent = '#C9B8FF' }: ProductViewProps) {
   const waNumber = useWhatsappNumber()
+  const router = useRouter()
   const [variantId, setVariantId] = useState(p.variants[0]?.id ?? '')
   const [size, setSize] = useState<string | null>(null)
   const [qty, setQty] = useState(1)
@@ -157,17 +161,24 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
               className="flex-1"
             />
             <WishlistButton productId={p.id} name={p.name} slug={p.slug} className="!h-14 !w-14" />
+            <ShareButton product={p} className="!h-14 !w-14" />
           </div>
+          {/* Buy now (CHECKOUT): login gate is inside AddToCartButton → add → straight to /checkout */}
           <AddToCartButton
             product={p}
             variant={variant}
             size={size}
             qty={qty}
-            mode="buy"
+            tone="ink"
+            label="Buy now"
             block
+            onAdded={() => {
+              track('checkout_start', { where: 'buy_now', product: p.slug })
+              router.push('/checkout')
+            }}
             onNeedSize={() => { setNeedSize(true); sizeGroup.current?.querySelector('button')?.focus() }}
           />
-          <p className="label text-[0.625rem] text-paper/60">Checkout happens on WhatsApp — we confirm price, size and delivery with you there.</p>
+          <p className="label text-[0.625rem] text-paper/60">Pick your address at checkout — we confirm stock and size and take payment on WhatsApp.</p>
         </div>
 
         {p.customizable && (

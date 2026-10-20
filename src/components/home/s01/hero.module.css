@@ -1,0 +1,174 @@
+/* S01 hero — the bits Tailwind can't express (keyframes, mask composites). Owner: S01. */
+
+/* ── primary CTA: "Shop the drop" ─────────────────────────────────────────── */
+.ctaWrap {
+  position: relative;
+  display: inline-flex;
+}
+
+/* the idle "look at me" ring: a volt outline that breathes out every few seconds */
+.ctaRing {
+  position: absolute;
+  inset: -3px;
+  border: 3px solid var(--color-volt);
+  pointer-events: none;
+  opacity: 0;
+  animation: ted-cta-ring 3.6s cubic-bezier(0.16, 1, 0.3, 1) 1.8s infinite;
+}
+
+.cta {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  transition:
+    transform 160ms var(--ease-hover, ease-out),
+    box-shadow 160ms var(--ease-hover, ease-out),
+    background-color 160ms ease-out;
+}
+.cta:hover {
+  background-color: var(--color-volt-hot, #ffe600);
+  transform: translate(-2px, -2px);
+  box-shadow: 9px 9px 0 0 var(--color-paper);
+}
+.cta:active {
+  transform: translate(3px, 3px);
+  box-shadow: 2px 2px 0 0 var(--color-paper);
+}
+
+/* the shine sweep (every ~4 s) */
+.cta::before {
+  content: '';
+  position: absolute;
+  inset: -20% auto -20% 0;
+  width: 38%;
+  z-index: -1;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.85), transparent);
+  transform: translateX(-160%) skewX(-22deg);
+  animation: ted-cta-shine 4.2s ease-in-out 1.2s infinite;
+}
+
+.ctaArrow {
+  display: inline-flex;
+  animation: ted-cta-nudge 2.1s ease-in-out 1s infinite;
+}
+.cta:hover .ctaArrow {
+  animation: none;
+  transform: translateX(6px);
+  transition: transform 180ms var(--ease-hover, ease-out);
+}
+
+/* "NEW" sticker on the corner */
+.sticker {
+  position: absolute;
+  top: -14px;
+  right: -12px;
+  z-index: 2;
+  pointer-events: none;
+  rotate: 9deg;
+  animation: ted-cta-wiggle 3.6s ease-in-out 1.8s infinite;
+}
+
+@keyframes ted-cta-shine {
+  0%,
+  58% {
+    transform: translateX(-160%) skewX(-22deg);
+  }
+  78%,
+  100% {
+    transform: translateX(330%) skewX(-22deg);
+  }
+}
+@keyframes ted-cta-ring {
+  0%,
+  62% {
+    opacity: 0;
+    transform: scale(1);
+  }
+  66% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.08, 1.45);
+  }
+}
+@keyframes ted-cta-nudge {
+  0%,
+  70%,
+  100% {
+    transform: translateX(0);
+  }
+  80% {
+    transform: translateX(6px);
+  }
+  90% {
+    transform: translateX(1px);
+  }
+}
+@keyframes ted-cta-wiggle {
+  0%,
+  60%,
+  100% {
+    rotate: 9deg;
+    scale: 1;
+  }
+  66% {
+    rotate: -4deg;
+    scale: 1.15;
+  }
+  74% {
+    rotate: 12deg;
+    scale: 1;
+  }
+}
+
+/* ── product cut-outs in the cover panel (die-cut sticker look) ───────────── */
+.cutImg {
+  display: block;
+  width: 100%;
+  height: auto;
+  /* paper die-cut edge + a door-purple hard shadow (follows the garment's alpha) */
+  filter: drop-shadow(2px 0 0 var(--color-paper)) drop-shadow(-2px 0 0 var(--color-paper))
+    drop-shadow(0 2px 0 var(--color-paper)) drop-shadow(0 -2px 0 var(--color-paper))
+    drop-shadow(7px 7px 0 var(--color-door));
+}
+
+/* halftone tint clipped to the garment: (image alpha) ∩ (dot screen) filled with volt */
+.cutTint {
+  position: absolute;
+  inset: 0;
+  background-color: var(--color-volt);
+  opacity: 0.32;
+  -webkit-mask-image: var(--cut-src), var(--tone-mid);
+  mask-image: var(--cut-src), var(--tone-mid);
+  -webkit-mask-size: 100% 100%, 8px 8px;
+  mask-size: 100% 100%, 8px 8px;
+  -webkit-mask-repeat: no-repeat, repeat;
+  mask-repeat: no-repeat, repeat;
+  -webkit-mask-composite: source-in;
+  mask-composite: intersect;
+  pointer-events: none;
+}
+
+.bob {
+  animation: ted-cut-bob var(--bob-dur, 5.5s) ease-in-out var(--bob-delay, 0s) infinite;
+}
+@keyframes ted-cut-bob {
+  50% {
+    transform: translateY(-9px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ctaRing,
+  .cta::before,
+  .ctaArrow,
+  .sticker,
+  .bob {
+    animation: none;
+  }
+  .ctaRing {
+    opacity: 0;
+  }
+}

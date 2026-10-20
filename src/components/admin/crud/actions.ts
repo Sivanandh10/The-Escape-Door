@@ -50,6 +50,11 @@ const DELETABLE = {
   custom_rules: { pk: 'type', tags: ['rules'] },
   leads: { pk: 'id', tags: [] },
   orders: { pk: 'id', tags: [] },
+  // checkout (0006_checkout.sql) — vouchers aren't cached anywhere, nothing to revalidate
+  vouchers: { pk: 'id', tags: [] },
+  // careers (0007_careers.sql) — the caller refreshes the 'careers' cache tag itself (revalidateCareers)
+  jobs: { pk: 'id', tags: [] },
+  job_applications: { pk: 'id', tags: [] },
 } as const satisfies Record<string, { pk: string; tags: readonly TagKey[] }>
 export type DeletableTable = keyof typeof DELETABLE
 

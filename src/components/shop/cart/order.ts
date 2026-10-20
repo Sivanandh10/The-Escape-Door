@@ -1,10 +1,11 @@
 'use client'
-// Cart/checkout helpers private to P2: last-order hand-off to /checkout-success, slim lead payload,
+// Cart/checkout helpers (owner: CHECKOUT, was P2): last-order hand-off to /checkout-success, slim lead payload,
 // remove-with-undo (#69) and the drawer "jump to checkout" event.
 import { toast } from 'sonner'
 import { useCart } from '@/lib/cart'
 import { track } from '@/lib/analytics'
 import type { CartItem, CartTotals } from '@/lib/types'
+import type { OrderSnapshot } from '@/lib/checkout/types'
 
 export const LAST_ORDER_KEY = 'ted-last-order-v1'
 /** window event other areas may dispatch to open the drawer straight on the details step. */
@@ -26,6 +27,8 @@ export interface LastOrder {
   cleared?: boolean
   /** the WhatsApp tab opened (false = popup blocked → fallback link is the main action) */
   opened: boolean
+  /** checkout orders (POST /api/orders): the stored order — address, gift, voucher, server totals */
+  order?: OrderSnapshot
 }
 
 export function saveLastOrder(o: LastOrder): void {

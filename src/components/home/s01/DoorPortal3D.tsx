@@ -2,13 +2,16 @@
 // S01 — the R3F door portal (#22). Owner: S01. Lazy (next/dynamic, ssr:false) behind the DESIGN §7b gate.
 // A cel-shaded wooden door in a purple frame, standing in an ink void lit by screen-space halftone dots (#58).
 // Scroll never touches this file directly: GSAP ScrollTrigger writes heroProgress.p; useFrame reads it,
-// swings the leaf, floods the light, and dollies the camera THROUGH the doorway into a speed-line tunnel.
+// swings the leaf, floods the light, and dollies the camera up to the threshold, where the live catalogue waits:
+// a product card (textures from Admin → Products images) wipes to the next one every 2.2 s, in sync with the DOM
+// chip (`showcaseStore.i`, see DoorShowcase.tsx). The card hides the old black end of the light tunnel.
 // No drei ScrollControls (fights Lenis). frameloop is 'always' only while the hero is on screen, else 'never'.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Outlines } from '@react-three/drei'
 import * as THREE from 'three'
 import { heroProgress, PHASE, smooth } from './progress'
+import { showcaseStore } from './showcase'
 
 const HEX = {
   ink: '#0B0B0F',
@@ -38,6 +41,159 @@ void main() {
 }
 `
 
+// the showcase plane sits behind the swung-open leaf (leaf depth ≈ 1.13), inside the light tunnel
+const PLANE_Z = -1.45
+const PLANE_W = 2.5
+const PLANE_H = 2.9
+const CARD_H = 1.86
+const CARD_W = CARD_H * 0.8
+const CARD_Y = 0.02
+
+/** The product card behind the door: two textures + a manga wipe between them, on a volt halftone backdrop. */
+function ShowcasePlane({ srcs }: { srcs: string[] }) {
+  const { gl } = useThree()
+  const dpr = gl.getPixelRatio()
+  const state = useRef({ shown: -1, target: -1, mix: 1, loading: new Set<number>() })
+  const tex = useRef<(THREE.Texture | null)[]>([])
+
+  const mat = useMemo(
+    () =>
+      new THREE.ShaderMaterial({
+        uniforms: {
+          uA: { value: null as THREE.Texture | null },
+          uB: { value: null as THREE.Texture | null },
+          uHasA: { value: 0 },
+          uHasB: { value: 0 },
+          uAspA: { value: 0.8 },
+          uAspB: { value: 0.8 },
+          uMix: { value: 0 },
+          uOpen: { value: 0 },
+          uDpr: { value: dpr },
+          uInk: { value: new THREE.Color(HEX.ink) },
+          uVolt: { value: new THREE.Color(HEX.volt) },
+          uPaper: { value: new THREE.Color(HEX.paper) },
+        },
+        vertexShader: VERT,
+        fragmentShader: /* glsl */ `
+          uniform sampler2D uA; uniform sampler2D uB; uniform float uHasA; uniform float uHasB;
+          uniform float uAspA; uniform float uAspB; uniform float uMix; uniform float uOpen; uniform float uDpr;
+          uniform vec3 uInk; uniform vec3 uVolt; uniform vec3 uPaper;
+          varying vec2 vUv;
+          ${HALFTONE}
+          const vec2 PLANE = vec2(${PLANE_W.toFixed(3)}, ${PLANE_H.toFixed(3)});
+          const vec2 CARD = vec2(${CARD_W.toFixed(3)}, ${CARD_H.toFixed(3)});
+          const float CARD_Y = ${CARD_Y.toFixed(3)};
+          float box(vec2 p, vec2 h) { vec2 d = abs(p) - h; return max(d.x, d.y); }
+          vec3 cover(sampler2D t, vec2 uv, float asp) {
+            float card = CARD.x / CARD.y;
+            vec2 s = asp > card ? vec2(card / asp, 1.0) : vec2(1.0, asp / card);
+            return texture2D(t, (uv - 0.5) * s + 0.5).rgb;
+          }
+          void main() {
+            vec2 p = (vUv - 0.5) * PLANE;
+            vec2 c = p - vec2(0.0, CARD_Y);
+            // backdrop: volt light, ink halftone thickening toward the edges
+            float r = length(c / vec2(1.1, 1.45));
+            float h = ht(gl_FragCoord.xy / uDpr, 9.0, smoothstep(0.85, 1.7, r) * 0.55);
+            vec3 col = mix(uVolt, uInk, h);
+            // hard ink shadow, then the card with an ink border
+            col = mix(col, uInk, step(box(c - vec2(0.07, -0.07), CARD * 0.5), 0.0));
+            float edge = box(c, CARD * 0.5);
+            if (edge < 0.0) {
+              vec2 uv = c / CARD + 0.5;
+              vec3 a = uHasA > 0.5 ? cover(uA, uv, uAspA) : uPaper;
+              vec3 b = uHasB > 0.5 ? cover(uB, uv, uAspB) : a;
+              // diagonal manga wipe (bottom → top) with an ink leading edge
+              float w = uv.y * 0.85 + uv.x * 0.15;
+              float m = uMix * 1.2 - 0.1;
+              col = mix(a, b, step(w, m));
+              float moving = step(0.001, uMix) * step(uMix, 0.999);
+              col = mix(col, uInk, (1.0 - step(0.018, abs(w - m))) * moving);
+              col = mix(col, uInk, step(-0.03, edge));
+            }
+            // the room stays dark until the door opens
+            col = mix(uInk, col, smoothstep(0.0, 1.0, uOpen));
+            gl_FragColor = vec4(col, 1.0);
+          }
+        `,
+      }),
+    [dpr],
+  )
+
+  useEffect(
+    () => () => {
+      mat.dispose()
+      tex.current.forEach((t) => t?.dispose())
+      tex.current = []
+    },
+    [mat],
+  )
+
+  useFrame((_, delta) => {
+    const st = state.current
+    const u = mat.uniforms
+    const n = srcs.length
+    if (!n) return
+    const load = (k: number) => {
+      if (tex.current[k] || st.loading.has(k)) return
+      st.loading.add(k)
+      const loader = new THREE.TextureLoader()
+      loader.setCrossOrigin('anonymous')
+      loader.load(
+        srcs[k],
+        (t) => {
+          t.anisotropy = Math.min(4, gl.capabilities.getMaxAnisotropy())
+          tex.current[k] = t
+          st.loading.delete(k)
+        },
+        undefined,
+        () => st.loading.delete(k), // CORS / 404 → that card is skipped (the chip still names it)
+      )
+    }
+    const want = Math.min(showcaseStore.i, n - 1)
+    load(want)
+    load((want + 1) % n)
+    u.uOpen.value = smooth(PHASE.open[0], PHASE.open[1], heroProgress.p)
+
+    const ready = tex.current[want]
+    const asp = (t: THREE.Texture) => {
+      const img = t.image as { width?: number; height?: number } | undefined
+      return img?.width && img?.height ? img.width / img.height : 0.8
+    }
+    if (ready && st.target !== want) {
+      if (st.shown < 0) {
+        st.shown = st.target = want // first card: no wipe
+        u.uA.value = ready
+        u.uHasA.value = 1
+        u.uAspA.value = asp(ready)
+        u.uMix.value = 0
+        return
+      }
+      st.target = want
+      u.uB.value = ready
+      u.uHasB.value = 1
+      u.uAspB.value = asp(ready)
+      st.mix = 0
+    }
+    if (st.target !== st.shown) {
+      st.mix = Math.min(1, st.mix + delta / 0.5)
+      u.uMix.value = 1 - Math.pow(1 - st.mix, 3)
+      if (st.mix >= 1) {
+        st.shown = st.target
+        u.uA.value = u.uB.value
+        u.uAspA.value = u.uAspB.value
+        u.uMix.value = 0
+      }
+    }
+  })
+
+  return (
+    <mesh material={mat} position={[0, 0.03, PLANE_Z]}>
+      <planeGeometry args={[PLANE_W, PLANE_H]} />
+    </mesh>
+  )
+}
+
 function useToonRamp() {
   return useMemo(() => {
     const t = new THREE.DataTexture(new Uint8Array([70, 150, 255]), 3, 1, THREE.RedFormat)
@@ -48,7 +204,7 @@ function useToonRamp() {
   }, [])
 }
 
-function Scene({ onReady }: { onReady: () => void }) {
+function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
   const { camera, gl } = useThree()
   const ramp = useToonRamp()
   const leaf = useRef<THREE.Group>(null)
@@ -187,15 +343,10 @@ function Scene({ onReady }: { onReady: () => void }) {
     mats.tunnel.uniforms.uBurst.value = dolly
     mats.tunnel.uniforms.uTime.value += delta
 
-    // dolly: from the doorstep, through the doorway, into the tunnel
+    // dolly: from the doorstep up to the threshold — the doorway (and the product card) fills the frame
     const e = dolly * dolly * (3 - 2 * dolly)
-    cam.position.set(0, THREE.MathUtils.lerp(0.55, 0, e), THREE.MathUtils.lerp(9.4, -7.5, e))
-    cam.lookAt(0, THREE.MathUtils.lerp(-0.05, 0, e), cam.position.z - 10)
-    const fov = THREE.MathUtils.lerp(32, 74, smooth(0.55, 1, dolly))
-    if (Math.abs(cam.fov - fov) > 0.01) {
-      cam.fov = fov
-      cam.updateProjectionMatrix()
-    }
+    cam.position.set(0, THREE.MathUtils.lerp(0.55, 0.08, e), THREE.MathUtils.lerp(9.4, 4.75, e))
+    cam.lookAt(0, THREE.MathUtils.lerp(-0.05, 0.02, e), cam.position.z - 10)
     if (!ready.current) {
       ready.current = true
       requestAnimationFrame(onReady)
@@ -217,6 +368,9 @@ function Scene({ onReady }: { onReady: () => void }) {
       <mesh material={mats.tunnel} position={[0, 0.03, -8.6]} rotation={[Math.PI / 2, 0, 0]}>
         <cylinderGeometry args={[1.25, 1.25, 16.8, 48, 1, true]} />
       </mesh>
+
+      {/* the live catalogue behind the door (covers the light tunnel's far end) */}
+      <ShowcasePlane srcs={srcs} />
 
       {/* purple frame */}
       <group>
@@ -266,7 +420,7 @@ function Scene({ onReady }: { onReady: () => void }) {
   )
 }
 
-export default function DoorPortal3D({ onReady, onFail }: { onReady: () => void; onFail?: () => void }) {
+export default function DoorPortal3D({ onReady, onFail, srcs = [] }: { onReady: () => void; onFail?: () => void; srcs?: string[] }) {
   const host = useRef<HTMLDivElement>(null)
   const [inView, setInView] = useState(true)
 
@@ -297,7 +451,7 @@ export default function DoorPortal3D({ onReady, onFail }: { onReady: () => void;
         }}
         aria-hidden="true"
       >
-        <Scene onReady={onReady} />
+        <Scene onReady={onReady} srcs={srcs} />
       </Canvas>
     </div>
   )

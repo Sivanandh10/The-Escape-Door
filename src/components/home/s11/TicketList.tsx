@@ -11,6 +11,7 @@ import { prefersReducedMotion, registerGsap } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import type { FestEvent } from '@/lib/types'
 import { RemindForm } from './RemindForm'
+import { useRequireLogin } from '@/lib/auth/customer'
 
 registerGsap()
 
@@ -49,6 +50,7 @@ function Bars({ seed }: { seed: string }) {
 
 function Ticket({ event, index, reminded, onReminded }: { event: FestEvent; index: number; reminded: 'no' | 'stored' | 'fresh'; onReminded: () => void }) {
   const [open, setOpen] = useState(false)
+  const requireLogin = useRequireLogin() // reminders need an account (AUTH)
   const stampRef = useRef<HTMLDivElement>(null)
   const btnRef = useRef<HTMLButtonElement>(null)
   const formId = `remind-${event.id}`
@@ -110,7 +112,7 @@ function Ticket({ event, index, reminded, onReminded }: { event: FestEvent; inde
                 type="button"
                 aria-expanded={open}
                 aria-controls={formId}
-                onClick={() => setOpen((o) => !o)}
+                onClick={() => (open ? setOpen(false) : requireLogin(`Log in to get a reminder for ${event.name}`, () => setOpen(true)))}
                 className={cn(
                   'press focus-ring inline-flex min-h-12 items-center gap-2 border-[3px] border-ink px-4 font-bold shadow-hard-sm transition-colors duration-150',
                   open ? 'bg-paper text-ink' : 'bg-ink text-paper hover:bg-door',

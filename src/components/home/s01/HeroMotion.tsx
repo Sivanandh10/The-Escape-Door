@@ -4,11 +4,15 @@
 //    H1 (#04): SplitText lines get a volt ink-bar wipe — the H1 is server-rendered and NEVER hidden by CSS
 //    (it is the LCP); the bar covers each line, the line rises behind it, the bar retracts.
 //    Waits for the S00 preloader (`[data-preloader]` + `ted:preloader-done`, 2.6 s failsafe).
-//  • desktop ≥1024: pinned ~150vh scrub — the door creaks, swings open, light floods, the portal panel
-//    grows to full screen (#15) while the camera dollies through the doorway into a volt speed-line burst.
+//  • desktop ≥1024: pinned ~180vh scrub — the door creaks, swings open onto the product showcase, the portal
+//    panel grows to full screen (#15) while the camera walks up to the threshold, holds on the showcase (chip
+//    with name + price fades in), then a volt speed-line burst hands over to S02.
 //    Writes heroProgress.p for the R3F door (same story, one source of truth).
-//  • mobile/tablet: no pin — the door opens as its panel scrolls through the viewport.
-//  • reduced motion: nothing moves; the CSS door is drawn open (static illustration).
+//  • phones/tablets: no JS pin. The door panel is CSS-sticky inside [data-door-track] (S01Hero); this scrubs
+//    the door open over the track's extra height, so the reveal always finishes while the panel fills the
+//    screen (native touch scroll — no normalizeScroll, no pin-spacer jumps when the URL bar resizes).
+//  • product cut-outs ([data-cutout]): pop in with the intro, then drift at their data-depth (parallax).
+//  • reduced motion: nothing moves; the CSS door is drawn open (static illustration), the chip is visible.
 import { useRef, type CSSProperties, type ReactNode } from 'react'
 import gsap from 'gsap'
 import { SplitText } from 'gsap/SplitText'
@@ -118,6 +122,12 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
             intro.to(shake, { x: 0, y: 0, duration: 0.05, ease: 'none' })
           }
           if (gogo) intro.fromTo(gogo, { scale: 0.2, rotation: -24, autoAlpha: 0 }, { scale: 1, rotation: 0, autoAlpha: 1, duration: 0.5, ease: 'back.out(2.4)' }, 0.62)
+          const cutouts = q('[data-cutout]') as HTMLElement[]
+          if (cutouts.length) {
+            intro.fromTo(cutouts, { scale: 0.55, autoAlpha: 0 }, { scale: 1, autoAlpha: 1, duration: 0.55, ease: 'back.out(2)', stagger: 0.09 }, 0.55)
+          }
+          const chip = one('[data-showcase-chip]')
+          if (chip) gsap.set(chip, { autoAlpha: 0 })
           const knock = one('[data-door-knock]')
           if (knock) {
             intro.fromTo(knock, { rotation: 0 }, { rotation: -1.6, duration: 0.07, ease: 'power2.out', yoyo: true, repeat: 3 }, 0.72)
@@ -213,7 +223,7 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
               scrollTrigger: {
                 trigger: stage,
                 start: () => `top ${headerH()}px`,
-                end: () => `+=${Math.round(window.innerHeight * 1.5)}`,
+                end: () => `+=${Math.round(window.innerHeight * 1.8)}`,
                 pin: true,
                 scrub: 0.7,
                 anticipatePin: 1,
@@ -225,6 +235,7 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
             const [e0, e1] = PHASE.expand
             const [d0, d1] = PHASE.dolly
             const [b0, b1] = PHASE.burst
+            const [s0, s1] = PHASE.show
             tl.set({}, {}, 1) // normalise the timeline to 0..1
 
             if (cueBox) tl.to(cueBox, { autoAlpha: 0, y: -16, duration: 0.08 }, 0)
@@ -247,26 +258,57 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
             // #15 portal → full screen, scene re-centres (the camera lines up with the door)
             tl.fromTo(portal, { clipPath: P2_REST }, { clipPath: P2_FULL, duration: e1 - e0, ease: 'power2.inOut' }, e0)
             tl.fromTo(scene, { '--px': '26.6%', '--py': '-17.75%' }, { '--px': '0%', '--py': '0%', duration: e1 - e0, ease: 'power2.inOut' }, e0)
-            // CSS dolly: push into the doorway until its light fills the frame
-            tl.fromTo(wrap, { scale: 1, transformOrigin: '50% 56%' }, { scale: 9, duration: d1 - d0, ease: 'power3.in' }, d0)
+            // CSS dolly: walk up to the threshold until the doorway (and its product card) fills the frame
+            tl.fromTo(wrap, { scale: 1, transformOrigin: '50% 50%' }, { scale: 1.95, duration: d1 - d0, ease: 'power2.inOut' }, d0)
+            // the showcase chip: on once the door is open, off when the burst takes over
+            if (chip) {
+              tl.fromTo(chip, { autoAlpha: 0, y: 24 }, { autoAlpha: 1, y: 0, duration: 0.06, ease: 'power2.out' }, s0)
+              tl.to(chip, { autoAlpha: 0, y: -16, duration: 0.04, ease: 'power1.in' }, s1 - 0.02)
+            }
+            // cut-outs drift up at their own depth while the cover panel is pushed aside
+            cutouts.forEach((el) => {
+              const depth = Number(el.dataset.depth) || 1
+              tl.to(el, { y: () => -H() * 0.06 * depth, duration: 0.6, ease: 'power1.in' }, 0)
+            })
             if (burst) tl.fromTo(burst, { autoAlpha: 0 }, { autoAlpha: 1, duration: b1 - b0, ease: 'power1.in' }, b0)
             if (burstText) tl.fromTo(burstText, { yPercent: 40, scale: 0.86 }, { yPercent: 0, scale: 1, duration: 0.18, ease: 'back.out(1.6)' }, b0 + 0.1)
           } else if (portal && leaf) {
-            // mobile / tablet — no pin: the door opens as its panel crosses the viewport
+            // phones / tablets — the portal is CSS-sticky inside [data-door-track]; scrub over the track's extra height
+            const track = (portal.closest('[data-door-track]') as HTMLElement | null) ?? portal
+            const stickTop = () => headerH() + 10
+            const caption = one('[data-caption]')
             const tl = gsap.timeline({
               defaults: { ease: 'none' },
-              scrollTrigger: { trigger: portal, start: 'top 72%', end: 'bottom 28%', scrub: 0.6 },
+              scrollTrigger: {
+                trigger: track,
+                // starts as the panel reaches its sticky spot, ends exactly when it unsticks
+                start: () => `top ${stickTop()}px`,
+                end: () => `bottom ${stickTop() + portal.offsetHeight}px`,
+                scrub: 0.35,
+                invalidateOnRefresh: true,
+              },
             })
-            tl.fromTo(leaf, { rotationY: 0 }, { rotationY: 100, duration: 1, ease: 'power2.inOut' }, 0)
-            if (shade) tl.to(shade, { opacity: 0.75, duration: 1 }, 0)
-            if (spill) tl.fromTo(spill, { opacity: 0.12, scaleY: 0.55 }, { opacity: 1, scaleY: 1, duration: 0.9 }, 0.1)
-            if (lines) tl.to(lines, { opacity: 1, duration: 0.5 }, 0.3)
-            if (rays) tl.to(rays, { opacity: 0, duration: 0.3 }, 0.3)
-            if (wrap) tl.fromTo(wrap, { scale: 1, transformOrigin: '50% 56%' }, { scale: 1.22, duration: 1, ease: 'power1.in' }, 0)
+            tl.set({}, {}, 1)
+            if (caption) tl.to(caption, { autoAlpha: 0, y: -10, duration: 0.08 }, 0.04)
+            tl.fromTo(leaf, { rotationY: 0 }, { rotationY: 104, duration: 0.5, ease: 'power2.inOut' }, 0.04)
+            if (shade) tl.to(shade, { opacity: 0.75, duration: 0.5 }, 0.04)
+            if (spill) tl.fromTo(spill, { opacity: 0.12, scaleY: 0.55 }, { opacity: 1, scaleY: 1, duration: 0.45 }, 0.1)
+            if (lines) tl.to(lines, { opacity: 1, duration: 0.3 }, 0.2)
+            if (rays) tl.to(rays, { opacity: 0, duration: 0.2 }, 0.2)
+            if (wrap) tl.fromTo(wrap, { scale: 0.96, transformOrigin: '50% 50%' }, { scale: 1.14, duration: 0.7, ease: 'power1.inOut' }, 0)
+            if (chip) tl.fromTo(chip, { autoAlpha: 0, y: 20 }, { autoAlpha: 1, y: 0, duration: 0.1, ease: 'power2.out' }, 0.42)
             const p1Inner = one('[data-p1-inner]')
             if (p1Inner) {
-              gsap.to(p1Inner, { y: -36, ease: 'none', scrollTrigger: { trigger: stage, start: 'top top', end: 'bottom top', scrub: true } })
+              gsap.to(p1Inner, { y: -36, ease: 'none', scrollTrigger: { trigger: stage, start: 'top top', end: () => `+=${window.innerHeight}`, scrub: true } })
             }
+            cutouts.forEach((el) => {
+              const depth = Number(el.dataset.depth) || 1
+              gsap.to(el, {
+                y: () => -window.innerHeight * 0.08 * depth,
+                ease: 'none',
+                scrollTrigger: { trigger: stage, start: 'top top', end: () => `+=${window.innerHeight}`, scrub: true, invalidateOnRefresh: true },
+              })
+            })
           }
 
           return () => {

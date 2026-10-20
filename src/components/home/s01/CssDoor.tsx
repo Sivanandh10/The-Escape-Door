@@ -1,6 +1,7 @@
 // S01 — the CSS-3D door (everyone without the WebGL gate, and the first paint for everyone).
 // Owner: S01. Server-safe markup; HeroMotion drives the [data-*] hooks with the same ScrollTrigger as the R3F door.
 // Reduced motion: the leaf is drawn already open (static open-door illustration), light spill on.
+import type { ReactNode } from 'react'
 import { Halftone } from '@/components/fx/Halftone'
 import { SpeedLines } from '@/components/fx/SpeedLines'
 
@@ -16,8 +17,11 @@ const grain = {
   ].join(','),
 }
 
-/** The door: frame + doorway light + hinged wooden leaf + halftone light spill. Sized by --door-h on its scene. */
-export function CssDoor() {
+/**
+ * The door: frame + doorway light + hinged wooden leaf + halftone light spill. Sized by --door-h on its scene.
+ * `children` = what waits behind the leaf (the product showcase), revealed as the leaf swings open.
+ */
+export function CssDoor({ children }: { children?: ReactNode }) {
   return (
     <div data-door-wrap className="relative" style={{ height: 'var(--door-h, 78%)', aspectRatio: '0.6' }}>
       {/* halftone light spill on the floor (#58) */}
@@ -76,10 +80,12 @@ export function CssDoor() {
           <SpeedLines color="var(--color-ink)" intensity={0.55} inner={0.2} count={70} seed={11} className="absolute inset-0" />
         </div>
 
+        {children}
+
         <div className="absolute inset-0" style={{ perspective: '900px', perspectiveOrigin: '50% 50%' }}>
           <div
             data-leaf
-            className="absolute inset-y-0 left-0 right-[3%] origin-left [transform-style:preserve-3d] motion-reduce:[transform:rotateY(74deg)]"
+            className="pointer-events-none absolute inset-y-0 left-0 right-[3%] origin-left [transform-style:preserve-3d] motion-reduce:[transform:rotateY(74deg)]"
           >
             {/* front */}
             <div className="absolute inset-0 border-r-[3px] border-ink [backface-visibility:hidden]" style={grain}>

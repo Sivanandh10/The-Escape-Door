@@ -45,6 +45,7 @@ import { ACCEPT_ATTR, MAX_FILES, fileProblem, uploadArtwork, type UploadOutcome 
 import { KindIcon } from './KindIcon'
 import { openWhatsApp, openWhatsAppPending } from '@/lib/wa-open'
 import { isSupabaseConfigured } from '@/lib/supabase/env'
+import { useRequireLogin } from '@/lib/auth/customer'
 
 interface Attached {
   id: string
@@ -134,6 +135,8 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
 
   // ---- object URLs cleanup
   const filesRef = useRef(files)
+  const requireLogin = useRequireLogin() // sending a design needs an account (AUTH)
+  const loginPassed = useRef(false)
   filesRef.current = files
   useEffect(() => () => filesRef.current.forEach((f) => f.url && URL.revokeObjectURL(f.url)), [])
 
@@ -284,6 +287,15 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
       return
     }
     setErrors({})
+    if (!loginPassed.current) {
+      // signed in â†’ runs now (same click, WhatsApp still opens); signed out â†’ login modal, then sends
+      requireLogin('Log in to send your design', () => {
+        loginPassed.current = true
+        void submit()
+      })
+      return
+    }
+    loginPassed.current = false
     const honeypot = (document.getElementById('forge-company') as HTMLInputElement | null)?.value ?? ''
 
     const current = filesRef.current

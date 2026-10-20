@@ -1,16 +1,17 @@
 'use client'
 // Cart drawer — a door that swings shut over the page from the right (hinge on the right edge,
 // halftone shading lifts as it opens). Dialog semantics: aria-modal, focus trap, Esc, scroll lock
-// (Lenis stop), focus restored to the header door-cart. Owner: P2.
-// Mounted lazily by Providers (default export, no props). Opens via useCart().setOpen(true), or
-// straight on the WhatsApp details step via: window.dispatchEvent(new Event('ted:cart-checkout')).
-import { useCallback, useEffect, useRef, useState } from 'react'
+// (Lenis stop), focus restored to the header door-cart. Owner: CHECKOUT (was P2).
+// Mounted lazily by Providers (default export, no props). Opens via useCart().setOpen(true).
+// window.dispatchEvent(new Event('ted:cart-checkout')) → login gate → /checkout (the old details step is gone).
+import { useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
 import { X } from 'lucide-react'
 import { useCart, useCartCount, useHydrated } from '@/lib/cart'
 import { useIsClient, useReducedMotion } from '@/lib/motion'
-import { CartPanel, type CartStep } from './CartPanel'
+import { CartPanel } from './CartPanel'
+import { useGoToCheckout } from './CheckoutForm'
 import { CHECKOUT_EVENT } from './cart/order'
 
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([tabindex="-1"]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])'
@@ -24,18 +25,18 @@ export default function CartDrawer() {
   const hydrated = useHydrated()
   const mounted = useIsClient()
   const reduced = useReducedMotion()
-  const [step, setStep] = useState<CartStep>('cart')
+  const goToCheckout = useGoToCheckout()
+  const goRef = useRef(goToCheckout)
+  // eslint-disable-next-line react-hooks/refs -- latest callback for the window listener
+  goRef.current = goToCheckout
   const panel = useRef<HTMLElement>(null)
   const closeBtn = useRef<HTMLButtonElement>(null)
 
   const close = useCallback(() => setOpen(false), [setOpen])
 
-  // "Buy now" elsewhere → open straight on the details step
+  // "Buy now" elsewhere → straight to checkout (login first)
   useEffect(() => {
-    const onCheckout = () => {
-      setStep('details')
-      setOpen(true)
-    }
+    const onCheckout = () => goRef.current({ where: 'event' })
     const onNav = () => setOpen(false)
     window.addEventListener(CHECKOUT_EVENT, onCheckout)
     window.addEventListener('ted:navigate', onNav)
@@ -44,14 +45,6 @@ export default function CartDrawer() {
       window.removeEventListener('ted:navigate', onNav)
     }
   }, [setOpen])
-
-  // an emptied cart always lands back on the cart step
-  const empty = hydrated && count === 0
-  const [wasEmpty, setWasEmpty] = useState(empty)
-  if (empty !== wasEmpty) {
-    setWasEmpty(empty)
-    if (empty) setStep('cart')
-  }
 
   // dialog plumbing
   useEffect(() => {
@@ -95,13 +88,10 @@ export default function CartDrawer() {
     }
   }, [open, close])
 
-  // reset to the cart step after the door has shut
-  const onExitComplete = () => setStep('cart')
-
   if (!mounted) return null
 
   return createPortal(
-    <AnimatePresence onExitComplete={onExitComplete}>
+    <AnimatePresence>
       {open && (
         <div key="cart-drawer" className="fixed inset-0 z-[160]">
           {/* the page behind dims into screentone */}
@@ -149,17 +139,9 @@ export default function CartDrawer() {
               <header className="relative flex items-center gap-3 border-b-4 border-ink bg-ink px-4 py-3 text-paper">
                 <div className="flex min-w-0 flex-1 items-baseline gap-3">
                   <h2 id="cart-drawer-title" className="font-display text-[34px] uppercase leading-none tracking-[0.01em]">
-                    {step === 'details' ? (
-                      <>
-                        Your <span className="text-volt">details</span>
-                      </>
-                    ) : (
-                      <>
-                        The <span className="text-volt">cart</span>
-                      </>
-                    )}
+                    The <span className="text-volt">cart</span>
                   </h2>
-                  <span lang="ja" className="jp-sub text-[11px]">{step === 'details' ? 'お届け先' : 'カート'}</span>
+                  <span lang="ja" className="jp-sub text-[11px]">カート</span>
                 </div>
                 {hydrated && count > 0 && (
                   <span className="border-2 border-paper px-2 py-1 font-mono text-[12px] font-bold tabular-nums" aria-label={`${count} ${count === 1 ? 'piece' : 'pieces'}`}>
@@ -178,15 +160,7 @@ export default function CartDrawer() {
                 </button>
               </header>
 
-              {step === 'details' && (
-                <ol className="flex border-b-[3px] border-ink bg-lav font-mono text-[10.5px] font-bold uppercase tracking-[0.12em]" aria-label="Checkout steps">
-                  <li className="flex-1 px-4 py-2 text-ink/50">01 Cart</li>
-                  <li className="flex-1 border-x-[3px] border-ink bg-volt px-4 py-2" aria-current="step">02 Details</li>
-                  <li className="flex-1 px-4 py-2 text-ink/50">03 WhatsApp</li>
-                </ol>
-              )}
-
-              <CartPanel variant="drawer" step={step} onStepChange={setStep} onNavigate={close} />
+              <CartPanel variant="drawer" onNavigate={close} />
             </motion.aside>
           </div>
         </div>

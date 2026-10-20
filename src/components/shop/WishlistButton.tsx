@@ -15,6 +15,7 @@ import { Heart } from 'lucide-react'
 import { toast } from 'sonner'
 import { useHydrated, useWishlist } from '@/lib/cart'
 import { track } from '@/lib/analytics'
+import { useRequireLogin } from '@/lib/auth/customer'
 import { cn } from '@/lib/utils'
 import './shop.css'
 
@@ -34,11 +35,20 @@ export function WishlistButton({ productId, name, slug, size = 'md', tone = 'pap
   const toggle = useWishlist((s) => s.toggle)
   const [pop, setPop] = useState(0)
   const router = useRouter()
+  const requireLogin = useRequireLogin() // saving needs an account (AUTH); removing never does
 
   const onClick = (e: React.MouseEvent) => {
     e.preventDefault()
     e.stopPropagation()
-    const next = !saved
+    if (!saved) {
+      requireLogin(`Log in to save${name ? ` ${name}` : ' this'} to your wishlist`, () => apply(true), { type: 'wishlist', productId, name })
+      return
+    }
+    apply(false)
+  }
+
+  const apply = (next: boolean) => {
+    if (useWishlist.getState().ids.includes(productId) === next) return
     toggle(productId)
     setPop((n) => n + 1)
     if (next) {

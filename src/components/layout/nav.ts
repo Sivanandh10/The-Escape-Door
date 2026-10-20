@@ -12,9 +12,9 @@ export const toNavArcs = (cs: Collection[]): NavArc[] =>
 
 /** Header "chapter tabs". Arcs opens the mega-panel. */
 export const MAIN_NAV = [
-  { href: '/shop', label: 'Shop', jp: 'ショップ' },
+  { href: '/shop', label: 'Shop', jp: 'ショップ', hot: true },
   { href: '/arc', label: 'Arcs', jp: 'アーク', mega: true },
-  { href: '/custom', label: 'Custom Forge', jp: '特注' },
+  { href: '/custom', label: 'Design Your Own', jp: 'デザイン' },
   { href: '/fests', label: 'Fests', jp: 'フェス' },
   { href: '/cosplay', label: 'Cosplay', jp: 'コスプレ' },
 ] as const
@@ -36,6 +36,7 @@ export const HELP_LINKS = [
   { href: '/about', label: 'About' },
   { href: '/faq', label: 'FAQ' },
   { href: '/contact', label: 'Contact' },
+  { href: '/careers', label: 'Careers' },
   { href: '/policies/shipping', label: 'Shipping' },
   { href: '/policies/returns', label: 'Returns' },
   { href: '/policies/privacy', label: 'Privacy' },

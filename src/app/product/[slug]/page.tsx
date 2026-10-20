@@ -10,6 +10,8 @@ import { ProductView } from '@/components/shop/ProductView'
 import { ProductCard } from '@/components/shop/ProductCard'
 import { primaryCategory } from '@/components/shop/catalog'
 import { Crumbs, SectionHead } from '@/components/shop/ShopSections'
+import { ForYou } from '@/components/recs/ForYou'
+import { RecordView } from '@/components/recs/RecordView'
 
 // Build-time list only. Products added in admin later render on demand (cacheComponents: unknown
 // params are allowed) — notFound() fires only when getProduct() returns null.
@@ -60,6 +62,7 @@ export default async function ProductPage({ params }: PageProps<'/product/[slug]
   return (
     <>
       <JsonLd data={[productJsonLd(p, { collectionName: arc }), breadcrumbJsonLd(crumbs)]} />
+      <RecordView slug={p.slug} />
       <div className="relative overflow-hidden bg-ink pt-[calc(var(--header-h)+24px)]">
         <div aria-hidden="true" className="pointer-events-none absolute inset-0 screentone screentone-light [--tone-color:var(--color-paper)] [--tone-opacity:0.06]" />
         <div className="container-x relative pb-16">
@@ -104,6 +107,9 @@ export default async function ProductPage({ params }: PageProps<'/product/[slug]
           </div>
         </section>
       )}
+
+      {/* signed-in picks (client, cookie-bound fetch â€” the page stays static) â€” AUTH */}
+      <ForYou exclude={p.slug} />
     </>
   )
 }

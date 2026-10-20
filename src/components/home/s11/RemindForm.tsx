@@ -11,6 +11,8 @@ import { track } from '@/lib/analytics'
 import { InkSplat } from '@/components/fx/InkSplat'
 import { cn } from '@/lib/utils'
 import type { FestEvent } from '@/lib/types'
+import { useCustomer } from '@/lib/auth/customer'
+import { contactEmail } from '@/lib/auth/shared'
 
 const PHONE = /^[+\d][\d\s-]{6,}$/
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
@@ -31,7 +33,9 @@ const ERRORS: Record<string, string> = {
 
 export function RemindForm({ event, onDone }: { event: FestEvent; onDone: () => void }) {
   const id = useId()
-  const [contact, setContact] = useState('')
+  const { customer } = useCustomer()
+  // signed-in shoppers get their phone / email pre-filled (AUTH)
+  const [contact, setContact] = useState(() => customer?.phone || contactEmail(customer?.email) || '')
   const [touched, setTouched] = useState(false)
   const [status, setStatus] = useState<'idle' | 'loading' | 'error'>('idle')
   const [error, setError] = useState<string | null>(null)

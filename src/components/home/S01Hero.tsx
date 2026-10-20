@@ -1,11 +1,14 @@
 // S01 HERO — "the volume cover": a manga page whose panels slam together on diagonal gutters, with THE DOOR
-// in the centre panel. Scroll opens it; on desktop the panel grows to full screen and the camera passes through.
+// in the centre panel. Scroll opens it and the live catalogue is waiting behind it (auto-advancing product
+// showcase + name/price chip). Desktop: the panel grows to full screen and the camera walks up to the threshold.
+// Phones/tablets: the door panel sticks (CSS sticky — native touch scroll, no JS pin) while it opens.
 // Owner: S01. Techniques: #22 (R3F door, gated) · #15 (portal → full screen) · #04 (split-text wipe) ·
 // #30 (magnetic CTA) · #47 (vertical type rails + giant 扉) · #58 (halftone light) · #37 ticker.
 // Server component: the H1 is in the HTML and visible from the first paint (it is the LCP).
+// Copy (kicker, H1, subline, ticker) comes from Admin → Settings via getSettings() (tag 'settings').
 import Link from 'next/link'
 import type { CSSProperties } from 'react'
-import type { SiteSettings } from '@/lib/types'
+import type { Product, SiteSettings } from '@/lib/types'
 import { Halftone } from '@/components/fx/Halftone'
 import { Sfx } from '@/components/fx/Sfx'
 import { SpeedLines } from '@/components/fx/SpeedLines'
@@ -13,9 +16,14 @@ import { Ticker } from '@/components/fx/Ticker'
 import { VerticalType } from '@/components/fx/VerticalType'
 import { Magnetic } from '@/components/motion/Magnetic'
 import { DoorIcon } from '@/components/brand'
+import { cn } from '@/lib/utils'
 import { CssDoor } from './s01/CssDoor'
 import { HeroMotion, P2_REST } from './s01/HeroMotion'
 import { Portal3DGate } from './s01/Portal3DGate'
+import { HeroCutouts } from './s01/HeroCutouts'
+import { ShowcaseChip, ShowcaseDoorway } from './s01/DoorShowcase'
+import { pickShowcase } from './s01/showcase'
+import st from './s01/hero.module.css'
 
 const DEFAULTS = {
   heroKicker: 'Original anime merch · India',
@@ -40,6 +48,15 @@ const clip = (m: string, lg: string) => ({ '--clip-m': m, '--clip-lg': lg }) as 
 const CLIP_CLS = '[clip-path:var(--clip-m)] lg:[clip-path:var(--clip-lg)]'
 const LAYER = 'relative lg:absolute lg:inset-0'
 
+/** "What do they sell?" in one line — links straight into the shop categories. */
+const CATEGORIES = [
+  { href: '/shop/oversized-t-shirts', label: 'Tees' },
+  { href: '/shop/hoodies', label: 'Hoodies' },
+  { href: '/shop/polaroids', label: 'Polaroids' },
+  { href: '/shop/posters', label: 'Posters' },
+  { href: '/shop/cosplay-props', label: 'Cosplay' },
+]
+
 /** Wrap the accent word ("living", else the last word) in <em> — admin can edit heroTitle. */
 function Title({ text }: { text: string }) {
   const words = text.trim().split(/\s+/)
@@ -53,9 +70,12 @@ function Title({ text }: { text: string }) {
   )
 }
 
-export default function S01Hero({ settings }: { settings?: SiteSettings }) {
+export default function S01Hero({ settings, products }: { settings?: SiteSettings; products?: Product[] }) {
+  // empty admin fields fall back to the defaults (never an empty H1)
   const s = { ...DEFAULTS, ...settings }
+  for (const k of ['heroKicker', 'heroTitle', 'heroSub'] as const) if (!s[k]?.trim()) s[k] = DEFAULTS[k]
   const ticker = s.tickerWords?.length ? s.tickerWords : DEFAULTS.tickerWords
+  const showcase = pickShowcase(products)
 
   return (
     <section id="hero" aria-labelledby="hero-title" className="relative overflow-x-clip bg-paper">
@@ -88,6 +108,8 @@ export default function S01Hero({ settings }: { settings?: SiteSettings }) {
             <div className="pointer-events-none absolute inset-x-0 top-0 h-24 text-tone-2 [mask-image:linear-gradient(to_bottom,#000,transparent)] lg:hidden" aria-hidden="true">
               <div className="h-full w-full bg-current" style={{ WebkitMaskImage: 'var(--tone-mid)', maskImage: 'var(--tone-mid)' }} />
             </div>
+            {/* tees · hoodies · polaroids floating behind the copy — "this is a merch store" at a glance */}
+            <HeroCutouts products={products} />
             <div
               data-p1-inner
               className="relative px-5 pb-14 pt-9 md:px-8 md:pb-16 md:pt-12 lg:absolute lg:left-[7.4%] lg:top-[7.5%] lg:w-[41%] lg:p-0"
@@ -110,78 +132,123 @@ export default function S01Hero({ settings }: { settings?: SiteSettings }) {
               >
                 {s.heroSub}
               </p>
-              <div data-soft data-reveal="pending" className="mt-7 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center lg:mt-8">
-                <Magnetic className="w-full sm:w-auto">
-                  <Link
-                    href="/shop"
-                    data-cursor="SHOP"
-                    data-cursor-jp="ショップ"
-                    className="press focus-ring group/cta relative inline-flex min-h-14 w-full items-center justify-center gap-3 border-[3px] border-ink bg-volt px-7 font-display text-[22px] uppercase tracking-[0.02em] text-ink shadow-hard-paper sm:w-auto"
-                  >
-                    Shop the drop
+              <div data-soft data-reveal="pending" className="mt-7 flex flex-col gap-4 sm:flex-row sm:flex-wrap sm:items-center lg:mt-8">
+                <Magnetic className="w-full sm:w-auto" strength={0.4}>
+                  <span className={cn(st.ctaWrap, 'w-full sm:w-auto')}>
+                    <span aria-hidden="true" className={st.ctaRing} />
+                    <Link
+                      href="/shop"
+                      data-cursor="SHOP"
+                      data-cursor-jp="ショップ"
+                      className={cn(
+                        st.cta,
+                        'focus-ring inline-flex min-h-16 w-full items-center justify-center gap-3 border-[3px] border-ink bg-volt px-8 font-display text-[26px] uppercase leading-none tracking-[0.02em] text-ink shadow-hard-paper sm:w-auto lg:min-h-[4.25rem] lg:text-[clamp(24px,2vw,30px)]',
+                      )}
+                    >
+                      <DoorIcon size={26} strokeWidth={2.4} />
+                      Shop the drop
+                      <span aria-hidden="true" className={cn(st.ctaArrow, 'font-mono text-[24px] leading-none')}>
+                        →
+                      </span>
+                    </Link>
                     <span
                       aria-hidden="true"
-                      className="inline-block transition-transform duration-200 ease-[var(--ease-hover)] group-hover/cta:translate-x-1 group-hover/cta:-rotate-6"
+                      className={cn(st.sticker, 'border-2 border-ink bg-hype px-1.5 py-1 font-display text-[14px] uppercase leading-none text-paper shadow-[2px_2px_0_0_var(--color-ink)]')}
                     >
-                      <DoorIcon size={22} strokeWidth={2.4} />
+                      New
                     </span>
-                  </Link>
+                  </span>
                 </Magnetic>
                 <Link
                   href="/custom"
-                  data-cursor="FORGE"
+                  data-cursor="DESIGN"
                   className="press focus-ring inline-flex min-h-14 w-full items-center justify-center gap-2 border-[3px] border-paper px-6 font-display text-[20px] uppercase tracking-[0.02em] text-paper transition-colors duration-150 hover:bg-paper hover:text-ink sm:w-auto"
                 >
-                  Open the Custom Forge
+                  Design Your Own
                   <span aria-hidden="true" className="font-mono text-[15px]">
                     →
                   </span>
                 </Link>
               </div>
+              <nav data-soft data-reveal="pending" aria-label="Shop by type" className="mt-4 lg:mt-5">
+                <ul className="-mx-1.5 flex flex-wrap items-center">
+                  {CATEGORIES.map((c, i) => (
+                    <li key={c.href} className="flex items-center">
+                      {i > 0 && (
+                        <span aria-hidden="true" className="text-[14px] text-volt">
+                          ·
+                        </span>
+                      )}
+                      <Link
+                        href={c.href}
+                        className="focus-ring inline-flex min-h-11 items-center px-1.5 font-mono text-[12px] font-bold uppercase tracking-[0.14em] text-paper/85 underline decoration-transparent decoration-2 underline-offset-[6px] transition-colors duration-150 hover:text-volt hover:decoration-volt md:text-[13px]"
+                      >
+                        {c.label}
+                      </Link>
+                    </li>
+                  ))}
+                </ul>
+              </nav>
             </div>
           </div>
 
-          {/* ── P2: THE DOOR PORTAL ── */}
-          <div
-            data-portal
-            data-slam="r"
-            data-reveal="pending"
-            data-3d="off"
-            className={`group/portal ${LAYER} z-[3] aspect-[4/5] overflow-hidden bg-ink sm:aspect-[16/12] lg:aspect-auto ${CLIP_CLS}`}
-            style={clip(CLIP.m2, CLIP.p2)}
-          >
+          {/* ── P2: THE DOOR PORTAL ──
+               < lg: the panel is CSS-sticky inside a taller track; the track's extra height is the scroll distance
+               over which the door opens (HeroMotion scrubs it — native touch scroll, no JS pin).
+               ≥ lg: absolute panel inside the GSAP-pinned stage. */}
+          <div data-door-track className="max-lg:relative lg:contents">
             <div
-              data-scene
-              className="absolute inset-0 [--door-h:74%] lg:[--door-h:46%] lg:[--px:26.6%] lg:[--py:-17.75%]"
-              style={{ translate: 'var(--px, 0%) var(--py, 0%)' }}
+              data-portal
+              data-slam="r"
+              data-reveal="pending"
+              data-3d="off"
+              className={`group/portal z-[3] h-[calc(100svh-var(--header-h)-20px)] max-h-[780px] min-h-[440px] overflow-hidden bg-ink max-lg:sticky max-lg:top-[calc(var(--header-h)+10px)] lg:absolute lg:inset-0 lg:h-auto lg:max-h-none lg:min-h-0 ${CLIP_CLS}`}
+              style={clip(CLIP.m2, CLIP.p2)}
             >
-              <div className="absolute inset-0 group-data-[3d=on]/portal:invisible" aria-hidden="true">
-                <Halftone shape="radial" color="var(--color-door)" dotSize={11} className="absolute inset-0 opacity-90" />
+              <div
+                data-scene
+                className="absolute inset-0 [--door-h:64%] sm:[--door-h:68%] lg:[--door-h:46%] lg:[--px:26.6%] lg:[--py:-17.75%]"
+                style={{ translate: 'var(--px, 0%) var(--py, 0%)' }}
+              >
+                <div className="absolute inset-0 group-data-[3d=on]/portal:invisible" aria-hidden="true">
+                  <Halftone shape="radial" color="var(--color-door)" dotSize={11} className="absolute inset-0 opacity-90" />
+                </div>
+                <div
+                  data-door-knock
+                  className="absolute inset-0 flex items-center justify-center pb-[14%] group-data-[3d=on]/portal:invisible lg:pb-0"
+                  aria-hidden="true"
+                >
+                  <CssDoor>
+                    <ShowcaseDoorway items={showcase} />
+                  </CssDoor>
+                </div>
+                <Portal3DGate srcs={showcase.map((x) => x.src)} />
               </div>
-              <div data-door-knock className="absolute inset-0 flex items-center justify-center group-data-[3d=on]/portal:invisible" aria-hidden="true">
-                <CssDoor />
+              {/* panel caption (manga narration box) — on phones it is also the scroll cue */}
+              <p data-caption className="label absolute left-4 top-9 z-[1] border-2 border-ink bg-paper px-2 py-1 text-ink lg:left-[62.2%] lg:top-[5.4%]">
+                扉 · <span className="lg:hidden motion-reduce:hidden">Scroll to open ↓</span>
+                <span className="hidden lg:inline motion-reduce:inline">The door</span>
+              </p>
+              {/* what's behind the door: name + price of the product on show (links to it) */}
+              <ShowcaseChip items={showcase} className="absolute inset-x-3 bottom-5 z-[3] lg:inset-x-[8%] lg:bottom-[6%]" />
+              {/* the burst the camera lands in → hands over to S02 */}
+              <div data-burst className="invisible absolute inset-0 z-[4] bg-volt opacity-0" aria-hidden="true">
+                <SpeedLines color="var(--color-ink)" intensity={0.85} inner={0.22} animated seed={4} className="absolute inset-0" />
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <p data-burst-text className="text-center text-ink">
+                    <span className="jp-sub block !opacity-80">第一章 · 扉の向こう</span>
+                    <span className="h-display mt-2 block text-[min(12vw,22svh)] leading-[0.84]">Pick your arc</span>
+                    <span className="label mt-4 block">↓ keep scrolling</span>
+                  </p>
+                </div>
               </div>
-              <Portal3DGate />
             </div>
-            {/* panel caption (manga narration box) */}
-            <p data-caption className="label absolute left-4 top-9 z-[1] border-2 border-ink bg-paper px-2 py-1 text-ink lg:left-[62.2%] lg:top-[5.4%]">
-              扉 · The door
-            </p>
-            {/* the burst the camera lands in → hands over to S02 */}
-            <div data-burst className="invisible absolute inset-0 z-[2] bg-volt opacity-0" aria-hidden="true">
-              <SpeedLines color="var(--color-ink)" intensity={0.85} inner={0.22} animated seed={4} className="absolute inset-0" />
-              <div className="absolute inset-0 flex items-center justify-center">
-                <p data-burst-text className="text-center text-ink">
-                  <span className="jp-sub block !opacity-80">第一章 · 扉の向こう</span>
-                  <span className="h-display mt-2 block text-[min(12vw,22svh)] leading-[0.84]">Pick your arc</span>
-                  <span className="label mt-4 block">↓ keep scrolling</span>
-                </p>
-              </div>
-            </div>
+            {/* scroll distance for the sticky door (phones/tablets only) */}
+            <div aria-hidden="true" className="h-[80svh] lg:hidden" />
           </div>
 
-          {/* ── P3 + P4: two small panels (2-up on mobile) ── */}
-          <div className="grid grid-cols-2 gap-3 md:gap-4 lg:contents">
+          {/* ── P3 + P4: two small panels (desktop; phones get the cue inside the sticky door panel) ── */}
+          <div className="hidden lg:contents">
             <div data-small data-slam="b" data-reveal="pending" className={`${LAYER} z-[1] min-h-[150px] overflow-hidden bg-volt text-ink lg:min-h-0 ${CLIP_CLS}`} style={clip(CLIP.m3, CLIP.p3)}>
               <div className="absolute inset-0 text-ink/15" aria-hidden="true">
                 <div className="h-full w-full bg-current" style={{ WebkitMaskImage: 'var(--tone-dense)', maskImage: 'var(--tone-dense)' }} />
