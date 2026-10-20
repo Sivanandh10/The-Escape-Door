@@ -1,11 +1,12 @@
-// /checkout — address → gift → voucher → review → order saved + WhatsApp. Owner: CHECKOUT.
-// Static shell (masthead) + the customer part inside <Suspense> (reads the session cookie). Login is required:
-// signed-out visitors get the login wall; the cart itself lives in the browser (localStorage). noindex.
+// /checkout — (contact →) address → gift → voucher → review → order saved FIRST, then WhatsApp. Owner: CHECKOUT.
+// Static shell (masthead) + the customer part inside <Suspense> (reads the session cookie). Signed in → saved
+// addresses. Signed out → login wall while a login method is live (login is mandatory then), otherwise the same
+// full checkout as a guest. The cart itself lives in the browser (localStorage). noindex.
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { Masthead } from '@/components/shop/cart/Masthead'
 import { CheckoutFlow } from '@/components/checkout/CheckoutFlow'
-import { LoginWall } from '@/components/checkout/LoginWall'
+import { SignedOutCheckout } from '@/components/checkout/SignedOutCheckout'
 import { getAuthUser, getCustomer } from '@/lib/auth/customer-server'
 import { getCheckoutSettings, getMyAddresses } from '@/lib/checkout/orders-server'
 
@@ -33,7 +34,7 @@ export default function CheckoutPage() {
 
 async function CheckoutGate() {
   const auth = await getAuthUser()
-  if (!auth) return <LoginWall />
+  if (!auth) return <SignedOutCheckout giftWrapFee={(await getCheckoutSettings()).giftWrapFee} />
   const [addresses, settings, customer] = await Promise.all([getMyAddresses(), getCheckoutSettings(), getCustomer()])
   return (
     <CheckoutFlow

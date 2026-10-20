@@ -2,16 +2,16 @@
 // S01 — the R3F door portal (#22). Owner: S01. Lazy (next/dynamic, ssr:false) behind the DESIGN §7b gate.
 // A cel-shaded wooden door in a purple frame, standing in an ink void lit by screen-space halftone dots (#58).
 // Scroll never touches this file directly: GSAP ScrollTrigger writes heroProgress.p; useFrame reads it,
-// swings the leaf, floods the light, and dollies the camera up to the threshold, where the live catalogue waits:
-// a product card (textures from Admin → Products images) wipes to the next one every 2.2 s, in sync with the DOM
-// chip (`showcaseStore.i`, see DoorShowcase.tsx). The card hides the old black end of the light tunnel.
+// swings the leaf, floods the light, and dollies the camera up to the threshold, where a STATIC product object
+// (transparent cut-out, ./objects.ts) floats in the speed-line tunnel; scroll swaps it (heroObjectStore.i, in
+// sync with the CSS door + the DOM chip). The tunnel's far end is a light cap (it used to be a black hole).
 // No drei ScrollControls (fights Lenis). frameloop is 'always' only while the hero is on screen, else 'never'.
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Canvas, useFrame, useThree } from '@react-three/fiber'
 import { Outlines } from '@react-three/drei'
 import * as THREE from 'three'
 import { heroProgress, PHASE, smooth } from './progress'
-import { showcaseStore } from './showcase'
+import { HERO_OBJECTS, heroObjectStore } from './objects'
 
 const HEX = {
   ink: '#0B0B0F',
@@ -41,161 +41,206 @@ void main() {
 }
 `
 
-// the showcase plane sits behind the swung-open leaf (leaf depth ≈ 1.13), inside the light tunnel
-const PLANE_Z = -1.45
-const PLANE_W = 2.5
-const PLANE_H = 2.9
-const CARD_H = 1.86
-const CARD_W = CARD_H * 0.8
-const CARD_Y = 0.02
+// the object floats behind the swung-open leaf (leaf depth ≈ 1.13), inside the light tunnel
+const OBJ_Z = -1.45
+const OBJ_Y = 0.02
+const OBJ_H = 1.62 // plane height (the art carries ~7% transparent padding for the rim + shadow)
+const OBJ_MAX_W = 1.6
+// the tunnel (radius 1.25, 16.8 long, centred at z -8.6) ends at z ≈ -17: a light cap there, so the far end of
+// the speed-line tunnel reads as the light source instead of a black hole
+const TUNNEL_END_Z = -16.95
 
-/** The product card behind the door: two textures + a manga wipe between them, on a volt halftone backdrop. */
-function ShowcasePlane({ srcs }: { srcs: string[] }) {
-  const { gl } = useThree()
-  const dpr = gl.getPixelRatio()
-  const state = useRef({ shown: -1, target: -1, mix: 1, loading: new Set<number>() })
-  const tex = useRef<(THREE.Texture | null)[]>([])
-
+/** The far end of the light tunnel: a paper → volt glow (it used to be the "black ball"). */
+function TunnelEnd() {
   const mat = useMemo(
     () =>
       new THREE.ShaderMaterial({
-        uniforms: {
-          uA: { value: null as THREE.Texture | null },
-          uB: { value: null as THREE.Texture | null },
-          uHasA: { value: 0 },
-          uHasB: { value: 0 },
-          uAspA: { value: 0.8 },
-          uAspB: { value: 0.8 },
-          uMix: { value: 0 },
-          uOpen: { value: 0 },
-          uDpr: { value: dpr },
-          uInk: { value: new THREE.Color(HEX.ink) },
-          uVolt: { value: new THREE.Color(HEX.volt) },
-          uPaper: { value: new THREE.Color(HEX.paper) },
-        },
+        uniforms: { uVolt: { value: new THREE.Color(HEX.volt) }, uPaper: { value: new THREE.Color(HEX.paper) } },
         vertexShader: VERT,
         fragmentShader: /* glsl */ `
-          uniform sampler2D uA; uniform sampler2D uB; uniform float uHasA; uniform float uHasB;
-          uniform float uAspA; uniform float uAspB; uniform float uMix; uniform float uOpen; uniform float uDpr;
-          uniform vec3 uInk; uniform vec3 uVolt; uniform vec3 uPaper;
+          uniform vec3 uVolt; uniform vec3 uPaper;
           varying vec2 vUv;
-          ${HALFTONE}
-          const vec2 PLANE = vec2(${PLANE_W.toFixed(3)}, ${PLANE_H.toFixed(3)});
-          const vec2 CARD = vec2(${CARD_W.toFixed(3)}, ${CARD_H.toFixed(3)});
-          const float CARD_Y = ${CARD_Y.toFixed(3)};
-          float box(vec2 p, vec2 h) { vec2 d = abs(p) - h; return max(d.x, d.y); }
-          vec3 cover(sampler2D t, vec2 uv, float asp) {
-            float card = CARD.x / CARD.y;
-            vec2 s = asp > card ? vec2(card / asp, 1.0) : vec2(1.0, asp / card);
-            vec4 tx = texture2D(t, (uv - 0.5) * s + 0.5);
-            return mix(uPaper, tx.rgb, tx.a); // alpha cut-outs (clean product renders) sit on paper
-          }
           void main() {
-            vec2 p = (vUv - 0.5) * PLANE;
-            vec2 c = p - vec2(0.0, CARD_Y);
-            // backdrop: volt light, ink halftone thickening toward the edges
-            float r = length(c / vec2(1.1, 1.45));
-            float h = ht(gl_FragCoord.xy / uDpr, 9.0, smoothstep(0.85, 1.7, r) * 0.55);
-            vec3 col = mix(uVolt, uInk, h);
-            // hard ink shadow, then the card with an ink border
-            col = mix(col, uInk, step(box(c - vec2(0.07, -0.07), CARD * 0.5), 0.0));
-            float edge = box(c, CARD * 0.5);
-            if (edge < 0.0) {
-              vec2 uv = c / CARD + 0.5;
-              vec3 a = uHasA > 0.5 ? cover(uA, uv, uAspA) : uPaper;
-              vec3 b = uHasB > 0.5 ? cover(uB, uv, uAspB) : a;
-              // diagonal manga wipe (bottom → top) with an ink leading edge
-              float w = uv.y * 0.85 + uv.x * 0.15;
-              float m = uMix * 1.2 - 0.1;
-              col = mix(a, b, step(w, m));
-              float moving = step(0.001, uMix) * step(uMix, 0.999);
-              col = mix(col, uInk, (1.0 - step(0.018, abs(w - m))) * moving);
-              col = mix(col, uInk, step(-0.03, edge));
-            }
-            // the room stays dark until the door opens
-            col = mix(uInk, col, smoothstep(0.0, 1.0, uOpen));
-            gl_FragColor = vec4(col, 1.0);
+            float r = length(vUv - 0.5) * 2.0;
+            gl_FragColor = vec4(mix(uPaper, uVolt, smoothstep(0.0, 0.95, r)), 1.0);
           }
         `,
       }),
-    [dpr],
+    [],
   )
+  useEffect(() => () => mat.dispose(), [mat])
+  return (
+    <mesh material={mat} position={[0, 0.03, TUNNEL_END_Z]}>
+      <circleGeometry args={[1.3, 48]} />
+    </mesh>
+  )
+}
+
+/**
+ * The product object behind the door: a STATIC transparent cut-out (./objects.ts — no card, no backdrop) on a
+ * two-sided plane. Floats, leans toward the pointer, paper die-cut rim + a volt rim light from the doorway, and a
+ * soft ink shadow plane behind it. Scroll picks which object (heroObjectStore.i); a swap is a quick 250 ms
+ * spin-punch (shrink + quarter turn out, texture swap, overshoot back in).
+ */
+function ProductObject() {
+  const { gl } = useThree()
+  const group = useRef<THREE.Group>(null)
+  const spin = useRef<THREE.Group>(null)
+  const body = useRef<THREE.Mesh>(null)
+  const shadow = useRef<THREE.Mesh>(null)
+  const anim = useRef({ shown: -1, target: -1, t: 1, dir: 1, tiltX: 0, tiltY: 0 })
+
+  const textures = useMemo(() => {
+    const loader = new THREE.TextureLoader()
+    return HERO_OBJECTS.map((o) => {
+      const t = loader.load(o.src)
+      t.anisotropy = Math.min(8, gl.capabilities.getMaxAnisotropy())
+      return t
+    })
+  }, [gl])
+
+  const mats = useMemo(() => {
+    const common = { transparent: true, depthWrite: false, side: THREE.DoubleSide }
+    const body = new THREE.ShaderMaterial({
+      ...common,
+      uniforms: {
+        uTex: { value: null as THREE.Texture | null },
+        uOpacity: { value: 0 },
+        uTexel: { value: new THREE.Vector2(1 / 880, 1 / 900) },
+        uPaper: { value: new THREE.Color(HEX.paper) },
+        uVolt: { value: new THREE.Color(HEX.volt) },
+      },
+      vertexShader: VERT,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uTex; uniform float uOpacity; uniform vec2 uTexel; uniform vec3 uPaper; uniform vec3 uVolt;
+        varying vec2 vUv;
+        void main() {
+          vec2 uv = gl_FrontFacing ? vUv : vec2(1.0 - vUv.x, vUv.y); // the back face is not mirrored
+          vec4 c = texture2D(uTex, uv);
+          // paper die-cut rim: the alpha dilated by ~5px (8 taps)
+          vec2 d = uTexel * 5.0;
+          float o = 0.0;
+          o = max(o, texture2D(uTex, uv + vec2(d.x, 0.0)).a);
+          o = max(o, texture2D(uTex, uv - vec2(d.x, 0.0)).a);
+          o = max(o, texture2D(uTex, uv + vec2(0.0, d.y)).a);
+          o = max(o, texture2D(uTex, uv - vec2(0.0, d.y)).a);
+          o = max(o, texture2D(uTex, uv + d * 0.7).a);
+          o = max(o, texture2D(uTex, uv - d * 0.7).a);
+          o = max(o, texture2D(uTex, uv + vec2(d.x, -d.y) * 0.7).a);
+          o = max(o, texture2D(uTex, uv + vec2(-d.x, d.y) * 0.7).a);
+          // rim light: edges facing the light (upper right) catch a thin volt edge
+          float lit = c.a * (1.0 - texture2D(uTex, uv + vec2(-1.0, -1.2) * uTexel * 7.0).a);
+          vec3 col = mix(c.rgb, uVolt, clamp(lit, 0.0, 1.0) * 0.85);
+          col = mix(uPaper, col, c.a);
+          float a = max(c.a, o);
+          if (a < 0.01) discard;
+          gl_FragColor = vec4(col, a * uOpacity);
+        }
+      `,
+    })
+    const shade = new THREE.ShaderMaterial({
+      ...common,
+      uniforms: { uTex: { value: null as THREE.Texture | null }, uOpacity: { value: 0 }, uInk: { value: new THREE.Color(HEX.ink) } },
+      vertexShader: VERT,
+      fragmentShader: /* glsl */ `
+        uniform sampler2D uTex; uniform float uOpacity; uniform vec3 uInk;
+        varying vec2 vUv;
+        void main() {
+          float a = texture2D(uTex, vUv, 3.5).a; // a blurred mip of the alpha = soft shadow
+          gl_FragColor = vec4(uInk, a * 0.5 * uOpacity);
+        }
+      `,
+    })
+    return { body, shade }
+  }, [])
 
   useEffect(
     () => () => {
-      mat.dispose()
-      tex.current.forEach((t) => t?.dispose())
-      tex.current = []
+      mats.body.dispose()
+      mats.shade.dispose()
+      textures.forEach((t) => t.dispose())
     },
-    [mat],
+    [mats, textures],
   )
 
-  const plane = useRef<THREE.Mesh>(null)
-  // uniforms are written through the mesh ref (mutable by design) — never through the memoised value
-  useFrame((_, delta) => {
-    const st = state.current
-    const m = plane.current?.material as THREE.ShaderMaterial | undefined
-    if (!m) return
-    const u = m.uniforms
-    const n = srcs.length
-    if (!n) return
-    const load = (k: number) => {
-      if (tex.current[k] || st.loading.has(k)) return
-      st.loading.add(k)
-      const loader = new THREE.TextureLoader()
-      loader.setCrossOrigin('anonymous')
-      loader.load(
-        srcs[k],
-        (t) => {
-          t.anisotropy = Math.min(4, gl.capabilities.getMaxAnisotropy())
-          tex.current[k] = t
-          st.loading.delete(k)
-        },
-        undefined,
-        () => st.loading.delete(k), // CORS / 404 → that card is skipped (the chip still names it)
-      )
-    }
-    const want = Math.min(showcaseStore.i, n - 1)
-    load(want)
-    load((want + 1) % n)
-    u.uOpen.value = smooth(PHASE.open[0], PHASE.open[1], heroProgress.p)
+  useFrame((state, delta) => {
+    const g = group.current
+    const sp = spin.current
+    const bm = body.current
+    const sm = shadow.current
+    if (!g || !sp || !bm || !sm) return
+    const bu = (bm.material as THREE.ShaderMaterial).uniforms
+    const su = (sm.material as THREE.ShaderMaterial).uniforms
+    const a = anim.current
+    const want = Math.min(heroObjectStore.i, HERO_OBJECTS.length - 1)
+    const p = heroProgress.p
+    const t = state.clock.elapsedTime
 
-    const ready = tex.current[want]
-    const asp = (t: THREE.Texture) => {
-      const img = t.image as { width?: number; height?: number } | undefined
-      return img?.width && img?.height ? img.width / img.height : 0.8
+    const apply = (k: number) => {
+      const o = HERO_OBJECTS[k]
+      const asp = o.w / o.h
+      const h = Math.min(OBJ_H, OBJ_MAX_W / asp)
+      bm.scale.set(h * asp, h, 1)
+      sm.scale.set(h * asp, h, 1)
+      bu.uTex.value = textures[k]
+      ;(bu.uTexel.value as THREE.Vector2).set(1 / o.w, 1 / o.h)
+      su.uTex.value = textures[k]
+      a.shown = k
     }
-    if (ready && st.target !== want) {
-      if (st.shown < 0) {
-        st.shown = st.target = want // first card: no wipe
-        u.uA.value = ready
-        u.uHasA.value = 1
-        u.uAspA.value = asp(ready)
-        u.uMix.value = 0
-        return
+    if (a.shown < 0) {
+      apply(want)
+      a.target = want
+    } else if (want !== a.target) {
+      a.dir = want > a.target ? 1 : -1
+      a.target = want
+      a.t = 0
+    }
+
+    // the swap: 0 → 0.4 shrink + quarter turn out, swap the texture, 0.4 → 1 overshoot back in
+    let swapS = 1
+    let swapR = 0
+    if (a.t < 1) {
+      a.t = Math.min(1, a.t + delta / 0.25)
+      if (a.t < 0.4) {
+        const k = a.t / 0.4
+        swapS = 1 - 0.42 * k * k
+        swapR = a.dir * k * k * (Math.PI / 2)
+      } else {
+        if (a.shown !== a.target) apply(a.target)
+        const k = (a.t - 0.4) / 0.6 - 1
+        const back = 1 + 3.2 * k * k * k + 2.2 * k * k // back.out(2.2)
+        swapS = 0.58 + 0.42 * back
+        swapR = -a.dir * (1 - back) * (Math.PI / 2)
       }
-      st.target = want
-      u.uB.value = ready
-      u.uHasB.value = 1
-      u.uAspB.value = asp(ready)
-      st.mix = 0
-    }
-    if (st.target !== st.shown) {
-      st.mix = Math.min(1, st.mix + delta / 0.5)
-      u.uMix.value = 1 - Math.pow(1 - st.mix, 3)
-      if (st.mix >= 1) {
-        st.shown = st.target
-        u.uA.value = u.uB.value
-        u.uAspA.value = u.uAspB.value
-        u.uMix.value = 0
-      }
-    }
+    } else if (a.shown !== a.target) apply(a.target)
+
+    // appears with the open door (the room is dark until then)
+    const open = smooth(PHASE.open[0] + 0.06, PHASE.open[1], p)
+    bu.uOpacity.value = open
+    su.uOpacity.value = open
+
+    // lean toward the pointer (smoothed), float + a slow idle sway
+    const f = 1 - Math.pow(0.0025, delta)
+    a.tiltY += (state.pointer.x * 0.32 - a.tiltY) * f
+    a.tiltX += (-state.pointer.y * 0.14 - a.tiltX) * f
+    g.position.set(0, OBJ_Y + Math.sin(t * 1.3) * 0.035, OBJ_Z)
+    g.rotation.set(a.tiltX + Math.sin(t * 0.9) * 0.025, a.tiltY + Math.sin(t * 0.6) * 0.12, Math.sin(t * 0.8) * 0.02)
+    g.scale.setScalar((0.82 + 0.18 * open) * swapS)
+    sp.rotation.y = swapR
   })
 
   return (
-    <mesh ref={plane} material={mat} position={[0, 0.03, PLANE_Z]}>
-      <planeGeometry args={[PLANE_W, PLANE_H]} />
-    </mesh>
+    <group ref={group} position={[0, OBJ_Y, OBJ_Z]}>
+      <group ref={spin}>
+        {/* soft ink shadow, a little behind + below */}
+        <mesh ref={shadow} material={mats.shade} position={[0.05, -0.07, -0.08]} renderOrder={1}>
+          <planeGeometry args={[1, 1]} />
+        </mesh>
+        <mesh ref={body} material={mats.body} renderOrder={2}>
+          <planeGeometry args={[1, 1]} />
+        </mesh>
+      </group>
+    </group>
   )
 }
 
@@ -209,7 +254,7 @@ function useToonRamp() {
   }, [])
 }
 
-function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
+function Scene({ onReady }: { onReady: () => void }) {
   const { gl } = useThree()
   const ramp = useToonRamp()
   const leaf = useRef<THREE.Group>(null)
@@ -383,8 +428,9 @@ function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
         <cylinderGeometry args={[1.25, 1.25, 16.8, 48, 1, true]} />
       </mesh>
 
-      {/* the live catalogue behind the door (covers the light tunnel's far end) */}
-      <ShowcasePlane srcs={srcs} />
+      {/* the light at the far end of the tunnel, and the product object floating in it */}
+      <TunnelEnd />
+      <ProductObject />
 
       {/* purple frame */}
       <group>
@@ -434,7 +480,7 @@ function Scene({ onReady, srcs }: { onReady: () => void; srcs: string[] }) {
   )
 }
 
-export default function DoorPortal3D({ onReady, onFail, srcs = [] }: { onReady: () => void; onFail?: () => void; srcs?: string[] }) {
+export default function DoorPortal3D({ onReady, onFail }: { onReady: () => void; onFail?: () => void }) {
   const host = useRef<HTMLDivElement>(null)
   const [inView, setInView] = useState(true)
 
@@ -465,7 +511,7 @@ export default function DoorPortal3D({ onReady, onFail, srcs = [] }: { onReady: 
         }}
         aria-hidden="true"
       >
-        <Scene onReady={onReady} srcs={srcs} />
+        <Scene onReady={onReady} />
       </Canvas>
     </div>
   )

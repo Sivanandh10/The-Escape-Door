@@ -1,8 +1,10 @@
-// Recommendations — SERVER (owner: AUTH). Reads the signed-in shopper's own rows under RLS (recent_views,
-// mal_accounts minus the token) + the cached catalogue, then runs the pure engine.
+// Recommendations — SERVER (owner: AUTH, extended by RECS). Reads the signed-in shopper's own rows under RLS
+// (recent_views, own orders, mal_accounts minus the token) + the cached catalogue + the cached item graph,
+// then runs the pure engine.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { getCollections, getProducts } from '@/lib/data/repo'
 import { buildRecs } from './engine'
+import { getItemGraph } from './graph'
 import type { MalAnime, MalSnapshotStats, MalSuggestion, RecentView, RecsPayload } from './types'
 
 export interface MalRow {
@@ -29,6 +31,26 @@ export async function loadViews(sb: SupabaseClient, userId: string, limit = 60):
   return data.map((r) => ({ slug: r.product_slug as string, viewedAt: r.viewed_at as string, count: (r.view_count as number) ?? 1 }))
 }
 
+/** Product refs (slug, else id) from the shopper's own past orders (RLS "orders own read"), newest first. */
+export async function loadOrderRefs(sb: SupabaseClient, userId: string, limit = 30): Promise<string[]> {
+  const { data, error } = await sb
+    .from('orders')
+    .select('items, status')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(limit)
+  if (error || !Array.isArray(data)) return []
+  const out: string[] = []
+  for (const o of data as Array<{ items: unknown; status: string | null }>) {
+    if (o.status === 'cancelled' || !Array.isArray(o.items)) continue
+    for (const it of o.items as Array<{ slug?: unknown; productId?: unknown }>) {
+      const ref = typeof it?.slug === 'string' ? it.slug : typeof it?.productId === 'string' ? it.productId : null
+      if (ref && !out.includes(ref)) out.push(ref)
+    }
+  }
+  return out.slice(0, 80)
+}
+
 export async function loadMal(sb: SupabaseClient, userId: string): Promise<MalRow | null> {
   const { data, error } = await sb.from('mal_accounts').select(MAL_PUBLIC_COLS).eq('user_id', userId).maybeSingle()
   if (error || !data) return null
@@ -40,11 +62,20 @@ export async function recsForUser(
   userId: string,
   opts: { exclude?: string | null; signalIds?: string[]; limits?: Parameters<typeof buildRecs>[0]['limits'] } = {},
 ): Promise<RecsPayload> {
-  const [products, collections, views, mal] = await Promise.all([getProducts(), getCollections(), loadViews(sb, userId), loadMal(sb, userId)])
+  const [products, collections, views, mal, orderIds, graph] = await Promise.all([
+    getProducts(),
+    getCollections(),
+    loadViews(sb, userId),
+    loadMal(sb, userId),
+    loadOrderRefs(sb, userId).catch(() => []),
+    getItemGraph(),
+  ])
   return buildRecs({
     products,
     collections,
     views,
+    orderIds,
+    graph,
     signalIds: opts.signalIds,
     exclude: opts.exclude,
     limits: opts.limits,

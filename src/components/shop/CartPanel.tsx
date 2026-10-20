@@ -16,6 +16,7 @@ import { CartLine } from './cart/CartLine'
 import { Deals, TotalsStack } from './cart/Totals'
 import { EmptyCart } from './cart/EmptyCart'
 import { SkeletonLines } from './cart/bits'
+import { CompleteTheLook } from '@/components/recs/CompleteTheLook'
 
 /** kept for older imports — the drawer has a single step now */
 export type CartStep = 'cart'
@@ -78,6 +79,8 @@ export function CartPanel({ variant = 'page', onNavigate }: CartPanelProps) {
           {lines(true)}
           <Deals totals={totals} className="mt-4" />
           {onRequestNote && <div className="mt-3">{onRequestNote}</div>}
+          {/* RECS: complementary picks for what's in the cart */}
+          <CompleteTheLook onNavigate={onNavigate} />
         </div>
         <div className="border-t-4 border-ink bg-paper px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
           <TotalsStack totals={totals} />

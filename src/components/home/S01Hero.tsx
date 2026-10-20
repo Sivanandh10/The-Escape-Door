@@ -1,6 +1,7 @@
 // S01 HERO — "the volume cover": a manga page whose panels slam together on diagonal gutters, with THE DOOR
-// in the centre panel. Scroll opens it and the live catalogue is waiting behind it (auto-advancing product
-// showcase + name/price chip). Desktop: the panel grows to full screen and the camera walks up to the threshold.
+// in the centre panel. Scroll opens it onto a floating product object in the light (static set; scroll swaps
+// tee → hoodie → back print → polaroids) + a chip linking to that category. Desktop: the panel grows to full
+// screen and the camera walks up to the threshold.
 // Phones/tablets: the door panel sticks (CSS sticky — native touch scroll, no JS pin) while it opens.
 // Owner: S01. Techniques: #22 (R3F door, gated) · #15 (portal → full screen) · #04 (split-text wipe) ·
 // #30 (magnetic CTA) · #47 (vertical type rails + giant 扉) · #58 (halftone light) · #37 ticker.
@@ -21,9 +22,7 @@ import { CssDoor } from './s01/CssDoor'
 import { HeroMotion, P2_REST } from './s01/HeroMotion'
 import { Portal3DGate } from './s01/Portal3DGate'
 import { HeroCutouts } from './s01/HeroCutouts'
-import { ShowcaseChip, ShowcaseDoorway } from './s01/DoorShowcase'
-import { pickShowcase, type BareImage } from './s01/showcase'
-import { productDoc, staticProductImage } from '@/lib/art/static'
+import { DoorObject, ObjectChip } from './s01/HeroObject'
 import st from './s01/hero.module.css'
 
 const DEFAULTS = {
@@ -71,21 +70,11 @@ function Title({ text }: { text: string }) {
   )
 }
 
-/** Clean exported render of a catalogue product (no SAMPLE stamp) — used when it has no real photo yet. */
-const bareRender: BareImage = (p, side) => {
-  try {
-    return staticProductImage(productDoc(p, { side }))?.src ?? null
-  } catch {
-    return null
-  }
-}
-
 export default function S01Hero({ settings, products }: { settings?: SiteSettings; products?: Product[] }) {
   // empty admin fields fall back to the defaults (never an empty H1)
   const s = { ...DEFAULTS, ...settings }
   for (const k of ['heroKicker', 'heroTitle', 'heroSub'] as const) if (!s[k]?.trim()) s[k] = DEFAULTS[k]
   const ticker = s.tickerWords?.length ? s.tickerWords : DEFAULTS.tickerWords
-  const showcase = pickShowcase(products, 8, bareRender)
 
   return (
     <section id="hero" data-hold-header aria-labelledby="hero-title" className="relative overflow-x-clip bg-paper">
@@ -224,18 +213,18 @@ export default function S01Hero({ settings, products }: { settings?: SiteSetting
                   aria-hidden="true"
                 >
                   <CssDoor>
-                    <ShowcaseDoorway items={showcase} />
+                    <DoorObject />
                   </CssDoor>
                 </div>
-                <Portal3DGate srcs={showcase.map((x) => x.src)} />
+                <Portal3DGate />
               </div>
               {/* panel caption (manga narration box) — on phones it is also the scroll cue */}
               <p data-caption className="label absolute left-4 top-9 z-[1] border-2 border-ink bg-paper px-2 py-1 text-ink lg:left-[62.2%] lg:top-[5.4%]">
                 扉 · <span className="lg:hidden motion-reduce:hidden">Scroll to open ↓</span>
                 <span className="hidden lg:inline motion-reduce:inline">The door</span>
               </p>
-              {/* what's behind the door: name + price of the product on show (links to it) */}
-              <ShowcaseChip items={showcase} className="absolute inset-x-3 bottom-5 z-[3] lg:inset-x-[8%] lg:bottom-[6%]" />
+              {/* what's behind the door: the object on show + a link to its category */}
+              <ObjectChip className="absolute inset-x-3 bottom-5 z-[3] pl-14 lg:inset-x-[8%] lg:bottom-[6%] lg:pl-0" />
               {/* the burst the camera lands in → hands over to S02 */}
               <div data-burst className="invisible absolute inset-0 z-[4] bg-volt opacity-0" aria-hidden="true">
                 <SpeedLines color="var(--color-ink)" intensity={0.85} inner={0.22} animated seed={4} className="absolute inset-0" />

@@ -111,6 +111,23 @@ export function addressLines(a: Pick<AddressSnapshot, 'line1' | 'line2' | 'landm
   ].filter(Boolean)
 }
 
+// ---------------------------------------------------------------- contact (guest checkout: who is ordering)
+export const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/
+export const contactSchema = z.object({
+  name: text(2, 80, 'Your name, so we know who’s ordering (2 letters or more).'),
+  phone,
+  email: z
+    .string()
+    .trim()
+    .max(200, 'Keep it under 200 characters.')
+    .optional()
+    .default('')
+    .refine((v) => v === '' || EMAIL_RE.test(v), 'That email doesn’t look right — or leave it empty.')
+    .transform((v) => v.toLowerCase()),
+})
+export type ContactInput = z.input<typeof contactSchema>
+export type ContactValues = z.output<typeof contactSchema>
+
 // ---------------------------------------------------------------- gift
 export const giftSchema = z
   .object({
@@ -159,7 +176,16 @@ export const orderRequestSchema = z.object({
   /** idempotency key (client-generated per checkout attempt) */
   nonce: z.string().trim().regex(/^[A-Za-z0-9_-]{12,64}$/),
   items: z.array(lineSchema).min(1, 'Your cart is empty.').max(60),
-  addressId: z.uuid('Pick a delivery address.'),
+  /** signed-in customers: one of their saved addresses */
+  addressId: z.uuid('Pick a delivery address.').optional(),
+  /** guests: the delivery address typed at checkout (never saved to an address book) */
+  address: addressInputSchema.omit({ isDefault: true }).optional(),
+  /** guests: who is ordering (required for guests; ignored for signed-in customers) */
+  contact: contactSchema.optional(),
+  /** honeypot (hidden field in the contact step) — people leave it empty */
+  website: z.string().max(200).optional(),
+  /** the total the shopper saw; a different server total answers 409 price-changed instead of placing the order */
+  expectedPayable: z.number().int().min(0).max(10_000_000).optional(),
   gift: giftSchema.optional(),
   voucherCode: voucherCode.optional(),
   note: optText(500),
@@ -176,6 +202,12 @@ export const orderRequestSchema = z.object({
     .optional(),
 })
 export type OrderRequest = z.input<typeof orderRequestSchema>
+
+/** Guest voucher check (POST /api/orders/voucher): the cart + who is ordering (per-customer limits by phone). */
+export const guestVoucherSchema = voucherValidateSchema.extend({
+  phone: z.string().trim().max(24).optional().default(''),
+  email: z.string().trim().max(200).optional().default(''),
+})
 
 /** First message per field, for inline errors. */
 export function fieldErrors(issues: ReadonlyArray<{ path: ReadonlyArray<PropertyKey>; message: string }>): Record<string, string> {

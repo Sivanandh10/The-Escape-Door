@@ -4,9 +4,10 @@
 //    H1 (#04): SplitText lines get a volt ink-bar wipe — the H1 is server-rendered and NEVER hidden by CSS
 //    (it is the LCP); the bar covers each line, the line rises behind it, the bar retracts.
 //    Waits for the S00 preloader (`[data-preloader]` + `ted:preloader-done`, 2.6 s failsafe).
-//  • desktop ≥1024: pinned ~180vh scrub — the door creaks, swings open onto the product showcase, the portal
-//    panel grows to full screen (#15) while the camera walks up to the threshold, holds on the showcase (chip
-//    with name + price fades in), then a volt speed-line burst hands over to S02.
+//  • desktop ≥1024: pinned ~180vh scrub — the door creaks, swings open onto the floating product object, the
+//    portal panel grows to full screen (#15) while the camera walks up to the threshold; the object swaps
+//    (tee → hoodie → back print → polaroids, ./objects.ts) at fixed scroll thresholds, the chip names it, then a
+//    volt speed-line burst hands over to S02.
 //    Writes heroProgress.p for the R3F door (same story, one source of truth).
 //  • phones/tablets: no JS pin. The door panel is CSS-sticky inside [data-door-track] (S01Hero); this scrubs
 //    the door open over the track's extra height, so the reveal always finishes while the panel fills the
@@ -19,6 +20,7 @@ import { SplitText } from 'gsap/SplitText'
 import { useGSAP } from '@gsap/react'
 import { registerGsap } from '@/lib/motion'
 import { heroProgress, PHASE } from './progress'
+import { heroObjectStore, objectIndexFor } from './objects'
 
 registerGsap()
 
@@ -219,6 +221,8 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
               defaults: { ease: 'none' },
               onUpdate: () => {
                 heroProgress.p = tl.progress()
+                // timeline TIME, not progress: the burst text runs past 1, so progress lags the PHASE positions
+                heroObjectStore.set(objectIndexFor(tl.time(), 'desk'))
               },
               scrollTrigger: {
                 trigger: stage,
@@ -279,6 +283,8 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
             const caption = one('[data-caption]')
             const tl = gsap.timeline({
               defaults: { ease: 'none' },
+              // the object behind the door swaps tee → hoodie → … as the scrub passes fixed thresholds
+              onUpdate: () => heroObjectStore.set(objectIndexFor(tl.time(), 'mob')),
               scrollTrigger: {
                 trigger: track,
                 // starts as the panel reaches its sticky spot, ends exactly when it unsticks
@@ -315,6 +321,7 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
           return () => {
             stopWait()
             heroProgress.p = 0
+            heroObjectStore.set(0)
           }
         },
       )

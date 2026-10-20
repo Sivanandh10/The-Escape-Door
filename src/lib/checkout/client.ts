@@ -9,7 +9,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 import { supabaseBrowser } from '@/lib/supabase/client'
 import type { CartItem } from '@/lib/types'
-import { addressFromRow, addressInputSchema, addressToRow, type Address, type AddressInput, type CheckoutLine, type GiftOptions } from './schema'
+import { addressFromRow, addressInputSchema, addressToRow, type Address, type AddressInput, type AddressValues, type CheckoutLine, type ContactValues, type GiftOptions } from './schema'
 import type { OrderSnapshot } from './types'
 
 // ---------------------------------------------------------------- cart → request
@@ -64,7 +64,17 @@ export function resetCheckoutNonce(): void {
 }
 
 // ---------------------------------------------------------------- API
-export type ApiFail = { ok: false; error: string; message: string; problem?: string; slug?: string; fieldErrors?: Record<string, string[]> }
+export type ApiFail = {
+  ok: false
+  error: string
+  message: string
+  problem?: string
+  slug?: string
+  fieldErrors?: Record<string, string[]>
+  /** price-changed: the server's total + unit prices */
+  payable?: number
+  lines?: Array<{ slug: string; variantId: string; size: string | null; unitPrice: number | null }>
+}
 
 async function post<T>(url: string, body: unknown, signal?: AbortSignal): Promise<T | ApiFail> {
   try {
@@ -93,7 +103,9 @@ export interface VoucherOk {
   appliesToType: string | null
 }
 
-export function validateVoucher(code: string, items: CartItem[], signal?: AbortSignal) {
+/** Signed-in: /api/vouchers/validate. Guest (pass `guest`): /api/orders/voucher — limits counted by phone. */
+export function validateVoucher(code: string, items: CartItem[], signal?: AbortSignal, guest?: { phone: string; email?: string } | null) {
+  if (guest) return post<VoucherOk>('/api/orders/voucher', { code, items: cartLines(items), phone: guest.phone, email: guest.email ?? '' }, signal)
   return post<VoucherOk>('/api/vouchers/validate', { code, items: cartLines(items) }, signal)
 }
 
@@ -107,7 +119,15 @@ export interface PlaceOrderOk {
 export interface PlaceOrderInput {
   nonce: string
   items: CartItem[]
-  addressId: string
+  /** signed in: a saved address */
+  addressId?: string | null
+  /** guest: the typed address + who is ordering */
+  address?: AddressValues | null
+  contact?: ContactValues | null
+  /** guest: the contact step's honeypot value (empty for people) */
+  website?: string
+  /** the total shown to the shopper (server answers price-changed when its own total differs) */
+  expectedPayable?: number | null
   gift: GiftOptions
   voucherCode?: string | null
   note?: string
@@ -118,12 +138,59 @@ export function placeOrder(input: PlaceOrderInput) {
   return post<PlaceOrderOk>('/api/orders', {
     nonce: input.nonce,
     items: cartLines(input.items),
-    addressId: input.addressId,
+    ...(input.addressId ? { addressId: input.addressId } : {}),
+    ...(input.address ? { address: { ...input.address, isDefault: undefined } } : {}),
+    ...(input.contact ? { contact: input.contact } : {}),
+    ...(input.website ? { website: input.website } : {}),
+    ...(input.expectedPayable != null ? { expectedPayable: input.expectedPayable } : {}),
     gift: input.gift,
     ...(input.voucherCode ? { voucherCode: input.voucherCode } : {}),
     note: input.note ?? '',
     ...(input.source ? { source: input.source } : {}),
   })
+}
+
+/** price-changed answer: put the server's unit prices into the cart so the totals on screen match again. */
+export function applyServerPrices(lines: Array<{ slug: string; variantId: string; size: string | null; unitPrice: number | null }>, setItems: (fn: (items: CartItem[]) => CartItem[]) => void): void {
+  const key = (slug: string, variantId: string, size?: string | null) => `${slug}|${variantId}|${size ?? ''}`
+  const prices = new Map(lines.map((l) => [key(l.slug, l.variantId, l.size), l.unitPrice]))
+  setItems((items) => items.map((i) => {
+    const p = prices.get(key(i.slug, i.variantId, i.size))
+    return p === undefined || i.custom ? i : { ...i, unitPrice: p }
+  }))
+}
+
+// ---------------------------------------------------------------- guest details (this browser only)
+// Remembered ONLY when the guest ticks "Remember my details on this device" (opt-in; shared / café computers), so a
+// returning guest doesn't retype contact + address. Per-viewer convenience: localStorage, never sent anywhere except
+// with their own next order. "Not you? Clear details" and logging in remove it.
+const GUEST_KEY = 'ted-guest-checkout-v1'
+export interface GuestDetails {
+  contact: ContactValues
+  address: AddressValues | null
+}
+export function readGuestDetails(): GuestDetails | null {
+  try {
+    const raw = localStorage.getItem(GUEST_KEY)
+    const v = raw ? (JSON.parse(raw) as GuestDetails) : null
+    return v && typeof v.contact?.phone === 'string' ? v : null
+  } catch {
+    return null
+  }
+}
+export function saveGuestDetails(d: GuestDetails): void {
+  try {
+    localStorage.setItem(GUEST_KEY, JSON.stringify(d))
+  } catch {
+    /* storage blocked */
+  }
+}
+export function clearGuestDetails(): void {
+  try {
+    localStorage.removeItem(GUEST_KEY)
+  } catch {
+    /* storage blocked */
+  }
 }
 
 // ---------------------------------------------------------------- WhatsApp tab

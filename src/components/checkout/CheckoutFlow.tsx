@@ -1,15 +1,18 @@
 'use client'
-// /checkout — the whole pipeline on one page, as four manga panels (one open at a time on phones):
-//   01 Deliver to (saved addresses / add new) → 02 Gift → 03 Voucher → 04 Review & place.
-// "Place order on WhatsApp": a tab opens inside the click → POST /api/orders (server re-prices everything,
-// dedupes on the nonce, stores the order + voucher redemption) → that tab goes to wa.me with the order text
-// → /checkout-success?order=<id>. Signature moment (#66): the door on the button swings open as the label
-// morphs "Stamping your order…" → "Opening WhatsApp…". Owner: CHECKOUT.
+// /checkout — the whole pipeline on one page, as manga panels (one open at a time on phones). ONE flow for everyone:
+//   member: 01 Deliver to (saved addresses / add + save new) → 02 Gift → 03 Voucher → 04 Review & place
+//   guest:  01 Who's ordering (name, +91 mobile, email?) → 02 Deliver to (full address form) → 03 Gift → 04 Voucher
+//           → 05 Review & place   (guests only while no login method is live — see /checkout page)
+// "Place order on WhatsApp": a tab opens inside the click → POST /api/orders FIRST (server re-prices everything,
+// dedupes on the nonce, stores the order + contact + address + voucher redemption → admin desk + the customer's
+// orders) → only then that tab goes to wa.me with the order text → /checkout-success?order=<id>. Popup blocked →
+// the success page's "Open WhatsApp" is the main action. Signature moment (#66): the door on the button swings open
+// as the label morphs "Stamping your order…" → "Opening WhatsApp…". Owner: CHECKOUT.
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import { AlertTriangle, ArrowRight, Check, ChevronDown, Lock, MessageCircle, Pencil } from 'lucide-react'
+import { AlertTriangle, ArrowRight, Check, ChevronDown, Lock, MessageCircle, Pencil, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { DoorIcon } from '@/components/brand/DoorIcon'
 import { useBundleRules, useWhatsappNumber } from '@/components/SiteSettingsProvider'
@@ -20,11 +23,18 @@ import { getAttribution, track } from '@/lib/analytics'
 import { useReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { useCustomer, useRequireLogin } from '@/lib/checkout/auth'
-import { cartSignature, checkoutNonce, openPendingTab, placeOrder, resetCheckoutNonce, useAddresses } from '@/lib/checkout/client'
-import { NO_GIFT, addressLines, formatPhone, giftSchema, fieldErrors, type Address, type GiftOptions as Gift } from '@/lib/checkout/schema'
+import {
+  applyServerPrices, cartSignature, checkoutNonce, clearGuestDetails, openPendingTab, placeOrder, readGuestDetails, resetCheckoutNonce, saveGuestDetails, useAddresses,
+} from '@/lib/checkout/client'
+import {
+  NO_GIFT, addressInputSchema, addressLines, formatPhone, giftSchema, fieldErrors,
+  type Address, type AddressValues, type ContactValues, type GiftOptions as Gift,
+} from '@/lib/checkout/schema'
 import { saveLastOrder } from '@/components/shop/cart/order'
 import { EmptyCart } from '@/components/shop/cart/EmptyCart'
 import { AddressBook } from './AddressBook'
+import { AddressForm } from './AddressForm'
+import { ContactForm } from './ContactForm'
 import { GiftOptions } from './GiftOptions'
 import { OrderSummary, payableOf } from './OrderSummary'
 import { VoucherBox, type AppliedVoucher } from './VoucherBox'
@@ -33,22 +43,32 @@ import { TextArea } from './fields'
 /** wall-clock fallback for the saved order stamp (event-time only, never during render) */
 const nowMs = () => Date.now()
 
-type Step = 'address' | 'gift' | 'voucher' | 'review'
-const STEPS: Array<{ id: Step; no: string; title: string; jp: string }> = [
-  { id: 'address', no: '01', title: 'Deliver to', jp: 'お届け先' },
-  { id: 'gift', no: '02', title: 'Gift it?', jp: 'ギフト' },
-  { id: 'voucher', no: '03', title: 'Voucher', jp: 'クーポン' },
-  { id: 'review', no: '04', title: 'Review & place', jp: '確認' },
+type Step = 'contact' | 'address' | 'gift' | 'voucher' | 'review'
+const ALL_STEPS: Array<{ id: Step; title: string; jp: string }> = [
+  { id: 'contact', title: 'Who’s ordering', jp: '連絡先' },
+  { id: 'address', title: 'Deliver to', jp: 'お届け先' },
+  { id: 'gift', title: 'Gift it?', jp: 'ギフト' },
+  { id: 'voucher', title: 'Voucher', jp: 'クーポン' },
+  { id: 'review', title: 'Review & place', jp: '確認' },
 ]
+const stepsFor = (guest: boolean) =>
+  ALL_STEPS.filter((s) => guest || s.id !== 'contact').map((s, i) => ({ ...s, no: String(i + 1).padStart(2, '0') }))
+
+const CONTACT_FORM = 'checkout-contact-form'
+const GUEST_ADDRESS_FORM = 'checkout-guest-address-form'
 
 export interface CheckoutFlowProps {
+  /** member = signed in (saved addresses); guest = no login method is live yet → contact + typed address */
+  mode?: 'member' | 'guest'
   initialAddresses: Address[]
   giftWrapFee: number
   /** prefill for the first address (profile name / phone) */
   seed?: { name?: string | null; phone?: string | null }
 }
 
-export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFlowProps) {
+export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, seed }: CheckoutFlowProps) {
+  const guestMode = mode === 'guest'
+  const STEPS = useMemo(() => stepsFor(guestMode), [guestMode])
   const router = useRouter()
   const hydrated = useHydrated()
   const items = useCart((s) => s.items)
@@ -60,7 +80,21 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
   const book = useAddresses(initialAddresses)
 
   const totals = useMemo(() => computeTotals(items, rules), [items, rules])
-  const [step, setStep] = useState<Step>('address')
+  const [step, setStep] = useState<Step>(guestMode ? 'contact' : 'address')
+  // guest: who's ordering + the typed address (remembered in this browser for next time)
+  const [remembered, setRemembered] = useState(() => (guestMode ? readGuestDetails() : null))
+  /** contact step extras: honeypot value + "remember my details" opt-in */
+  const contactMeta = useRef<{ hp: string; remember: boolean }>({ hp: '', remember: !!remembered })
+  // signed in → a guest's remembered details on this device are no longer needed (and may be someone else's)
+  useEffect(() => {
+    if (!guestMode) clearGuestDetails()
+  }, [guestMode])
+  const [contact, setContact] = useState<ContactValues | null>(remembered?.contact ?? null)
+  const [guestAddress, setGuestAddress] = useState<AddressValues | null>(remembered?.address ?? null)
+  const [editingGuestAddress, setEditingGuestAddress] = useState(false)
+  const [contactError, setContactError] = useState<string | null>(null)
+  /** after a price-changed answer: the server total, valid only for the exact cart + gift + voucher it was quoted for */
+  const [acceptedPayable, setAcceptedPayable] = useState<{ key: string; payable: number } | null>(null)
   const [addressId, setAddressId] = useState<string | null>(() => initialAddresses.find((a) => a.isDefault)?.id ?? initialAddresses[0]?.id ?? null)
   const [gift, setGift] = useState<Gift>(NO_GIFT)
   const [giftErrors, setGiftErrors] = useState<Record<string, string>>({})
@@ -74,12 +108,15 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
   const started = useRef(false)
 
   // the selected address must still exist (deleted / not loaded yet → fall back to the default)
-  const address = book.addresses.find((a) => a.id === addressId) ?? null
+  const saved = book.addresses.find((a) => a.id === addressId) ?? null
+  const address: (AddressValues & { id?: string }) | null = guestMode ? guestAddress : saved
+  /** everything needed before gift / voucher / review can open */
+  const ready = guestMode ? !!contact && !!guestAddress : !!saved
   useEffect(() => {
-    if (address || !book.addresses.length) return
+    if (guestMode || saved || !book.addresses.length) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep a valid selection after deletes
     setAddressId(book.addresses.find((a) => a.isDefault)?.id ?? book.addresses[0].id)
-  }, [address, book.addresses])
+  }, [guestMode, saved, book.addresses])
 
   useEffect(() => {
     if (!hydrated || !items.length || started.current) return
@@ -88,7 +125,10 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
   }, [hydrated, items, totals.total])
 
   const giftFee = gift.enabled ? giftWrapFee : 0
-  const payable = payableOf(totals, voucher, giftFee)
+  // the total shown everywhere AND sent as the shopper's consent: the server's quote while it still applies to this
+  // exact cart / gift / voucher (e.g. a bundle-rule change the browser can't recompute), else the browser's own maths
+  const priceKey = `${cartSignature(items)}#${gift.enabled ? 'g' : ''}#${voucher?.code ?? ''}`
+  const payable = acceptedPayable && acceptedPayable.key === priceKey ? acceptedPayable.payable : payableOf(totals, voucher, giftFee)
   const priced = totals.lines.some((l) => l.unitPrice != null)
   const busy = phase !== 'idle'
 
@@ -117,7 +157,20 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
     return r.success
   }
 
+  /** submit a step's own form from an outside button (phone bar "Next") */
+  const submitForm = (id: string): boolean => {
+    const f = document.getElementById(id) as HTMLFormElement | null
+    if (!f) return false
+    f.requestSubmit()
+    return true
+  }
+
   const next = () => {
+    if (step === 'contact') {
+      submitForm(CONTACT_FORM)
+      return
+    }
+    if (step === 'address' && guestMode && (!guestAddress || editingGuestAddress) && submitForm(GUEST_ADDRESS_FORM)) return
     if (step === 'address') {
       if (!address) {
         setAddressError('Pick an address — or add one — so we know where to send it.')
@@ -132,6 +185,11 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
   // ---------------------------------------------------------------- place the order
   const doPlace = async () => {
     if (busy || !items.length) return
+    if (guestMode && !contact) {
+      setContactError('Add your name and mobile number so we can confirm the order.')
+      goto('contact')
+      return
+    }
     if (!address) {
       setAddressError('Pick an address — or add one — so we know where to send it.')
       goto('address')
@@ -145,12 +203,14 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
     setVoucherError(null)
     const tab = openPendingTab() // inside the click: popup blockers allow it, WhatsApp feels instant
     setPhase('saving')
-    const nonce = checkoutNonce(`${cartSignature(items)}#${address.id}#${gift.enabled ? 'g' : ''}#${voucher?.code ?? ''}`)
+    const who = guestMode ? `${contact!.phone}#${address.pin}#${address.line1}` : address.id ?? ''
+    const nonce = checkoutNonce(`${cartSignature(items)}#${who}#${gift.enabled ? 'g' : ''}#${voucher?.code ?? ''}`)
     const attribution = getAttribution()
     const r = await placeOrder({
       nonce,
       items,
-      addressId: address.id,
+      ...(guestMode ? { address: guestAddress, contact, website: contactMeta.current.hp || undefined } : { addressId: address.id }),
+      expectedPayable: payable,
       gift,
       voucherCode: voucher?.code ?? null,
       note,
@@ -161,7 +221,20 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
       tab.close()
       setPhase('idle')
       if (r.error === 'login') {
-        openLogin('Your login expired — log in again to place the order.', () => void doPlace())
+        // member: session expired · guest: a login method just went live (then login is mandatory)
+        openLogin(guestMode ? 'Log in to place your order' : 'Your login expired — log in again to place the order.', () => (guestMode ? router.refresh() : void doPlace()))
+        return
+      }
+      if (r.error === 'contact') {
+        setContactError(r.message)
+        goto('contact')
+        return
+      }
+      if (r.error === 'price-changed') {
+        if (r.lines) applyServerPrices(r.lines, (fn) => useCart.setState((st) => ({ items: fn(st.items) })))
+        setAcceptedPayable(typeof r.payable === 'number' ? { key: priceKey, payable: r.payable } : null)
+        setProblem({ message: r.message })
+        goto('review')
         return
       }
       if (r.error === 'voucher') {
@@ -181,6 +254,10 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
     }
 
     // saved → WhatsApp with the server's order text, then the success moment
+    if (guestMode && contact) {
+      if (contactMeta.current.remember) saveGuestDetails({ contact, address: guestAddress })
+      else clearGuestDetails()
+    }
     setPlaced(true)
     setPhase('opening')
     const link = waLink(r.message, waNumber)
@@ -198,7 +275,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
         applied: o.totals.applied,
         lines: o.items.map((l) => ({ key: l.key, lineTotal: l.lineTotal, saving: l.saving })),
       },
-      name: o.address?.name ?? '',
+      name: o.contact?.name || o.address?.name || '',
       city: o.address?.city ?? '',
       link,
       at: Date.parse(o.createdAt) || nowMs(),
@@ -209,7 +286,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
     router.push(`/checkout-success?order=${encodeURIComponent(o.id)}`)
   }
 
-  const place = () => requireLogin('Log in to place your order', () => void doPlace())
+  const place = () => (guestMode ? void doPlace() : requireLogin('Log in to place your order', () => void doPlace()))
 
   // ---------------------------------------------------------------- states
   if (!hydrated) {
@@ -235,6 +312,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
   }
 
   const summaryOf = (s: Step): ReactNode => {
+    if (s === 'contact') return contact ? `${contact.name} · ${formatPhone(contact.phone)}${contact.email ? ` · ${contact.email}` : ''}` : 'Name and mobile number'
     if (s === 'address') return address ? `${address.name} · ${address.line1}, ${address.city} ${address.pin}` : 'No address yet'
     if (s === 'gift') return gift.enabled ? `Packed as a gift${giftFee ? ` (+${formatINR(giftFee)})` : ''}${gift.note ? ` · “${gift.note.slice(0, 40)}${gift.note.length > 40 ? '…' : ''}”` : ''}` : 'No gift wrap'
     if (s === 'voucher') return voucher ? `${voucher.code} · −${formatINR(voucher.discount)}` : 'No voucher'
@@ -242,7 +320,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
   }
 
   const placeButton = (className?: string) => (
-    <PlaceButton phase={phase} disabled={busy || !address} onClick={place} payable={priced || giftFee > 0 ? payable : null} className={className} />
+    <PlaceButton phase={phase} disabled={busy || !ready} onClick={place} payable={priced || giftFee > 0 ? payable : null} className={className} />
   )
 
   return (
@@ -257,10 +335,10 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
               <h2 className="m-0">
                 <button
                   type="button"
-                  onClick={() => (i <= idx || address ? goto(s.id) : undefined)}
+                  onClick={() => (i <= idx || ready ? goto(s.id) : undefined)}
                   aria-expanded={open}
                   aria-controls={`step-${s.id}-body`}
-                  disabled={!open && i > idx && !address}
+                  disabled={!open && i > idx && !ready}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left focus-ring disabled:cursor-default sm:px-5"
                 >
                   <span className={cn('grid size-10 shrink-0 place-items-center border-[3px] border-ink font-mono text-[13px] font-bold', done ? 'bg-door text-paper' : open ? 'bg-volt' : 'bg-paper text-tone-3')}>
@@ -295,7 +373,65 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
                     className="overflow-hidden"
                   >
                     <div className="border-t-[3px] border-ink px-4 pb-5 pt-4 sm:px-5">
-                      {s.id === 'address' && (
+                      {s.id === 'contact' && (
+                        <>
+                          <ContactForm
+                            formId={CONTACT_FORM}
+                            initial={contact}
+                            submitLabel="Continue to address"
+                            remembered={!!remembered}
+                            onForget={() => {
+                              clearGuestDetails()
+                              setRemembered(null)
+                              setContact(null)
+                              setGuestAddress(null)
+                            }}
+                            onSubmit={(c, meta) => {
+                              contactMeta.current = meta
+                              setContact(c)
+                              setContactError(null)
+                              goto('address')
+                            }}
+                          />
+                          {contactError && <Problem className="mt-3">{contactError}</Problem>}
+                        </>
+                      )}
+                      {s.id === 'address' && guestMode && (
+                        <>
+                          {guestAddress && !editingGuestAddress ? (
+                            <div className="border-[3px] border-ink bg-paper p-4 shadow-[5px_5px_0_0_var(--color-door)]">
+                              <p className="font-bold leading-tight">{guestAddress.name}</p>
+                              <p className="mt-1 text-[14px] leading-snug text-tone-2">
+                                {addressLines(guestAddress).map((l) => <span key={l} className="block">{l}</span>)}
+                              </p>
+                              <p className="mt-1 font-mono text-[12.5px] text-tone-2">{formatPhone(guestAddress.phone)}</p>
+                              <button type="button" onClick={() => setEditingGuestAddress(true)} className="label mt-2 inline-flex min-h-11 items-center gap-1.5 text-[10.5px] text-door focus-ring">
+                                <Pencil aria-hidden className="size-3.5" /> Change address
+                              </button>
+                            </div>
+                          ) : (
+                            <AddressForm
+                              formId={GUEST_ADDRESS_FORM}
+                              initial={guestAddress ? { ...guestAddress, id: 'guest', createdAt: '' } : null}
+                              seed={{ name: contact?.name, phone: contact?.phone }}
+                              allowDefault={false}
+                              submitLabel="Deliver here"
+                              onCancel={guestAddress ? () => setEditingGuestAddress(false) : undefined}
+                              onSubmit={async (input) => {
+                                const r = addressInputSchema.safeParse(input)
+                                if (!r.success) return false
+                                setGuestAddress(r.data)
+                                setEditingGuestAddress(false)
+                                setAddressError(null)
+                                goto('gift')
+                                return true
+                              }}
+                            />
+                          )}
+                          {addressError && <Problem className="mt-3">{addressError}</Problem>}
+                        </>
+                      )}
+                      {s.id === 'address' && !guestMode && (
                         <>
                           <AddressBook
                             mode="select"
@@ -321,11 +457,25 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
                           }}
                           externalError={voucherError}
                           onNeedLogin={() => openLogin('Log in to use a voucher')}
+                          guest={guestMode && contact ? { phone: contact.phone, email: contact.email } : null}
                         />
                       )}
                       {s.id === 'review' && (
                         <div className="flex flex-col gap-5">
                           <dl className="grid gap-3 text-[14px] sm:grid-cols-2">
+                            {guestMode && (
+                              <ReviewBlock label="Ordered by" onEdit={() => goto('contact')}>
+                                {contact ? (
+                                  <>
+                                    <span className="flex items-center gap-1.5 font-bold"><UserRound aria-hidden className="size-3.5" /> {contact.name}</span>
+                                    <span className="block font-mono text-[12.5px]">{formatPhone(contact.phone)}</span>
+                                    {contact.email && <span className="block break-all">{contact.email}</span>}
+                                  </>
+                                ) : (
+                                  'Not added yet'
+                                )}
+                              </ReviewBlock>
+                            )}
                             <ReviewBlock label="Deliver to" onEdit={() => goto('address')}>
                               {address ? (
                                 <>
@@ -368,7 +518,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
                           <PayNote />
                         </div>
                       )}
-                      {s.id !== 'review' && (
+                      {s.id !== 'review' && s.id !== 'contact' && !(s.id === 'address' && guestMode && (!guestAddress || editingGuestAddress)) && (
                         <div className="mt-5 flex flex-wrap items-center gap-3">
                           <button type="button" onClick={next} className="press inline-flex min-h-12 items-center gap-2 border-[3px] border-ink bg-ink px-5 font-display text-[20px] uppercase leading-none text-paper shadow-[4px_4px_0_0_var(--color-door)]">
                             {s.id === 'voucher' ? (voucher ? 'Continue' : 'Skip — review order') : s.id === 'gift' ? (gift.enabled ? 'Continue' : 'No gift — continue') : 'Deliver here'}
@@ -413,7 +563,7 @@ export function CheckoutFlow({ initialAddresses, giftWrapFee, seed }: CheckoutFl
             <p className="font-display text-[28px] leading-none">{priced || giftFee > 0 ? formatINR(payable) : 'Quote'}</p>
           </div>
           {step === 'review' ? (
-            <button type="button" onClick={place} disabled={busy || !address} className="press inline-flex min-h-12 items-center gap-2 border-[3px] border-ink bg-volt px-4 font-display text-[19px] uppercase leading-none shadow-hard-sm disabled:opacity-60">
+            <button type="button" onClick={place} disabled={busy || !ready} className="press inline-flex min-h-12 items-center gap-2 border-[3px] border-ink bg-volt px-4 font-display text-[19px] uppercase leading-none shadow-hard-sm disabled:opacity-60">
               <MessageCircle aria-hidden className="size-5" /> {busy ? 'Placing…' : 'Place order'}
             </button>
           ) : (

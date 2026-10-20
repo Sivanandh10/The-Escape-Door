@@ -6,6 +6,7 @@ import { JsonLd } from '@/components/seo/JsonLd'
 import { ShopBrowserSuspended } from '@/components/shop/ShopBrowser'
 import { CATEGORIES } from '@/components/shop/catalog'
 import { CategoryTiles, CustomCta, PacksStrip, SectionHead, ShopHero, ArcDoorStrip } from '@/components/shop/ShopSections'
+import { ForYou } from '@/components/recs/ForYou'
 
 const TITLE = 'Shop Anime Merch Online — All Fandoms | The Escape Door'
 const DESC = 'Browse 2000 t-shirt designs, 1500 polaroids, 750 posters and 400+ badges. Filter by arc, size, GSM and price. Fan-inspired, original designs.'
@@ -44,6 +45,9 @@ export default async function ShopPage() {
         ]}
         sfx="ドン!"
       />
+
+      {/* returning visitors only (client, from their own signals) — renders nothing for a first visit */}
+      <ForYou variant="shop" />
 
       <section aria-labelledby="browse-h" className="container-x pt-10 md:pt-14">
         <SectionHead id="browse-h" before="Filter by " accent="arc" jp="アークで探す" className="mb-6" />

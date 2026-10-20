@@ -66,6 +66,10 @@ export interface OrderSnapshot {
   note: string
   email: string | null
   timeline: TimelineEntry[]
+  /** placed without a login (stays true after the order is linked to an account) */
+  guest: boolean
+  /** who placed it — name, 10-digit phone, email (guests: what they typed at checkout) */
+  contact: { name: string; phone: string; email: string | null } | null
 }
 
 // ---------------------------------------------------------------- vouchers
@@ -180,6 +184,11 @@ export function orderSnapshotFromRow(r: Record<string, unknown>): OrderSnapshot 
     voucherCode: s(r.voucher_code) || null,
     note: s(r.note),
     email: s(r.email) || null,
+    // pre-0010 guest rows: no `guest` column → a checkout row (nonce + address) without a user
+    guest: r.guest === true || (r.guest == null && !r.user_id && !!s(r.nonce) && !!obj(r.address)),
+    contact: s(r.contact_phone) || s(r.contact) || s(r.contact_email)
+      ? { name: s(r.name), phone: s(r.contact_phone) || s(r.contact), email: s(r.contact_email) || s(r.email) || null }
+      : null,
     timeline: (Array.isArray(r.timeline) ? r.timeline : []).filter((t): t is TimelineEntry => !!t && typeof t === 'object' && isOrderStatus((t as TimelineEntry).status)),
   }
 }

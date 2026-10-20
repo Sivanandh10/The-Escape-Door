@@ -2,12 +2,13 @@
 // /checkout-success — #71 success moment: the order slip prints (#70), the stamp slams, confetti
 // once (palette colours, never under reduced motion), Kado cheers. Reads the hand-off from
 // sessionStorage; with ?order=<id> (checkout orders) and no hand-off in this tab, it loads that order from the
-// database under RLS (customers read only their own orders) — nothing personal is rendered on the server.
+// database under RLS (customers read only their own orders; guest orders are never readable from the browser, so a
+// guest sees their slip only in the tab that placed it) — nothing personal is rendered on the server.
 // Owner: CHECKOUT (was P2).
 import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useEffect, useRef, useState } from 'react'
-import { ArrowRight, ExternalLink, Gift, MapPin, Package, RotateCcw } from 'lucide-react'
+import { ArrowRight, ExternalLink, Gift, MapPin, Package, RotateCcw, UserRound } from 'lucide-react'
 import { toast } from 'sonner'
 import { Mascot } from '@/components/brand/Mascot'
 import { useCart } from '@/lib/cart'
@@ -230,10 +231,17 @@ export function SuccessView() {
               <p className="min-w-0 flex-1 text-[14px] leading-snug">
                 <span className="font-mono font-bold text-volt">{snap.ref}</span> is saved
                 {status ? <> · <span className="font-semibold">{status.label}</span></> : null}. {status?.customer}
+                {snap.guest && (
+                  <span className="mt-1 block text-[13px] text-tone-4">
+                    Placed as a guest. {snap.contact?.email ? <>Once accounts open, log in with <strong className="text-paper">{snap.contact.email}</strong> (email link or Google) and it shows up under your orders.</> : 'Keep your order number — we confirm everything on WhatsApp.'}
+                  </span>
+                )}
               </p>
-              <Link href="/account" className="press inline-flex min-h-11 items-center gap-1.5 border-2 border-paper px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em]">
-                Track in my account <ArrowRight aria-hidden="true" className="size-3.5" />
-              </Link>
+              {!snap.guest && (
+                <Link href="/account#orders" className="press inline-flex min-h-11 items-center gap-1.5 border-2 border-paper px-3 font-mono text-[11px] font-bold uppercase tracking-[0.12em]">
+                  Track in my account <ArrowRight aria-hidden="true" className="size-3.5" />
+                </Link>
+              )}
             </div>
           )}
 
@@ -363,6 +371,15 @@ export function SuccessView() {
                       {addressLines(snap.address).map((l) => (
                         <p key={l}>{l}</p>
                       ))}
+                    </div>
+                  )}
+                  {snap?.guest && snap.contact && (
+                    <div className="mt-3 border-t-2 border-dashed border-ink/50 pt-2 text-[12.5px] leading-snug">
+                      <p className="label flex items-center gap-1.5 text-[10px] text-tone-3">
+                        <UserRound aria-hidden="true" className="size-3" /> Ordered by
+                      </p>
+                      <p className="mt-1 font-semibold">{snap.contact.name || '—'} · <span className="font-mono">{formatPhone(snap.contact.phone)}</span></p>
+                      {snap.contact.email && <p className="break-all">{snap.contact.email}</p>}
                     </div>
                   )}
                   {snap?.gift?.enabled && (

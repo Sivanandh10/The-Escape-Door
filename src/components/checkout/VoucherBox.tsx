@@ -1,5 +1,6 @@
 'use client'
-// Voucher code → POST /api/vouchers/validate (server re-prices the cart; the browser never decides a discount).
+// Voucher code → POST /api/vouchers/validate, or /api/orders/voucher for guests (server re-prices the cart; the
+// browser never decides a discount).
 // Applied = a stamped coupon stub with the saving; Remove puts it back. Re-checks itself when the cart changes.
 // Owner: CHECKOUT.
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react'
@@ -22,10 +23,12 @@ export interface VoucherBoxProps {
   externalError?: string | null
   /** the login gate (validation needs a signed-in customer) */
   onNeedLogin?: () => void
+  /** guest checkout: who is ordering (per-customer voucher limits count by phone) */
+  guest?: { phone: string; email?: string } | null
   className?: string
 }
 
-export function VoucherBox({ items, applied, onChange, externalError, onNeedLogin, className }: VoucherBoxProps) {
+export function VoucherBox({ items, applied, onChange, externalError, onNeedLogin, guest, className }: VoucherBoxProps) {
   const id = useId()
   const reduced = useReducedMotion()
   const [code, setCode] = useState('')
@@ -46,7 +49,7 @@ export function VoucherBox({ items, applied, onChange, externalError, onNeedLogi
     ctrl.current = ac
     setState('checking')
     setError(null)
-    const r = await validateVoucher(c, items, ac.signal)
+    const r = await validateVoucher(c, items, ac.signal, guest)
     if (ac.signal.aborted) return
     setState('idle')
     if (r.ok) {

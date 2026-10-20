@@ -22,6 +22,7 @@ import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
 import { SmoothScroll } from '@/components/motion/SmoothScroll'
 import { Cursor } from '@/components/motion/Cursor'
+import { ScrollTop } from '@/components/layout/ScrollTop'
 import { prefersReducedMotion, registerGsap } from '@/lib/motion'
 import { initAnalytics } from '@/lib/analytics'
 import { ensureHydrated, useCart } from '@/lib/cart'
@@ -155,6 +156,7 @@ export function Providers({ children, arcs = [], whatsapp = '', bundleRules }: P
         <SmoothScroll>
           <Suspense fallback={null}>
             <RouteEffects onRoute={onRoute} />
+            <ScrollTop />
           </Suspense>
           {children}
           <Cursor />

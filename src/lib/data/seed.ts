@@ -415,7 +415,7 @@ function withDetail(p: Product, all: Product[]): Product {
   if (!pool.length) return p
   const score = (q: Product) => q.tags.filter((t) => p.tags.includes(t) && !['polaroid', 'poster', 'collectible', 'wall'].includes(t)).length * 10 - COMPANION_TYPES.indexOf(q.type)
   const mate = [...pool].sort((a, b) => score(b) - score(a))[0]
-  const detail: ProductImage = { src: mate.images[0].src, alt: `Companion art from the same arc: ${mate.name}, an original ${inspoLabel(p)} design by The Escape Door`, side: 'detail', sample: true }
+  const detail: ProductImage = { src: mate.images[0].src, alt: `Same-arc art: ${mate.name}, original ${inspoLabel(p)} design by The Escape Door`, side: 'detail', sample: true }
   return { ...p, images: [...p.images, detail] }
 }
 const inspoLabel = (p: Product) => (p.collection === 'beyond-anime' ? 'fan-inspired' : `fan-inspired ${COLLECTION_NAME[p.collection] ?? p.collection}`)

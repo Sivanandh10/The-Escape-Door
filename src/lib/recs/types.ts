@@ -64,6 +64,8 @@ export interface RecsPayload {
   /** related to views / cart / wishlist / MAL */
   picks: Product[]
   pickReason: string | null
+  /** product id → explainable reason chip for each pick (hybrid ranker; optional for older payloads) */
+  pickReasons?: Record<string, { kind: string; label: string }>
   /** "Because you watched X" rows */
   watched: WatchedRow[]
   /** anime the shopper rates that we don't make merch for yet → "Request merch" */

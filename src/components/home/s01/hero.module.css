@@ -160,7 +160,31 @@
   }
 }
 
+/* ── the product object behind the door (CSS path) ───────────────────────── */
+/* a slow 3D sway + float, so the flat cut-out reads as an object hanging in the light */
+.objSway {
+  transform-style: preserve-3d;
+  animation: ted-obj-sway 6.4s ease-in-out infinite;
+}
+@keyframes ted-obj-sway {
+  0%,
+  100% {
+    transform: translateY(0) rotateY(-11deg) rotateX(3deg);
+  }
+  50% {
+    transform: translateY(-3.5%) rotateY(11deg) rotateX(-2deg);
+  }
+}
+/* paper die-cut rim + hard ink offset + a soft contact shadow, all following the garment's alpha */
+.objImg {
+  backface-visibility: hidden;
+  filter: drop-shadow(2px 0 0 var(--color-paper)) drop-shadow(-2px 0 0 var(--color-paper))
+    drop-shadow(0 2px 0 var(--color-paper)) drop-shadow(0 -2px 0 var(--color-paper))
+    drop-shadow(6px 7px 0 var(--color-ink)) drop-shadow(0 18px 18px rgb(11 11 15 / 0.45));
+}
+
 @media (prefers-reduced-motion: reduce) {
+  .objSway,
   .ctaRing,
   .cta::before,
   .ctaArrow,

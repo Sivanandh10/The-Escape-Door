@@ -1,8 +1,9 @@
 'use client'
 // The cart's "Checkout" call to action (drawer + /cart page). Owner: CHECKOUT.
-// Login is required to order: signed out → the login modal opens with the reason, then continues to /checkout.
-// The old anonymous "name + city → WhatsApp" form is gone; /checkout collects the delivery address,
-// gift options and voucher, saves the order, then opens WhatsApp.
+// Every order goes through /checkout (contact / address / gift / voucher / review → order saved → WhatsApp).
+// While a login method is live, login is required first (the login modal opens with the reason, then continues to
+// /checkout); while none is, the gate lets everyone through and /checkout runs as a guest checkout.
+// (The old WhatsApp-only shortcut that skipped the address is gone.)
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
 import { ArrowRight, Lock } from 'lucide-react'
@@ -11,8 +12,7 @@ import { useCart } from '@/lib/cart'
 import { track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import { useRequireLogin } from '@/lib/checkout/auth'
-import { peekAuthProviders, useAuthProviders } from '@/lib/auth/providers'
-import { useWhatsAppCartOrder } from '@/lib/checkout/whatsapp-fallback'
+import { useAuthProviders } from '@/lib/auth/providers'
 
 export interface CheckoutCtaProps {
   /** where it sits (analytics) */
@@ -24,7 +24,7 @@ export interface CheckoutCtaProps {
   className?: string
 }
 
-/** Login-gated → /checkout. Instant feedback: the door on the button opens on press. */
+/** Login-gated (when login is live) → /checkout. Instant feedback: the door on the button opens on press. */
 export function CheckoutCta({ where, onNavigate, pieces, total, className }: CheckoutCtaProps) {
   const go = useGoToCheckout()
   const [going, setGoing] = useState(false)
@@ -53,30 +53,24 @@ export function CheckoutCta({ where, onNavigate, pieces, total, className }: Che
         <span aria-hidden="true" className="grid size-8 place-items-center border-2 border-paper bg-paper">
           <DoorIcon open={going ? 0.95 : 0.15} size={20} light="var(--color-door)" />
         </span>
-        <span className="font-display text-[24px] uppercase leading-none tracking-[0.02em]">{going ? (guest ? 'Opening WhatsApp…' : 'Opening checkout…') : guest ? 'Order on WhatsApp' : 'Checkout'}</span>
+        <span className="font-display text-[24px] uppercase leading-none tracking-[0.02em]">{going ? 'Opening checkout…' : 'Checkout'}</span>
         <ArrowRight aria-hidden="true" className="size-5 text-volt transition-transform duration-200 can-hover:group-hover:translate-x-1" />
       </button>
       <p className="flex items-center justify-center gap-1.5 text-center text-[12px] text-tone-3">
         <Lock aria-hidden="true" className="size-3 shrink-0" />
-        {guest ? 'Opens WhatsApp with your order typed out — nothing is charged on site' : 'Log in · pick an address · pay on WhatsApp — nothing is charged on site'}
+        {guest ? 'Your details · delivery address · pay on WhatsApp — nothing is charged on site' : 'Log in · pick an address · pay on WhatsApp — nothing is charged on site'}
       </p>
     </div>
   )
 }
 
-/** Shared "go to checkout" (login gate → close the drawer → /checkout). */
+/** Shared "go to checkout" (login gate when live → close the drawer → /checkout). */
 export function useGoToCheckout() {
   const router = useRouter()
   const requireLogin = useRequireLogin()
-  const guestOrder = useWhatsAppCartOrder()
   return ({ where, pieces, total, onGo }: { where: string; pieces?: number; total?: number; onGo?: () => void }) => {
-    // no customer login method is switched on yet → order straight on WhatsApp (inside this click), as before accounts
-    if (peekAuthProviders()?.any === false) {
-      onGo?.()
-      guestOrder(where)
-      return
-    }
     router.prefetch('/checkout')
+    // the gate runs the action straight away while no login method is live (guest checkout)
     requireLogin('Log in to check out', () => {
       track('checkout_start', { where, pieces: pieces ?? null, total: total ?? null })
       onGo?.()

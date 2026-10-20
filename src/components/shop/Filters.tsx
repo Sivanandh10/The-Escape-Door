@@ -23,6 +23,8 @@ export interface ShopQuery {
   max: number | null
   stock: boolean
   sort: SortKey
+  /** 1-based page (ShopBrowser + ProductGrid); filter changes reset it to 1 */
+  page: number
 }
 
 export interface ChipOption { value: string; label: string; count?: number; swatch?: [string, string] }
@@ -53,11 +55,14 @@ function ChipRow({ label, options, value, onPick, name }: { label: string; optio
               key={o.value || 'all'}
               type="button"
               aria-pressed={on}
+              disabled={!on && o.count === 0}
               onClick={() => onPick(on && o.value ? '' : o.value)}
               data-filter={name}
+              data-value={o.value}
               className={cn(
                 'press label inline-flex min-h-10 shrink-0 items-center gap-2 border-2 border-ink px-3 text-[0.6875rem] font-bold focus-ring',
                 on ? 'bg-ink text-volt shadow-[3px_3px_0_0_var(--color-volt)]' : 'bg-paper text-ink shadow-hard-sm hover:bg-lav',
+                'disabled:cursor-not-allowed disabled:opacity-40 disabled:shadow-none disabled:hover:bg-paper',
               )}
             >
               {o.swatch && (

@@ -285,7 +285,7 @@ export function ArcCorridor({ doors }: { doors: ArcDoorData[] }) {
               Every collection is a door. Walk the corridor, pick the arc you live in and step through to
               tees, hoodies, polaroids and props. Original, fan-inspired designs only.
             </p>
-            <p className="s02-hint label" aria-hidden="true">
+            <p className="s02-hint label" aria-hidden="true" data-scrolltop-avoid="">
               <span className="s02-hint-arrow">→</span> Scroll to walk the corridor
             </p>
           </header>

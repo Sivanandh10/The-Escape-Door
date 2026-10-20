@@ -14,7 +14,10 @@ function describe(l: OrderSnapshot['items'][number]): string {
   return bits.length ? `${l.name} — ${bits.join(' · ')}` : l.name
 }
 
-export function buildCheckoutMessage(o: Pick<OrderSnapshot, 'ref' | 'items' | 'totals' | 'address' | 'gift' | 'note'>, opts: { src?: string } = {}): string {
+export function buildCheckoutMessage(
+  o: Pick<OrderSnapshot, 'ref' | 'items' | 'totals' | 'address' | 'gift' | 'note'> & Partial<Pick<OrderSnapshot, 'guest' | 'contact'>>,
+  opts: { src?: string } = {},
+): string {
   const out: string[] = []
   const t = o.totals
   const priced = o.items.filter((l) => l.unitPrice != null)
@@ -54,6 +57,16 @@ export function buildCheckoutMessage(o: Pick<OrderSnapshot, 'ref' | 'items' | 't
     out.push('Deliver to:')
     out.push(`${clean(a.name, 80)} · ${formatPhone(a.phone)}`)
     for (const line of addressLines(a)) out.push(clean(line, 200))
+  }
+
+  // guests: who placed it (the receiver above may be someone else) — the team replies to this number
+  const c = o.contact
+  if (o.guest && c && (c.phone || c.email)) {
+    const same = o.address && c.phone === o.address.phone && clean(c.name, 80).toLowerCase() === clean(o.address.name, 80).toLowerCase()
+    out.push('')
+    out.push(same ? 'Ordered as guest' : 'Ordered by (guest):')
+    if (!same) out.push([clean(c.name, 80), c.phone ? formatPhone(c.phone) : ''].filter(Boolean).join(' · '))
+    if (c.email) out.push(`Email: ${clean(c.email, 200)}`)
   }
 
   if (o.gift?.enabled) {

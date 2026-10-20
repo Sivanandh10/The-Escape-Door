@@ -52,9 +52,11 @@ export interface AddressFormProps {
   onSubmit: (input: AddressInput) => Promise<boolean>
   onCancel?: () => void
   className?: string
+  /** form element id (lets an outside "Next" button submit it with requestSubmit()) */
+  formId?: string
 }
 
-export function AddressForm({ initial, seed, allowDefault = true, submitLabel, onSubmit, onCancel, className }: AddressFormProps) {
+export function AddressForm({ initial, seed, allowDefault = true, submitLabel, onSubmit, onCancel, className, formId }: AddressFormProps) {
   const id = useId()
   const formRef = useRef<HTMLFormElement>(null)
   const [values, setValues] = useState<Values>(() => (initial ? fromAddress(initial) : blank(seed)))
@@ -123,7 +125,7 @@ export function AddressForm({ initial, seed, allowDefault = true, submitLabel, o
   const err = (k: Field) => (touched[k] ? errors[k] : undefined)
 
   return (
-    <form ref={formRef} onSubmit={submit} noValidate className={cn('flex flex-col gap-4 text-ink', className)} aria-busy={saving}>
+    <form ref={formRef} id={formId} onSubmit={submit} noValidate className={cn('flex flex-col gap-4 text-ink', className)} aria-busy={saving}>
       <fieldset>
         <legend className="label mb-2 text-[11px]">Address type</legend>
         <div className="flex flex-wrap gap-2" role="radiogroup">

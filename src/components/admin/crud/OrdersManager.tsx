@@ -37,6 +37,11 @@ export type PipelineOrder = Omit<AdminOrder, 'status'> & {
   orderNo: number | null
   userId: string | null
   email: string
+  /** placed without a login (checkout guest); stays true after it's linked to an account */
+  guest: boolean
+  /** who placed it (guests: typed at checkout) */
+  contactPhone: string
+  contactEmail: string
   address: AddressSnapshot | null
   gift: GiftOptions | null
   voucherCode: string | null
@@ -62,6 +67,9 @@ const pipelineCfg: CrudConfig<PipelineOrder> = {
       orderNo: snap.orderNo,
       userId: typeof r.user_id === 'string' ? r.user_id : null,
       email: typeof r.email === 'string' ? r.email : '',
+      guest: snap.guest,
+      contactPhone: snap.contact?.phone ?? '',
+      contactEmail: snap.contact?.email ?? '',
       address: snap.address,
       gift: snap.gift,
       voucherCode: snap.voucherCode,
@@ -79,7 +87,7 @@ const pipelineCfg: CrudConfig<PipelineOrder> = {
 const fromAdmin = (o: AdminOrder): PipelineOrder => ({
   ...o,
   status: isOrderStatus(o.status) ? o.status : 'new',
-  orderNo: null, userId: null, email: '', address: null, gift: null, voucherCode: null,
+  orderNo: null, userId: null, email: '', guest: false, contactPhone: '', contactEmail: '', address: null, gift: null, voucherCode: null,
   discount: 0, giftFee: 0, timeline: [], checkout: null,
 })
 
@@ -164,7 +172,7 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
         setFresh((s) => new Set(s).add(o.id))
         setNow(Date.now())
         toast(`New order ${refOf(o)}`, {
-          description: `${o.name || 'Customer'}${o.city ? ` · ${o.city}` : ''} · ${o.total != null ? formatINR(o.total) : 'price on request'} · ${pieces(o)} pcs`,
+          description: `${o.guest ? 'Guest · ' : ''}${o.name || 'Customer'}${o.city ? ` · ${o.city}` : ''} · ${o.total != null ? formatINR(o.total) : 'price on request'} · ${pieces(o)} pcs`,
           duration: 9000,
           action: { label: 'Open', onClick: () => setOpenId(o.id) },
         })
@@ -263,6 +271,7 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
         <span className="block min-w-0 leading-tight">
           <span className="flex items-center gap-1.5 truncate font-semibold">
             {o.name || '—'}
+            <GuestPill o={o} />
             {o.gift?.enabled && <Gift aria-label="Gift" className="size-3.5 shrink-0 text-pink" />}
             {o.voucherCode && <TicketPercent aria-label={`Voucher ${o.voucherCode}`} className="size-3.5 shrink-0 text-volt" />}
           </span>
@@ -377,7 +386,7 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
             onRowClick={(o) => setOpenId(o.id)}
             selectedKey={openId}
             initialSort={{ id: 'ref', dir: 'desc' }}
-            search={{ placeholder: 'Search order no., name, city, PIN, product, voucher…', text: (o) => `${refOf(o)} ${o.name} ${o.city} ${o.contact} ${o.email} ${o.address?.pin ?? ''} ${o.voucherCode ?? ''} ${o.src} ${o.items.map((i) => i.name).join(' ')}` }}
+            search={{ placeholder: 'Search order no., name, city, PIN, product, voucher…', text: (o) => `${refOf(o)} ${o.name} ${o.city} ${o.contact} ${o.contactPhone} ${o.email} ${o.guest ? 'guest' : ''} ${o.address?.pin ?? ''} ${o.voucherCode ?? ''} ${o.src} ${o.items.map((i) => i.name).join(' ')}` }}
             toolbar={
               <Chips
                 label="Status"
@@ -484,6 +493,7 @@ function Board({
                       </span>
                       <span className="mt-1 flex items-center gap-1.5 truncate text-[13.5px] font-semibold">
                         {o.name || '—'}
+                        <GuestPill o={o} />
                         {o.gift?.enabled && <Gift aria-label="Gift" className="size-3.5 shrink-0 text-pink" />}
                         {o.voucherCode && <TicketPercent aria-label="Voucher" className="size-3.5 shrink-0 text-volt" />}
                       </span>
@@ -527,7 +537,8 @@ function OrderDrawer({
   onStatus: (o: PipelineOrder, s: OrderStatus) => void
   onEdit: () => void
 }) {
-  const phone = o?.address?.phone || o?.contact || ''
+  // who to reply to: the person who ordered (guests typed it at checkout), else the receiver
+  const phone = o?.contactPhone || o?.contact || o?.address?.phone || ''
   const wa = o ? waFor(phone) : null
   const n = o ? NEXT[o.status] : undefined
   const stage = o ? (o.status === 'cancelled' ? -1 : pipelineIndex(o.status)) : -1
@@ -590,11 +601,20 @@ function OrderDrawer({
 
           <div className="grid gap-4 sm:grid-cols-2">
             <section className="border-2 border-ink bg-paper p-4 text-ink shadow-[5px_5px_0_var(--color-door)]">
-              <p className="label mb-2 flex items-center gap-1.5 text-ink/55"><UserRound aria-hidden className="size-3.5" /> Customer</p>
+              <p className="label mb-2 flex items-center gap-1.5 text-ink/55">
+                <UserRound aria-hidden className="size-3.5" /> Customer
+                {o.guest && <span className="ml-auto border-2 border-ink bg-lav px-1.5 py-0.5 text-[9.5px] text-ink">{o.userId ? 'Guest · linked' : 'Guest'}</span>}
+              </p>
               <dl className="grid grid-cols-[72px_1fr] gap-y-1.5 text-[14px]">
                 <dt className="label pt-0.5 text-ink/50">Name</dt><dd className="font-semibold">{o.name || '—'}</dd>
                 <dt className="label pt-0.5 text-ink/50">Phone</dt><dd className="break-all font-mono text-[13px]">{phone ? formatPhone(phone) : '—'}</dd>
-                <dt className="label pt-0.5 text-ink/50">Email</dt><dd className="break-all text-[13px]">{o.email || '—'}</dd>
+                <dt className="label pt-0.5 text-ink/50">Email</dt><dd className="break-all text-[13px]">{o.contactEmail || o.email || '—'}</dd>
+                {o.guest && !o.userId && (
+                  <>
+                    <dt className="label pt-0.5 text-ink/50">Account</dt>
+                    <dd className="text-[12.5px] leading-snug text-ink/70">None yet — links itself when they log in with this email (email link or Google).</dd>
+                  </>
+                )}
                 <dt className="label pt-0.5 text-ink/50">Source</dt><dd className="font-mono text-[12.5px]">{o.src || '(direct)'}</dd>
               </dl>
               <div className="mt-3 flex flex-wrap gap-2">
@@ -741,5 +761,15 @@ function Line2({ label, value, accent, strong }: { label: string; value: string;
       <dt className="min-w-0 truncate">{label}</dt>
       <dd className="shrink-0 tabular-nums">{value}</dd>
     </div>
+  )
+}
+
+/** "Guest" (no login) / "Guest · linked" (claimed by an account later) */
+function GuestPill({ o }: { o: Pick<PipelineOrder, 'guest' | 'userId'> }) {
+  if (!o.guest) return null
+  return (
+    <span className={adminPill('lav', 'shrink-0 px-1.5 py-0 text-[9.5px]')} title={o.userId ? 'Placed as a guest, now linked to their account' : 'Placed without an account'}>
+      {o.userId ? 'Guest·linked' : 'Guest'}
+    </span>
   )
 }

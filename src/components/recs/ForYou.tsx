@@ -1,14 +1,24 @@
 'use client'
-// "Picked for you" (owner: AUTH) — personal rows for a signed-in shopper, built from REAL signals only:
-// recently viewed products, cart + wishlist, and (when linked) their MyAnimeList list + MAL suggestions.
-//   <ForYou exclude={slug} />            product page: compact (picks + one "because you watched" row + recent)
-//   <ForYou variant="account" />         /account: everything + anime suggestions + "Request merch" for unmapped shows
-// Signed out: product variant shows a one-line login nudge; account variant renders nothing.
-// Data: GET /api/auth/me/recs (dynamic, cookie-bound) so the product page itself stays static.
+// Recommendation surfaces (owner: AUTH → RECS). Built from REAL signals only — recently viewed (recency-decayed),
+// cart + wishlist, past orders, shop searches and (when linked) MyAnimeList — ranked by the hybrid engine
+// (src/lib/recs/engine.ts) with an explainable reason chip on every card.
+//   <ForYou exclude={slug} />            product page: "You may also like" (similar + bought together, everyone)
+//                                        + signed-in extras ("Because you watched", recently viewed) / login nudge
+//   <ForYou variant="account" />         /account: picks (with reasons) + MAL rows + suggestions + "Request merch"
+//   <ForYou variant="shop" />            top of /shop: "Recommended for you" — only when the visitor has signals
+//   <ForYou variant="home" />            "Picked for you" row (same rule)
+//   <ForYou variant="cart" onNavigate /> cart drawer: "Complete the look"
+// Data: GET /api/recs (everyone; signals from the browser + DB when signed in) and GET /api/auth/me/recs
+// (signed-in MAL / recent rows). Both are client fetches, so the pages themselves stay static.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { clearSignals, SIGNALS_EVENT } from '@/lib/recs/signals'
+import { clearLocalViews } from '@/lib/recs/local'
+import { CompleteTheLook } from './CompleteTheLook'
+import { RecsRow, RecsSkeleton as RowSkeleton } from './RecsRow'
+import { useHasSignals, useRecs, type RecItem } from './useRecs'
 import Link from 'next/link'
 import { motion } from 'motion/react'
-import { ArrowUpRight, Check, Loader2, RefreshCw, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowUpRight, Check, Loader2, RefreshCw, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductCard } from '@/components/shop/ProductCard'
 import { useCustomer } from '@/lib/auth/customer'
@@ -21,13 +31,113 @@ import { cn } from '@/lib/utils'
 
 export interface ForYouProps {
   exclude?: string
-  variant?: 'product' | 'account'
+  variant?: 'product' | 'account' | 'shop' | 'home' | 'cart'
   className?: string
+  /** cart variant: close the drawer when a card is followed */
+  onNavigate?: () => void
 }
 
 type State = { status: 'idle' } | { status: 'loading' } | { status: 'error' } | { status: 'ready'; data: RecsPayload }
 
-export function ForYou({ exclude, variant = 'product', className }: ForYouProps) {
+export function ForYou({ exclude, variant = 'product', className, onNavigate }: ForYouProps) {
+  if (variant === 'cart') return <CompleteTheLook onNavigate={onNavigate} className={className} />
+  if (variant === 'shop' || variant === 'home') return <TasteRow context={variant} className={className} />
+  if (variant === 'product')
+    return (
+      <>
+        {exclude && <MayAlsoLike slug={exclude} />}
+        <SignedInRecs exclude={exclude} variant="product" className={className} />
+      </>
+    )
+  return <SignedInRecs variant="account" className={className} />
+}
+
+// ---------------------------------------------------------------- product page: "You may also like"
+function MayAlsoLike({ slug }: { slug: string }) {
+  const r = useRecs('product', { slug, limit: 4 })
+  if (r.status === 'idle' || (r.status === 'loading' && !r.items.length)) return <RowSkeleton className="container-x pb-16" />
+  if (r.status === 'error' || !r.items.length) return null
+  return (
+    <section aria-labelledby="mayalso-h" className="container-x pb-16 md:pb-20" data-recs="product">
+      <RecsRow id="mayalso-h" kicker="Similar pieces + bought together" before="You may also " accent="like" jp="こちらもおすすめ" items={r.items} />
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------- /shop + home: taste row (returning visitors only)
+function TasteRow({ context, className }: { context: 'shop' | 'home'; className?: string }) {
+  const { customer, loading } = useCustomer()
+  const has = useHasSignals()
+  const enabled = !loading && (has || !!customer)
+  const r = useRecs(context, { limit: 6, enabled })
+  const [hidden, setHidden] = useState(false)
+  if (!enabled || hidden) return null
+  if (r.status === 'idle' || (r.status === 'loading' && !r.items.length)) return <RowSkeleton className={cn('container-x pt-10 md:pt-14', className)} />
+  if (r.status === 'error') {
+    return (
+      <section aria-label="Recommended for you" className={cn('container-x pt-10', className)}>
+        <div className="flex flex-wrap items-center gap-3 border-[3px] border-hype p-4 text-paper">
+          <p>We couldn’t load your picks just now.</p>
+          <button type="button" onClick={r.retry} className="press focus-ring inline-flex min-h-11 items-center gap-2 border-[3px] border-ink bg-paper px-4 font-bold text-ink">
+            <RefreshCw aria-hidden="true" className="size-4" /> Retry
+          </button>
+        </div>
+      </section>
+    )
+  }
+  if (!r.personal || !r.items.length) return null
+
+  // privacy control: forget this device's trail (undo for 6 s)
+  const reset = () => {
+    let snap: Array<[string, string | null]> = []
+    try {
+      snap = ['ted-recs-v1', 'ted-recent-v1'].map((k) => [k, window.localStorage.getItem(k)] as [string, string | null])
+    } catch {
+      /* storage blocked */
+    }
+    clearSignals()
+    clearLocalViews()
+    setHidden(true)
+    toast.success('Picks reset on this device', {
+      description: 'We’ll learn again from what you open next.',
+      duration: 6000,
+      action: {
+        label: 'Undo',
+        onClick: () => {
+          try {
+            for (const [k, v] of snap) if (v != null) window.localStorage.setItem(k, v)
+            window.dispatchEvent(new Event(SIGNALS_EVENT))
+          } catch {
+            /* ignore */
+          }
+          setHidden(false)
+        },
+      },
+    })
+  }
+
+  return (
+    <section aria-labelledby={`${context}-recs-h`} className={cn('container-x pt-10 md:pt-14', className)} data-recs={context}>
+      <RecsRow
+        id={`${context}-recs-h`}
+        kicker={r.items[0]?.reason.label ?? 'Picked from your trail'}
+        before={context === 'shop' ? 'Recommended for ' : 'Picked for '}
+        accent="you"
+        jp="あなたへのおすすめ"
+        items={r.items}
+        cols={6}
+        action={
+          <button type="button" onClick={reset} className="label focus-ring inline-flex min-h-11 items-center gap-1.5 text-[0.6875rem] text-paper/75 underline decoration-2 underline-offset-4 hover:text-volt">
+            <RotateCcw aria-hidden="true" className="size-3.5" /> Reset picks
+          </button>
+        }
+      />
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------- signed-in rows (product extras + account)
+function SignedInRecs({ exclude, variant, className }: { exclude?: string; variant: 'product' | 'account'; className?: string }) {
   const { customer, loading, openLogin } = useCustomer()
   const hydrated = useHydrated()
   const cartIds = useCart((s) => s.items.map((i) => i.productId).join(','))
@@ -100,14 +210,12 @@ export function ForYou({ exclude, variant = 'product', className }: ForYouProps)
   if (!full) {
     if (nothing) return null
     const firstWatched = d.watched[0]
+    if (!firstWatched && !d.recent.length) return null
     return (
       <section aria-labelledby="foryou-h" className={cn('container-x pb-20 md:pb-28', className)}>
-        {d.picks.length > 0 && (
-          <Row id="foryou-h" kicker={d.pickReason ?? 'Picked for you'} before="Picked for " accent="you" jp="あなたへ" products={d.picks.slice(0, 4)} />
-        )}
         {firstWatched && (
           <Row
-            id={d.picks.length ? undefined : 'foryou-h'}
+            id="foryou-h"
             kicker={`From your MyAnimeList`}
             before="Because you watched "
             accent={firstWatched.anime.title}
@@ -117,7 +225,7 @@ export function ForYou({ exclude, variant = 'product', className }: ForYouProps)
           />
         )}
         {d.recent.length > 0 && (
-          <Row id={d.picks.length || firstWatched ? undefined : 'foryou-h'} kicker="Your trail" before="Recently " accent="viewed" products={d.recent.slice(0, 4)} small />
+          <Row id={firstWatched ? undefined : 'foryou-h'} kicker="Your trail" before="Recently " accent="viewed" products={d.recent.slice(0, 4)} small />
         )}
       </section>
     )
@@ -135,7 +243,15 @@ export function ForYou({ exclude, variant = 'product', className }: ForYouProps)
           </Link>
         </div>
       )}
-      {d.picks.length > 0 && <Row kicker={d.pickReason ?? 'Picked for you'} before="Picked for " accent="you" jp="あなたへ" products={d.picks} />}
+      {d.picks.length > 0 && (
+        <RecsRow
+          kicker={d.pickReason ?? 'Picked for you'}
+          before="Picked for "
+          accent="you"
+          jp="あなたへ"
+          items={d.picks.map((p) => ({ product: p, score: 0, reason: (d.pickReasons?.[p.id] as RecItem['reason'] | undefined) ?? { kind: 'similar', label: d.pickReason ?? 'Picked for you' } }))}
+        />
+      )}
       {d.watched.map((w) => (
         <Row
           key={w.collection.slug}

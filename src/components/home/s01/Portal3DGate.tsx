@@ -23,7 +23,7 @@ function capable(): boolean {
   }
 }
 
-export function Portal3DGate({ srcs = [] }: { srcs?: string[] }) {
+export function Portal3DGate() {
   const host = useRef<HTMLDivElement>(null)
   const [mount, setMount] = useState(false)
   const [shown, setShown] = useState(false)
@@ -75,7 +75,6 @@ export function Portal3DGate({ srcs = [] }: { srcs?: string[] }) {
     >
       {mount && (
         <DoorPortal3D
-          srcs={srcs}
           onReady={() => setShown(true)}
           onFail={() => {
             setShown(false)

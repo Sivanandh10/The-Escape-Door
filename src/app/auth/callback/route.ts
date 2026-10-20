@@ -8,6 +8,7 @@ import { NextResponse } from 'next/server'
 import type { EmailOtpType } from '@supabase/supabase-js'
 import { supabaseServer } from '@/lib/supabase/server'
 import { ensureProfile, requestOrigin } from '@/lib/auth/customer-server'
+import { claimGuestOrders } from '@/lib/auth/claim-orders'
 import { safeNext } from '@/lib/auth/shared'
 
 const OTP_TYPES: EmailOtpType[] = ['signup', 'invite', 'magiclink', 'recovery', 'email_change', 'email']
@@ -53,6 +54,9 @@ export async function GET(req: Request) {
   }
   if (!user) return fail('callback')
 
-  await ensureProfile(user)
+  const profile = await ensureProfile(user)
+  // this login proved the inbox (email link / OTP / Google) → guest orders placed with this email join the account
+  // (CHECKOUT, migration 0010). Never for staff; password logins never come through here.
+  if (profile !== 'staff') await claimGuestOrders(user.id, { emailProven: true })
   return go(next, recovery ? undefined : type === 'signup' || type === 'email' ? 'email-confirmed' : 'signed-in')
 }
