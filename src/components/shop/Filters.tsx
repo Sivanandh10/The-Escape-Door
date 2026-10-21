@@ -5,6 +5,7 @@ import { useId } from 'react'
 import { Search, X, SlidersHorizontal } from 'lucide-react'
 import { formatINR } from '@/lib/pricing'
 import { cn } from '@/lib/utils'
+import { PhotoSearchButton } from '@/components/search/PhotoSearchButton'
 
 export type SortKey = 'featured' | 'new' | 'price-asc' | 'price-desc'
 export const SORTS: Array<[SortKey, string]> = [
@@ -108,6 +109,7 @@ export function Filters({ query, onChange, onReset, arcs, cats, fandoms, bounds,
               <X aria-hidden="true" className="h-4 w-4" strokeWidth={3} />
             </button>
           )}
+          <PhotoSearchButton from="shop" label className="h-full min-h-11 min-w-11 border-l-[3px] border-ink px-3 text-ink can-hover:hover:bg-volt max-sm:[&>span]:hidden" />
         </label>
         <div className="relative flex min-h-12 items-center border-[3px] border-ink bg-volt">
           <label htmlFor={sortId} className="label pl-3 text-[0.625rem]">Sort</label>

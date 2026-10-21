@@ -293,13 +293,15 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
     [configured],
   )
 
-  // Owner rule: every shopping action except Share needs a login. Product / cart / wishlist / checkout / Design Your Own
-  // links are intercepted while signed out (and a login method is live): the login pop-up opens and, once logged in,
-  // the shopper continues to where they clicked. Ctrl/⌘/middle-click (new tab) and anything inside [data-share] or
-  // [data-no-login] are left alone.
+  // Owner rule: BROWSING never needs a login — product pages, the cart page, Design Your Own and search are open to
+  // everyone. Only ACTIONS are gated (add to cart / buy now / wishlist ♥ / remind me / send a custom design … each runs
+  // its own useRequireLogin gate). The only LINKS intercepted while signed out are the two pages that are actions in
+  // themselves: /wishlist (saved pieces need an account) and /checkout (placing an order). The login pop-up opens and,
+  // once logged in, the shopper continues to where they clicked. Ctrl/⌘/middle-click (new tab) and anything inside
+  // [data-share] or [data-no-login] are left alone.
   useEffect(() => {
     if (!configured) return
-    const GATED = /^\/(product\/|cart(\/|$)|wishlist(\/|$)|checkout(\/|$)|custom(\/|$))/
+    const GATED = /^\/(wishlist(\/|$)|checkout(\/|$))/
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
       if (ref.current) return
@@ -321,8 +323,7 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
       e.preventDefault()
       e.stopPropagation()
       const href = url.pathname + url.search + url.hash
-      const what = url.pathname.startsWith('/product/') ? 'see this product' : url.pathname.startsWith('/custom') ? 'design your own' : 'continue'
-      openLogin(`Log in to ${what}`, () => router.push(href))
+      openLogin(url.pathname.startsWith('/wishlist') ? 'Log in to see your wishlist' : 'Log in to check out', () => router.push(href))
     }
     document.addEventListener('click', onClick, true)
     return () => document.removeEventListener('click', onClick, true)

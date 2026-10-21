@@ -18,6 +18,8 @@ export type AnalyticsEvent =
   | 'page_view' | 'add_to_cart' | 'remove_from_cart' | 'wishlist_add' | 'whatsapp_click' | 'checkout_start'
   | 'custom_start' | 'custom_submit' | 'remind_me' | 'newsletter' | 'collection_open' | 'product_view'
   | 'search' | 'filter' | 'scroll_depth' | 'page_leave'
+  // photo search (never carries the image): open {from}, result {kind: exact|similar|none|error, top, ms}
+  | 'image_search_open' | 'image_search_result'
 
 type Props = Record<string, string | number | boolean | null | undefined>
 

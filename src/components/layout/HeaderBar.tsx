@@ -16,6 +16,7 @@ import { cn } from '@/lib/utils'
 import { MAIN_NAV, readableOn, type NavArc } from './nav'
 import { MobileMenu } from './MobileMenu'
 import { AccountButton } from '@/components/auth/AccountButton'
+import { PhotoSearchButton } from '@/components/search/PhotoSearchButton'
 
 const EASE_OUT = [0.16, 1, 0.3, 1] as const
 
@@ -431,6 +432,7 @@ function SearchPanel({ id, open, onClose }: { id: string; open: boolean; onClose
                 enterKeyHint="search"
                 className="min-w-0 flex-1 bg-transparent font-display text-[26px] uppercase leading-none tracking-[0.01em] placeholder:text-ink/45 focus:outline-none md:text-[36px]"
               />
+              <PhotoSearchButton from="header" label className="min-h-12 min-w-12 border-[3px] border-ink bg-paper px-3 text-ink shadow-hard-sm can-hover:hover:bg-lav max-sm:[&>span]:hidden" />
               <button type="submit" className="press label shrink-0 border-[3px] border-ink bg-ink px-4 py-3 text-paper shadow-hard-sm">
                 Search
               </button>

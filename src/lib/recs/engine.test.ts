@@ -211,3 +211,76 @@ test('reason chip names the viewed item closest to each pick (same type), not ju
   assert.ok(tee, 'a JJK tee is recommended with a "Because you viewed" chip')
   assert.match(tee!.reason.label, /jjk tee a/)
 })
+
+// ---------------------------------------------------------------- session trail → account (search-term affinity)
+test('search words: plurals, synonyms and partial matches of longer terms', () => {
+  const { termMatch, searchWords, typesOf } = E
+  assert.deepEqual(searchWords('The JJK merch for tees'), ['jjk', 'tees'], 'stop words dropped')
+  assert.equal(termMatch('jjk-hoodie hoodie jjk', searchWords('hoodies')), 1, 'plural → singular')
+  assert.equal(termMatch('cursed static oversized t-shirt tshirt jujutsu kaisen', searchWords('jjk tees')), 1, 'jjk → jujutsu, tees → shirt')
+  assert.equal(termMatch('ds-cape cape ds', searchWords('ds jacket')), 0.25, 'half of a 2-word term → half weight × share')
+  assert.equal(termMatch('op-tee tshirt op', searchWords('katana')), 0)
+  assert.deepEqual(typesOf('cosplay-props'), ['katana', 'cape', 'hat', 'cosplay'])
+  assert.deepEqual(typesOf('hoodie'), ['hoodie'])
+  assert.deepEqual(typesOf('nope'), [])
+})
+
+test('search-term affinity: matching products lead, their arc gets a lift, partial matches rank below full ones', () => {
+  const recs = rankRecs({ context: 'shop', products: CAT, collections: COLS, signals: { searches: ['ds posters'] }, limit: 8, now: NOW })
+  assert.equal(recs[0].product.slug, 'ds-poster', 'full match first')
+  assert.equal(recs[0].reason.kind, 'search')
+  assert.match(recs[0].reason.label, /ds posters/)
+  const prof = buildProfile(CAT, { searches: ['ds posters'] }, NOW)
+  assert.ok((prof.search.get('ds-poster') ?? 0) > (prof.search.get('ds-cape') ?? 0), 'full beats partial')
+  assert.ok((prof.search.get('ds-cape') ?? 0) > 0, 'other Demon Slayer pieces still count (partial)')
+  assert.ok((prof.col.get('ds') ?? 0) > (prof.col.get('op') ?? 0), 'the searched arc gains affinity')
+})
+
+test('storedToSignals: recency-decayed, strongest first, views ignored, mergeSignals de-duplicates', () => {
+  const { storedToSignals, mergeSignals } = E
+  const s = storedToSignals(
+    [
+      { kind: 'search', value: 'one piece', at: NOW - 40 * D },
+      { kind: 'search', value: 'polaroid', at: NOW - H },
+      { kind: 'search', value: 'polaroid', at: NOW - 2 * H },
+      { kind: 'collection', value: 'op', at: NOW - H },
+      { kind: 'collection', value: 'op', at: NOW - 3 * H },
+      { kind: 'collection', value: 'ds', at: NOW - 30 * D },
+      { kind: 'type', value: 'hoodies', at: NOW - H },
+      { kind: 'cart', value: 'p-jjk-hoodie', at: NOW - D },
+      { kind: 'wishlist', value: 'p-ds-cape', at: NOW - D },
+      { kind: 'view', value: 'jjk-tee-a', at: NOW - H },
+    ],
+    NOW,
+  )
+  assert.deepEqual(s.searches, ['polaroid', 'one piece'])
+  assert.deepEqual(s.collections!.map((c) => c.slug), ['op', 'ds'])
+  assert.ok(s.collections![0].weight > 1.9 && s.collections![1].weight < 0.3, 'two fresh visits ≫ one old one')
+  assert.deepEqual(s.types!.map((t) => t.type), ['hoodies'])
+  assert.deepEqual(s.added, ['p-jjk-hoodie'])
+  assert.deepEqual(s.wish, ['p-ds-cape'])
+  const m = mergeSignals({ searches: ['polaroid', 'jjk'], collections: [{ slug: 'op', weight: 1 }] }, s)
+  assert.deepEqual(m.searches, ['polaroid', 'jjk', 'one piece'])
+  assert.equal(m.collections!.find((c) => c.slug === 'op')!.weight, 1 + s.collections![0].weight)
+})
+
+test('buildRecs: a logged-in shopper with only a stored trail (searches, arcs, cart adds) gets real picks', () => {
+  const at = NOW - 2 * H
+  const stored = [
+    { kind: 'search' as const, value: 'polaroid', at },
+    { kind: 'collection' as const, value: 'op', at },
+    { kind: 'collection' as const, value: 'op', at: at - H },
+  ]
+  const out = buildRecs({ products: CAT, collections: COLS as never, views: [], stored, now: NOW })
+  assert.ok(out.picks.length > 0, 'no views needed — the trail is enough')
+  assert.equal(out.picks[0].type, 'polaroid', 'search term wins the top slot')
+  assert.ok(out.picks.slice(0, 4).some((p) => p.collection === 'op'), 'browsed arc shows up near the top')
+  const reasons = Object.values(out.pickReasons ?? {}).map((r) => r.label)
+  assert.ok(reasons.some((l) => l === 'Matches “polaroid”'), 'search reason chip')
+  assert.ok(reasons.some((l) => l === 'Because you browsed One Piece'), 'browsed-arc reason chip')
+  // a past cart add is interest, not "in your cart": the item itself can still be picked
+  const hist = buildRecs({ products: CAT, collections: COLS as never, views: [], stored: [{ kind: 'cart', value: 'p-ds-cape', at }], now: NOW })
+  assert.ok(hist.picks.some((p) => p.collection === 'ds'))
+  const none = buildRecs({ products: CAT, collections: COLS as never, views: [], stored: [{ kind: 'view', value: 'ds-cape', at }], now: NOW })
+  assert.equal(none.picks.length, 0, 'stored views alone are ignored (recent_views carries them)')
+})

@@ -46,6 +46,7 @@ import { KindIcon } from './KindIcon'
 import { openWhatsApp, openWhatsAppPending } from '@/lib/wa-open'
 import { isSupabaseConfigured } from '@/lib/supabase/env'
 import { useRequireLogin } from '@/lib/auth/customer'
+import { takePhotoForCustom } from '@/lib/visual-search/handoff'
 
 interface Attached {
   id: string
@@ -235,6 +236,15 @@ export function ForgeStudio({ data }: { data: ForgeData }) {
     setFileErrors(errs)
     if (ok.length) setSlamKey((k) => k + 1)
   }
+  // "Request this design" from photo search hands the shopper's photo over in memory (src/lib/visual-search/handoff.ts)
+  useEffect(() => {
+    if (!ready) return
+    const photo = takePhotoForCustom()
+    if (!photo) return
+    addFiles([photo])
+    toast('Your photo is attached', { description: 'Pick the product and size, then send it. We will quote this design.' })
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- one-time pickup once the draft is restored
+  }, [ready])
   const removeFile = (id: string) => {
     setFiles((prev) => {
       const f = prev.find((x) => x.id === id)

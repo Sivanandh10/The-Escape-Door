@@ -8,6 +8,9 @@
 //           − penalties (in cart · already bought · just viewed · price on request); out of stock is never returned
 //     then MMR diversification (λ ≈ 0.72; max 2 per type in the top 6, collections spread), stable tie-break by slug.
 //     Every result carries an explainable reason ("Because you viewed …", "Bought together", "Popular in …").
+//     Visitor signals: views · cart · wishlist · orders · MAL · searches (word match + singulars + synonyms, partial
+//     matches of longer terms count half) · arcs + shop categories browsed · past cart adds. Signed-in shoppers also
+//     bring their stored session trail (customer_signals → storedToSignals(), merged with mergeSignals()).
 //   buildItemGraph() — item→item co-occurrence (orders + same-session product views) and 30-day popularity.
 //   buildRecs()      — the signed-in payload for <ForYou variant="account"> (recent / picks / MAL rows), with
 //                      hybrid picks + per-pick reasons. Payload shape unchanged (pickReasons is additive).
@@ -46,10 +49,16 @@ export interface RecSignals {
   wish?: string[]
   /** products bought before (ids or slugs) */
   orders?: string[]
-  /** search terms typed in the shop, newest first */
+  /** search terms typed in the shop / header search, newest (or strongest) first */
   searches?: string[]
   /** MyAnimeList → collection affinity (already mapped) */
   mal?: Array<{ collection: string; weight: number; title: string }>
+  /** collection (arc) pages browsed — `weight` ≈ number of recent visits (recency-decayed) */
+  collections?: Array<{ slug: string; weight: number; name?: string }>
+  /** shop categories / product types browsed (a ProductType or a /shop/[category] slug) */
+  types?: Array<{ type: string; weight: number }>
+  /** products added to the cart in the past (history — NOT the current cart, so no in-cart penalty) */
+  added?: string[]
 }
 
 export interface ItemGraph {
@@ -217,8 +226,133 @@ export function viewWeight(at: number, count: number, now: number): number {
   return decay * (1 + Math.min(4, Math.max(0, count - 1)) * 0.25)
 }
 
-export function searchHay(p: Product): string {
-  return [p.name, p.designTitle, p.jpTitle ?? '', p.type, p.collection.replace(/-/g, ' '), ...p.tags].join(' ').toLowerCase()
+export function searchHay(p: Product, collectionName = ''): string {
+  return [p.name, p.designTitle, p.jpTitle ?? '', p.type, p.collection.replace(/-/g, ' '), collectionName, ...p.tags].join(' ').toLowerCase()
+}
+
+/** /shop/[category] slugs → the product types they list (mirror of CATEGORIES in src/components/shop/catalog.ts). */
+export const CATEGORY_TYPES: Record<string, ProductType[]> = {
+  'oversized-t-shirts': ['tshirt'],
+  't-shirts': ['tshirt'],
+  hoodies: ['hoodie'],
+  polaroids: ['polaroid'],
+  bookmarks: ['bookmark'],
+  posters: ['poster'],
+  badges: ['badge'],
+  stickers: ['sticker'],
+  'cosplay-props': ['katana', 'cape', 'hat', 'cosplay'],
+  accessories: ['keychain', 'accessory', 'figurine'],
+}
+const PRODUCT_TYPES: ReadonlySet<string> = new Set(Object.keys(TYPE_WORD))
+/** A type signal value (ProductType or category slug) → product types. */
+export function typesOf(value: string): ProductType[] {
+  return PRODUCT_TYPES.has(value) ? [value as ProductType] : CATEGORY_TYPES[value] ?? []
+}
+
+const STOP = new Set(['the', 'for', 'and', 'with', 'of', 'in', 'on', 'a', 'an', 'to', 'my', 'merch', 'anime'])
+/** shoppers' words → another word that may appear in the catalogue text instead */
+const SYNONYM: Record<string, string> = { tee: 'shirt', tees: 'shirt', tshirts: 'shirt', jjk: 'jujutsu', aot: 'titan', hoody: 'hoodie', hoodies: 'hoodie' }
+
+/** Words of a search term worth matching (stop words dropped, de-duplicated). */
+export function searchWords(term: string): string[] {
+  const out: string[] = []
+  for (const w of String(term).toLowerCase().split(/[\s-]+/)) {
+    if (w.length < 2 || STOP.has(w) || out.includes(w)) continue
+    out.push(w)
+  }
+  return out
+}
+
+/** One word against a product's text: substring, its singular ("badges" → "badge", "posters" → "poster") or a
+ *  synonym ("tee" → "shirt", "jjk" → "jujutsu"). */
+function wordHit(hay: string, w: string): boolean {
+  if (hay.includes(w)) return true
+  const syn = SYNONYM[w]
+  if (syn && hay.includes(syn)) return true
+  if (w.length > 3 && w.endsWith('es') && hay.includes(w.slice(0, -2))) return true
+  return w.length > 3 && w.endsWith('s') && !w.endsWith('ss') && hay.includes(w.slice(0, -1))
+}
+
+/** How well a product matches a search term: 1 = every word, 0.5·share for a partial match of a 2+ word term
+ *  ("naruto hoodie" still likes other Naruto pieces), 0 otherwise. */
+export function termMatch(hay: string, words: readonly string[]): number {
+  if (!words.length) return 0
+  let hit = 0
+  for (const w of words) if (wordHit(hay, w)) hit++
+  if (hit === words.length) return 1
+  return words.length >= 2 && hit / words.length >= 0.5 ? 0.5 * (hit / words.length) : 0
+}
+
+// ============================================================================ stored signals (customer_signals)
+export interface StoredSignal {
+  kind: 'search' | 'collection' | 'type' | 'cart' | 'wishlist' | 'view'
+  value: string
+  weight?: number | null
+  /** epoch ms */
+  at: number
+}
+
+/** Stored-signal recency: halves every 14 days (a search from last month still counts a little). */
+export function storedWeight(at: number, now: number, weight = 1): number {
+  const ageDays = Math.max(0, now - at) / DAY
+  return (Number.isFinite(ageDays) ? Math.pow(0.5, ageDays / 14) : 0.1) * (weight > 0 ? Math.min(5, weight) : 1)
+}
+
+/** customer_signals rows → engine signals (search terms, collection + type affinity, past cart adds, saves).
+ *  Views are NOT taken from here (recent_views holds them, with counts). */
+export function storedToSignals(rows: StoredSignal[], now = Date.now()): Pick<RecSignals, 'searches' | 'collections' | 'types' | 'added' | 'wish'> {
+  const acc = { search: new Map<string, number>(), collection: new Map<string, number>(), type: new Map<string, number>(), cart: new Map<string, number>(), wishlist: new Map<string, number>() }
+  for (const r of rows) {
+    if (!r || typeof r.value !== 'string' || !Number.isFinite(r.at) || r.kind === 'view') continue
+    const m = acc[r.kind as keyof typeof acc]
+    if (!m) continue
+    bump(m, r.value, storedWeight(r.at, now, r.weight ?? 1))
+  }
+  const top = (m: Map<string, number>, n: number) => [...m.entries()].sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0])).slice(0, n)
+  return {
+    searches: top(acc.search, 8).map(([t]) => t),
+    collections: top(acc.collection, 12).map(([slug, weight]) => ({ slug, weight: round(weight) })),
+    types: top(acc.type, 8).map(([type, weight]) => ({ type, weight: round(weight) })),
+    added: top(acc.cart, 30).map(([s]) => s),
+    wish: top(acc.wishlist, 40).map(([s]) => s),
+  }
+}
+
+/** Merge two signal sets (the browser's + the account's). Lists keep `a` first and drop duplicates. */
+export function mergeSignals(a: RecSignals, b: Partial<RecSignals>): RecSignals {
+  const uniq = <T,>(xs: T[], key: (x: T) => string, max: number) => {
+    const seen = new Set<string>()
+    const out: T[] = []
+    for (const x of xs) {
+      const k = key(x)
+      if (seen.has(k)) continue
+      seen.add(k)
+      out.push(x)
+      if (out.length >= max) break
+    }
+    return out
+  }
+  const sumBy = <T extends { weight: number }>(xs: T[], key: (x: T) => string) => {
+    const m = new Map<string, T>()
+    for (const x of xs) {
+      const k = key(x)
+      const cur = m.get(k)
+      m.set(k, cur ? { ...cur, weight: cur.weight + x.weight } : { ...x })
+    }
+    return [...m.values()]
+  }
+  return {
+    ...a,
+    views: uniq([...(a.views ?? []), ...(b.views ?? [])], (v) => v.slug, 60),
+    cart: a.cart ?? b.cart,
+    wish: uniq([...(a.wish ?? []), ...(b.wish ?? [])], (s) => s, 80),
+    orders: uniq([...(a.orders ?? []), ...(b.orders ?? [])], (s) => s, 80),
+    searches: uniq([...(a.searches ?? []), ...(b.searches ?? [])], (s) => s, 8),
+    mal: a.mal?.length ? a.mal : b.mal,
+    collections: sumBy([...(a.collections ?? []), ...(b.collections ?? [])], (c) => c.slug).slice(0, 16),
+    types: sumBy([...(a.types ?? []), ...(b.types ?? [])], (t) => t.type).slice(0, 12),
+    added: uniq([...(a.added ?? []), ...(b.added ?? [])], (s) => s, 40),
+  }
 }
 
 // ============================================================================ visitor profile
@@ -305,22 +439,57 @@ export function buildProfile(products: Product[], signals: RecSignals = {}, now 
     bump(mal, m.collection, m.weight)
     if (!malTitle.has(m.collection)) malTitle.set(m.collection, m.title)
   }
+  // products added to the cart before (account history): interest, but weaker than what's in the cart now
+  let history = false
+  for (const ref of (signals.added ?? []).slice(0, 40)) {
+    const p = resolve(ref)
+    if (!p || cart.has(p.slug) || seeds.has(p.slug)) continue
+    history = true
+    learn(p, 1.2, { kind: 'cart', label: `Because you added ${p.designTitle} to your cart`, w: 1.2, slug: p.slug })
+  }
+  // collection (arc) pages browsed → arc affinity; the reason chip says "Because you browsed …"
+  const known = new Set(products.map((p) => p.collection))
+  for (const c of (signals.collections ?? []).slice(0, 16)) {
+    if (!c || !known.has(c.slug) || !(c.weight > 0)) continue
+    history = true
+    const w = Math.min(3, c.weight)
+    bump(col, c.slug, 1.5 * w)
+    const list = colSource.get(c.slug) ?? []
+    const name = c.name ?? c.slug.split('-').map((x) => (x ? x[0].toUpperCase() + x.slice(1) : x)).join(' ')
+    list.push({ kind: 'viewed', label: `Because you browsed ${name}`, w: 0.5 * w, slug: '' })
+    list.sort((a, b) => b.w - a.w || a.slug.localeCompare(b.slug))
+    colSource.set(c.slug, list.slice(0, 6))
+  }
+  // shop categories browsed → type affinity
+  for (const t of (signals.types ?? []).slice(0, 12)) {
+    if (!t || !(t.weight > 0)) continue
+    const ts = typesOf(t.type)
+    for (const ty of ts) bump(type, ty, (0.9 * Math.min(3, t.weight)) / Math.sqrt(ts.length))
+    if (ts.length) history = true
+  }
 
-  // searches → products whose text matches every word of a term (newest term strongest)
+  // searches → products whose text matches the term (all words = full, most words of a longer term = half);
+  // the newest / strongest term counts most and also lends its arcs + types a little affinity
   const search = new Map<string, number>()
   let searchTerm: string | null = null
-  const terms = (signals.searches ?? []).map((s) => String(s).trim().toLowerCase()).filter((s) => s.length >= 2).slice(0, 5)
+  const terms = (signals.searches ?? []).map((s) => String(s).trim().toLowerCase()).filter((s) => s.length >= 2).slice(0, 8)
+  const hays = terms.length ? new Map(products.map((p) => [p.slug, searchHay(p)])) : null
   terms.forEach((term, i) => {
-    const words = term.split(/\s+/).filter(Boolean)
-    const hits = products.filter((p) => words.every((w) => searchHay(p).includes(w)))
+    const words = searchWords(term)
+    if (!words.length || !hays) return
+    const hits: Array<[Product, number]> = []
+    for (const p of products) {
+      const m = termMatch(hays.get(p.slug)!, words)
+      if (m > 0) hits.push([p, m])
+    }
     if (!hits.length) return
     if (!searchTerm) searchTerm = term
-    const w = Math.pow(0.6, i)
+    const w = Math.pow(0.7, i)
     const spread = Math.sqrt(hits.length)
-    for (const p of hits) {
-      bump(search, p.slug, w)
-      bump(col, p.collection, (1.2 * w) / spread)
-      bump(type, p.type, (0.6 * w) / spread)
+    for (const [p, m] of hits) {
+      bump(search, p.slug, w * m)
+      bump(col, p.collection, (1.2 * w * m) / spread)
+      bump(type, p.type, (0.6 * w * m) / spread)
     }
   })
 
@@ -330,7 +499,7 @@ export function buildProfile(products: Product[], signals: RecSignals = {}, now 
     if (a) bump(seeds, a.slug, 3)
   }
 
-  const any = viewed.size > 0 || cart.size > 0 || wish.size > 0 || bought.size > 0 || mal.size > 0 || search.size > 0
+  const any = viewed.size > 0 || cart.size > 0 || wish.size > 0 || bought.size > 0 || mal.size > 0 || search.size > 0 || history
   return {
     col: normalise(col), type: normalise(type), band: normalise(band), mal: normalise(mal),
     colSource, malTitle, seeds, search: normalise(search), searchTerm, cart, wish, bought, justViewed, viewed, any,
@@ -617,9 +786,10 @@ export function explain(p: Product, parts: Partial<Record<Feature, number>>, x: 
         (band >= 0 ? srcs.find((s) => { const sp = x.bySlug.get(s.slug); return !!sp && priceBand(sp) === band }) : undefined) ??
         srcs[0]
       if (src && (top === 'col' || (parts.col ?? 0) > 0)) return { kind: src.kind, label: src.label }
-      if (top === 'type') return { kind: 'similar', label: `More ${TYPE_PLURAL[p.type]} for you` }
-      // affinity that came from searching (no view/cart/wishlist in this arc)
+      // affinity that came from searching (no view/cart/wishlist in this arc): the search explains it better than
+      // "More polaroids for you" (the type lift itself came from that search)
       if ((parts.search ?? 0) > 0 && prof.searchTerm) return { kind: 'search', label: `Matches “${prof.searchTerm}”` }
+      if (top === 'type') return { kind: 'similar', label: `More ${TYPE_PLURAL[p.type]} for you` }
       const t = prof.malTitle.get(p.collection)
       if (t) return { kind: 'watched', label: `Because you watched ${t}` }
       return { kind: 'popular', label: `Popular in ${x.colName(p.collection)}` }
@@ -643,6 +813,8 @@ export interface RecsInput {
   /** product slug to leave out (the page being viewed) */
   exclude?: string | null
   mal?: { username: string; syncedAt: string | null; list: MalAnime[]; suggestions: MalSuggestion[]; stats: MalSnapshotStats | null } | null
+  /** the account's stored trail (customer_signals): searches, arcs + categories browsed, past cart adds, saves */
+  stored?: StoredSignal[]
   graph?: ItemGraph
   limits?: { recent?: number; picks?: number; watchedRows?: number; perRow?: number }
   now?: number
@@ -684,7 +856,14 @@ export function malSignals(list: MalAnime[], collections: Pick<Collection, 'slug
     .map(({ collection, weight, title }) => ({ collection, weight, title }))
 }
 
-const typeRank: Partial<Record<Product['type'], number>> = { tshirt: 3, hoodie: 3, poster: 2, polaroid: 1.5, keychain: 1, badge: 1 }
+/** Attach display names to collection signals (for the "Because you browsed …" chip). */
+export function withNames<T extends Pick<RecSignals, 'collections'>>(s: T, collections: Pick<Collection, 'slug' | 'name'>[]): T {
+  if (!s.collections?.length) return s
+  const names = new Map(collections.map((c) => [c.slug, c.name]))
+  return { ...s, collections: s.collections.map((c) => ({ ...c, name: c.name ?? names.get(c.slug) })) }
+}
+
+const typeRank: Partial<Record<Product['type'], number>> ={ tshirt: 3, hoodie: 3, poster: 2, polaroid: 1.5, keychain: 1, badge: 1 }
 
 export function buildRecs(input: RecsInput): RecsPayload {
   const { products, collections, views, signalIds = [], exclude, mal } = input
@@ -734,12 +913,15 @@ export function buildRecs(input: RecsInput): RecsPayload {
   }
 
   // ---- picks: the hybrid ranker (views + cart/wishlist + orders + MAL + co-occurrence)
-  const signals: RecSignals = {
-    views: sortedViews.slice(0, 40).map((v) => ({ slug: v.slug, at: Date.parse(v.viewedAt) || now - 7 * DAY, count: v.count })),
-    cart: signalIds,
-    orders: input.orderIds ?? [],
-    mal: mal?.list?.length ? malSignals(mal.list, collections) : [],
-  }
+  const signals: RecSignals = mergeSignals(
+    {
+      views: sortedViews.slice(0, 40).map((v) => ({ slug: v.slug, at: Date.parse(v.viewedAt) || now - 7 * DAY, count: v.count })),
+      cart: signalIds,
+      orders: input.orderIds ?? [],
+      mal: mal?.list?.length ? malSignals(mal.list, collections) : [],
+    },
+    input.stored?.length ? withNames(storedToSignals(input.stored, now), collections) : {},
+  )
   const personal = buildProfile(products, signals, now).any
   const picksR = personal
     ? rankRecs({

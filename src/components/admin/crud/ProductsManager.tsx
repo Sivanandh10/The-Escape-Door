@@ -4,11 +4,14 @@
 // so /shop, /shop/[category], /arc/[collection], home sections and /product/[slug] update immediately.
 // Images: many per product (multi-file upload, add by URL, ↑/↓ reorder, side front/back/detail, alt, remove + undo).
 // Hierarchy: deleting a product or removing an image is superadmin-only (locked button for everyone else).
+// Photo search: after a save, new images are embedded in this browser and stored (ImageIndexTools.tsx →
+// imageIndexActions.ts); the toolbar's "Rebuild image search index" re-reads every image.
 import { useMemo, useState } from 'react'
 import { toast } from 'sonner'
 import { z } from 'zod'
 import { ArrowDown, ArrowUp, ImagePlus, Lock, Plus, Trash2 } from 'lucide-react'
-import { DELETE_LOCK_NOTE, useCanDelete } from '../AdminContext'
+import { DELETE_LOCK_NOTE, READONLY_NOTE, useCanDelete } from '../AdminContext'
+import { RebuildImageIndexButton, useImageIndexSync } from './ImageIndexTools'
 import type { BundleRule, ProductImage, ProductType, Variant } from '@/lib/types'
 import { productPriceLabel } from '@/lib/pricing'
 import { AdminPage } from '../AdminPage'
@@ -49,6 +52,7 @@ function withDerived(p: AdminProduct): AdminProduct {
 
 export function ProductsManager({ initial, collections: initialCollections, bundleRules }: { initial: AdminProduct[]; collections: AdminCollection[]; bundleRules: BundleRule[] }) {
   const crud = useCrud(productCfg, initial, { perm: 'catalog.edit' })
+  const syncImageIndex = useImageIndexSync(crud.mode === 'live' && !crud.readOnly)
   // every arc incl. hidden ones (live: loaded under RLS), for the picker and labels
   const collections = useCrud(collectionCfg, initialCollections).rows
   const [arc, setArc] = useState<string>('all')
@@ -79,7 +83,15 @@ export function ProductsManager({ initial, collections: initialCollections, bund
       actions={<SandboxSwitch mode={crud.mode} readOnly={crud.readOnly} />}
     >
       <EntityManager<AdminProduct>
-        crud={{ ...crud, save: (item, opts) => crud.save(withDerived(item), opts) }}
+        crud={{
+          ...crud,
+          save: async (item, opts) => {
+            const d = withDerived(item)
+            const ok = await crud.save(d, opts)
+            if (ok) syncImageIndex(d) // photo search: embed new images in the background (live mode only)
+            return ok
+          },
+        }}
         rows={rows}
         caption="Products"
         noun="product"
@@ -91,12 +103,19 @@ export function ProductsManager({ initial, collections: initialCollections, bund
         schema={productSchema}
         beforeSave={beforeSave}
         toolbar={
-          <Chips
-            label="Arc"
-            value={arc}
-            onChange={setArc}
-            options={[{ id: 'all', label: 'All' }, ...collections.map((c) => ({ id: c.slug, label: c.name }))]}
-          />
+          <div className="flex flex-wrap items-center gap-3">
+            <Chips
+              label="Arc"
+              value={arc}
+              onChange={setArc}
+              options={[{ id: 'all', label: 'All' }, ...collections.map((c) => ({ id: c.slug, label: c.name }))]}
+            />
+            <RebuildImageIndexButton
+              products={crud.rows}
+              disabled={crud.mode !== 'live' || crud.readOnly}
+              disabledReason={crud.mode !== 'live' ? 'Photo search indexes the live catalogue: switch off Sandbox / connect Supabase.' : READONLY_NOTE}
+            />
+          </div>
         }
         columns={[
           { id: 'sw', header: '', className: 'w-[56px]', cell: (p) => (
