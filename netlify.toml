@@ -10,6 +10,10 @@
 [build.environment]
   NODE_VERSION = "22"
   NEXT_TELEMETRY_DISABLED = "1"
+  # @huggingface/transformers pulls in onnxruntime-node, whose postinstall downloads the CUDA 12 / TensorRT
+  # binaries (hundreds of MB from NuGet) on linux/x64. Only the local Node scripts (scripts/*-image-*.mts) use it;
+  # the site runs the model in the shopper's browser (onnxruntime-web). Skip that download on every deploy.
+  ONNXRUNTIME_NODE_INSTALL = "skip"
 
 [functions]
   directory = "netlify/functions"

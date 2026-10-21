@@ -17,7 +17,8 @@ export const MODEL_ID: string = T.MODEL_ID
 export const MODEL_KEY: string = T.MODEL_KEY
 export const MODEL_DTYPE: 'fp16' = T.MODEL_DTYPE
 export const EMBED_DIM: number = T.EMBED_DIM
-export const MATCH: { exact: number; margin: number; similar: number; maxSimilar: number } = T.MATCH
+export const VIEW_PENALTY: readonly number[] = T.VIEW_PENALTY
+export const MATCH: import('../../src/lib/visual-search/thresholds').MatchThresholds = T.MATCH
 export const vec = V as typeof import('../../src/lib/visual-search/vec')
 
 hfEnv.allowLocalModels = false
@@ -98,16 +99,31 @@ export async function loadImageBytes(src: string): Promise<Buffer> {
   return fs.promises.readFile(file)
 }
 
-/** Any encoded image → RawImage (RGB) via sharp, so manipulated buffers and files go through the same decoder. */
-export async function toRawImage(bytes: Buffer): Promise<RawImage> {
-  const img = sharp(bytes).rotate()
-  const m = await img.metadata()
-  const oriented = (m.orientation ?? 1) >= 5 // EXIF 5–8 swap width / height
-  const W = (oriented ? m.height : m.width) ?? 1
-  const H = (oriented ? m.width : m.height) ?? 1
-  const { w, h } = vec.preShrinkSize(W, H)
-  const { data, info } = await img
+/**
+ * Any encoded image → RawImage (RGB) via sharp, so manipulated buffers and files go through the same decoder.
+ * EXIF-oriented, pre-shrunk, then transparency flattened onto WHITE (the browser worker resizes, then draws onto a
+ * white canvas: same order). The whole image (view null) is resized straight from the encoded file: libvips'
+ * shrink-on-load + lanczos3 matches the browser's createImageBitmap 'high' resize best (MEASURED cos 0.989 on a
+ * screentone back mockup vs 0.975 when decoding at full size first). Crops (index views) are cut from the oriented
+ * full-size pixels with vec.viewRect (same rounding as the worker).
+ */
+export async function toRawImage(bytes: Buffer, view: (typeof vec.INDEX_VIEWS)[number] = null): Promise<RawImage> {
+  let src: ReturnType<typeof sharp>
+  let r: { left: number; top: number; width: number; height: number }
+  if (!view) {
+    src = sharp(bytes).rotate()
+    const m = await sharp(bytes).metadata()
+    const swap = (m.orientation ?? 1) >= 5 // EXIF 5–8 swap width / height
+    r = { left: 0, top: 0, width: (swap ? m.height : m.width) ?? 1, height: (swap ? m.width : m.height) ?? 1 }
+  } else {
+    const { data: full, info: fi } = await sharp(bytes).rotate().ensureAlpha().raw().toBuffer({ resolveWithObject: true })
+    r = vec.viewRect(fi.width, fi.height, view)
+    src = sharp(full, { raw: { width: fi.width, height: fi.height, channels: 4 } }).extract(r)
+  }
+  const { w, h } = vec.preShrinkSize(r.width, r.height)
+  const { data, info } = await src
     .resize({ width: w, height: h, fit: 'fill' })
+    .flatten({ background: '#ffffff' })
     .removeAlpha()
     .toColourspace('srgb')
     .raw()
@@ -117,7 +133,10 @@ export async function toRawImage(bytes: Buffer): Promise<RawImage> {
 
 // ---------------------------------------------------------------- model
 export interface Embedder {
+  /** one vector of the whole image (what a shopper's photo is) */
   embed(bytes: Buffer): Promise<Float32Array>
+  /** the first n vec.INDEX_VIEWS vectors (what the index stores for a product image: n = vec.viewsFor(type, side)) */
+  embedViews(bytes: Buffer, n?: number): Promise<Float32Array[]>
 }
 
 export async function createEmbedder(): Promise<Embedder> {
@@ -125,12 +144,17 @@ export async function createEmbedder(): Promise<Embedder> {
   const processor = await AutoProcessor.from_pretrained(MODEL_ID)
   const model = await CLIPVisionModelWithProjection.from_pretrained(MODEL_ID, { dtype: MODEL_DTYPE, device: 'cpu' })
   console.log(`model ${MODEL_ID} (${MODEL_DTYPE}) ready in ${((Date.now() - t) / 1000).toFixed(1)} s`)
+  const run = async (image: RawImage) => {
+    const inputs = await processor(image)
+    const { image_embeds } = await model(inputs)
+    return vec.l2normalize(Float32Array.from(image_embeds.data as Float32Array))
+  }
   return {
-    async embed(bytes: Buffer) {
-      const image = await toRawImage(bytes)
-      const inputs = await processor(image)
-      const { image_embeds } = await model(inputs)
-      return vec.l2normalize(Float32Array.from(image_embeds.data as Float32Array))
+    embed: async (bytes: Buffer) => run(await toRawImage(bytes)),
+    async embedViews(bytes: Buffer, n = vec.INDEX_VIEWS.length) {
+      const out: Float32Array[] = []
+      for (const v of vec.INDEX_VIEWS.slice(0, n)) out.push(await run(await toRawImage(bytes, v)))
+      return out
     },
   }
 }

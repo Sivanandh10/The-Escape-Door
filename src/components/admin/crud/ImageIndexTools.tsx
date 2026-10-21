@@ -21,14 +21,16 @@ let engineP: Promise<[Engine, Vec]> | null = null
 const engine = () => (engineP ??= Promise.all([import('@/lib/visual-search/client'), import('@/lib/visual-search/vec')]))
 
 const srcsOf = (p: Pick<AdminProduct, 'images'>) => [...new Set(p.images.map((i) => i.src.trim()).filter(Boolean))]
+/** side of the src's first occurrence (vec.viewsFor; the server action checks the same rule) */
+const sideOf = (p: Pick<AdminProduct, 'images'>, src: string) => p.images.find((i) => i.src.trim() === src)?.side
 
-async function embedAll(srcs: string[], onEach?: () => void): Promise<{ items: { src: string; vec: string }[]; failed: string[] }> {
+async function embedAll(p: Pick<AdminProduct, 'images' | 'type'>, srcs: string[], onEach?: () => void): Promise<{ items: { src: string; vec: string }[]; failed: string[] }> {
   const [E, V] = await engine()
   const items: { src: string; vec: string }[] = []
   const failed: string[] = []
   for (const src of srcs) {
     try {
-      items.push({ src, vec: V.encodeVec(await E.embedUrl(src)) })
+      items.push({ src, vec: V.encodeVecs(await E.embedUrlViews(src, V.viewsFor(p.type, sideOf(p, src)))) }) // one row = its views
     } catch {
       failed.push(src)
     }
@@ -57,7 +59,7 @@ export function useImageIndexSync(live: boolean) {
         if (!missing.length && !stale) return
         const id = `image-index-${p.id}`
         if (missing.length) toast.loading(`Updating photo search for ${p.name}…`, { id, description: 'Reading the new images on this device.' })
-        const { items, failed } = await embedAll(missing)
+        const { items, failed } = await embedAll(p, missing)
         const res = await replaceImageEmbeddings({ productId: p.id, items })
         if (!res.ok) {
           toast.error('Photo search not updated', { id, description: res.error })
@@ -96,7 +98,7 @@ export function RebuildImageIndexButton({ products, disabled, disabledReason }: 
       await E.bootModel((pr) => setMb(pr.total ? `${(pr.loaded / 1048576).toFixed(1)} / ${(pr.total / 1048576).toFixed(1)} MB` : null))
       setJob({ done: 0, total, phase: 'images' })
       for (const p of list) {
-        const { items, failed: f } = await embedAll(srcsOf(p), () => setJob({ done: ++done, total, phase: 'images' }))
+        const { items, failed: f } = await embedAll(p, srcsOf(p), () => setJob({ done: ++done, total, phase: 'images' }))
         failed += f.length
         const res = await replaceImageEmbeddings({ productId: p.id, items })
         if (!res.ok) throw new Error(res.error)

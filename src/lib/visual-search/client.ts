@@ -1,9 +1,13 @@
 // Visual search — main-thread engine (owner: SEARCH). Import ONLY from lazily loaded client code (the photo-search
 // modal, the admin index tools): creating the worker is what starts the model download.
 //   bootModel(onProgress?)          start / join the model load (progress in bytes) → { device, dtype, ms }
-//   embedBlob(blob) / embedUrl(url) → L2-normalised Float32Array(512), computed in the worker
+//   embedBlob(blob)                 → L2-normalised Float32Array(512) of the whole photo, computed in the worker
+//   embedUrlViews(url, n)           → the first n INDEX_VIEWS vectors (what the index stores; admin indexing)
 //   loadImageIndex()                GET /api/image-index once per page session, decoded
-//   searchPhoto(file)               → MatchResult (exact / similar / none) with the calibrated thresholds
+//   searchPhoto(file)               → MatchResult (exact / similar / none) with the calibrated thresholds; loads the
+//                                     index FIRST, so an empty / unavailable index never downloads the model
+//   disposeModel()                  terminate the worker (frees the model session); the next call boots it again
+//                                   from Cache Storage (~1 s)
 import type { WorkerIn, WorkerOut } from './embed.worker'
 import { classify, decodeIndex, rankProducts, type DecodedProduct, type ImageIndex, type MatchResult } from './vec'
 import { EMBED_DIM, MODEL_KEY } from './thresholds'
@@ -11,19 +15,40 @@ import { EMBED_DIM, MODEL_KEY } from './thresholds'
 export interface ModelInfo { device: string; dtype: string; ms: number }
 export interface LoadProgress { loaded: number; total: number }
 
+/** load = the model; embed = reading this photo (incl. a worker crash mid-photo); size = too many pixels;
+ *  timeout = the model hung on a photo; index = the shop's picture index */
+export type VisualSearchStage = 'load' | 'embed' | 'size' | 'timeout' | 'index'
+
+/** an embed that takes longer than this (after the model is ready) is treated as hung: reject + restart the worker */
+const EMBED_TIMEOUT_MS = 30_000
+
 let worker: Worker | null = null
 let ready: Promise<ModelInfo> | null = null
+let isReady = false
 let lastProgress: LoadProgress | null = null
 let seq = 0
 const listeners = new Set<(p: LoadProgress) => void>()
-const pending = new Map<number, { resolve: (v: Float32Array) => void; reject: (e: Error) => void }>()
+const pending = new Map<number, { resolve: (v: Float32Array[]) => void; reject: (e: Error) => void }>()
 let readyResolve: ((v: ModelInfo) => void) | null = null
 let readyReject: ((e: Error) => void) | null = null
 
 export class VisualSearchError extends Error {
-  constructor(public stage: 'load' | 'embed' | 'index', message: string) {
+  constructor(public stage: VisualSearchStage, message: string) {
     super(message)
   }
+}
+
+function teardown() {
+  worker?.terminate()
+  worker = null
+  ready = null
+  isReady = false
+  lastProgress = null
+}
+
+function failPending(err: VisualSearchError) {
+  pending.forEach((p) => p.reject(err))
+  pending.clear()
 }
 
 function getWorker(): Worker {
@@ -35,9 +60,10 @@ function getWorker(): Worker {
       lastProgress = { loaded: m.loaded, total: m.total }
       listeners.forEach((fn) => fn(lastProgress!))
     } else if (m.type === 'ready') {
+      isReady = true
       readyResolve?.({ device: m.device, dtype: m.dtype, ms: m.ms })
     } else if (m.type === 'vec') {
-      pending.get(m.id)?.resolve(m.vec)
+      pending.get(m.id)?.resolve(m.vecs)
       pending.delete(m.id)
     } else if (m.type === 'error') {
       const err = new VisualSearchError(m.stage, m.message)
@@ -52,13 +78,11 @@ function getWorker(): Worker {
     }
   })
   w.addEventListener('error', (e) => {
-    const err = new VisualSearchError('load', e.message || 'worker-failed')
+    // A crash while the model was already running is about THIS photo (e.g. out of memory decoding it), not the model.
+    const err = new VisualSearchError(isReady ? 'embed' : 'load', e.message || 'worker-crashed')
     readyReject?.(err)
-    pending.forEach((p) => p.reject(err))
-    pending.clear()
-    worker?.terminate()
-    worker = null
-    ready = null
+    failPending(err)
+    teardown()
   })
   worker = w
   return w
@@ -94,17 +118,40 @@ export function offProgress(fn: (p: LoadProgress) => void) {
   listeners.delete(fn)
 }
 
-function embed(msg: { blob?: Blob; url?: string }): Promise<Float32Array> {
+/** Free the model (worker + onnxruntime session). No-op while a photo is being read. Returns whether it disposed. */
+export function disposeModel(): boolean {
+  if (!worker || pending.size) return false
+  readyReject?.(new VisualSearchError('load', 'disposed'))
+  teardown()
+  return true
+}
+
+async function embed(msg: { blob?: Blob; url?: string; views?: number }): Promise<Float32Array[]> {
+  await bootModel()
   const id = ++seq
-  return new Promise<Float32Array>((resolve, reject) => {
-    pending.set(id, { resolve, reject })
-    void bootModel()
+  return new Promise<Float32Array[]>((resolve, reject) => {
+    const timer = setTimeout(() => {
+      if (!pending.has(id)) return
+      // a hung WebGPU / WASM inference: fail this (and any queued) photo, then start the worker over
+      failPending(new VisualSearchError('timeout', 'embed-timeout'))
+      teardown()
+    }, EMBED_TIMEOUT_MS)
+    pending.set(id, {
+      resolve: (v) => {
+        clearTimeout(timer)
+        resolve(v)
+      },
+      reject: (e) => {
+        clearTimeout(timer)
+        reject(e)
+      },
+    })
     send({ type: 'embed', id, ...msg })
   })
 }
 
-export const embedBlob = (blob: Blob) => embed({ blob })
-export const embedUrl = (url: string) => embed({ url: new URL(url, window.location.href).href })
+export const embedBlob = async (blob: Blob) => (await embed({ blob }))[0]
+export const embedUrlViews = (url: string, views: number) => embed({ url: new URL(url, window.location.href).href, views })
 
 // ---------------------------------------------------------------- index
 let indexP: Promise<DecodedProduct[]> | null = null
@@ -112,7 +159,12 @@ let indexP: Promise<DecodedProduct[]> | null = null
 export function loadImageIndex(): Promise<DecodedProduct[]> {
   if (!indexP) {
     indexP = (async () => {
-      const res = await fetch('/api/image-index', { headers: { accept: 'application/json' } })
+      let res: Response
+      try {
+        res = await fetch('/api/image-index', { headers: { accept: 'application/json' } })
+      } catch {
+        throw new VisualSearchError('index', 'index-offline')
+      }
       if (!res.ok) throw new VisualSearchError('index', `index ${res.status}`)
       const index = (await res.json()) as ImageIndex
       if (index.model !== MODEL_KEY || index.dim !== EMBED_DIM) throw new VisualSearchError('index', 'index-model-mismatch')
@@ -138,7 +190,8 @@ export interface PhotoSearch extends MatchResult<DecodedProduct> {
 
 export async function searchPhoto(file: Blob): Promise<PhotoSearch> {
   const t0 = performance.now()
-  const [index, vec] = await Promise.all([loadImageIndex(), embedBlob(file)])
+  const index = await loadImageIndex() // first: no index → no model download
+  const vec = await embedBlob(file)
   const result = classify(rankProducts(vec, index))
   return { ...result, ms: Math.round(performance.now() - t0) }
 }

@@ -7,7 +7,7 @@ import { cacheLife, cacheTag } from 'next/cache'
 import { getCollections, getProducts, TAGS } from '@/lib/data/repo'
 import { productPriceLabel } from '@/lib/pricing'
 import { publicClient } from '@/lib/supabase/server'
-import type { ImageIndex, IndexedProduct } from './vec'
+import { splitVecs, type ImageIndex, type IndexedProduct } from './vec'
 import { EMBED_DIM, MODEL_KEY } from './thresholds'
 
 export const IMAGE_INDEX_TAG = 'image-index'
@@ -50,14 +50,15 @@ export async function getImageIndex(): Promise<ImageIndex> {
 
   // an image URL used by several products (e.g. a shared "detail" slide) can't identify one of them
   const owners = new Map<string, number>()
-  for (const p of products) for (const src of new Set(p.images.map((i) => i.src))) owners.set(src, (owners.get(src) ?? 0) + 1)
+  // (srcs are compared trimmed everywhere: the indexers and the admin actions store image_src trimmed)
+  for (const p of products) for (const src of new Set(p.images.map((i) => i.src.trim()))) owners.set(src, (owners.get(src) ?? 0) + 1)
 
   const byProduct = new Map<string, Map<string, string>>()
   for (const r of rows ?? []) {
     if (!r?.product_id || !r.image_src || typeof r.vec !== 'string') continue
     let m = byProduct.get(r.product_id)
     if (!m) byProduct.set(r.product_id, (m = new Map()))
-    m.set(r.image_src, r.vec)
+    m.set(r.image_src.trim(), r.vec)
   }
 
   const items: IndexedProduct[] = []
@@ -66,10 +67,12 @@ export async function getImageIndex(): Promise<ImageIndex> {
     if (!m) continue
     const vecs: string[] = []
     for (const img of p.images) {
-      const v = m.get(img.src)
-      if (!v || vecs.includes(v)) continue
-      if ((owners.get(img.src) ?? 0) > 1 && img.side === 'detail') continue
-      vecs.push(v)
+      const src = img.src.trim()
+      const row = m.get(src)
+      if (!row) continue
+      if ((owners.get(src) ?? 0) > 1 && img.side === 'detail') continue
+      // one row = the image's index views back to back (vec.ts INDEX_VIEWS / viewsFor); the browser splits it
+      if (splitVecs(row, EMBED_DIM).length && !vecs.includes(row)) vecs.push(row)
     }
     if (!vecs.length) continue
     const cover = p.images.find((i) => i.side !== 'back' && i.src) ?? p.images[0]

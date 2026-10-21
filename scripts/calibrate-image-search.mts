@@ -1,29 +1,44 @@
 // Calibrates the visual-search thresholds on the real catalogue. Owner: SEARCH. Read-only (no DB writes).
-//   node scripts/calibrate-image-search.mts            products from Supabase (.env.local) or the seed catalogue
-//   node scripts/calibrate-image-search.mts --web      + 12 random real photos from picsum.photos as extra negatives
-//   node scripts/calibrate-image-search.mts --json out.json   also write every score
+//   node scripts/calibrate-image-search.mts                 products from Supabase (.env.local) or the seed catalogue
+//   node scripts/calibrate-image-search.mts --web           + real photos from picsum.photos (negatives, photo
+//                                                           backgrounds, foreign prints)
+//   node scripts/calibrate-image-search.mts --neg-dir DIR   + every image in DIR as a real-photo negative (photos of
+//                                                           OTHER shops' tees / hoodies / badges). Default: the local,
+//                                                           git-ignored qa/visual-search/neg-photos when it exists.
+//   node scripts/calibrate-image-search.mts --json out.json also write every query's top 5
 //
-// What it measures (model + dtype from src/lib/visual-search/thresholds.ts, vectors int8-quantised like the DB):
-//   (a) every product image, unchanged                         → should be EXACT top-1
+// The index is built exactly like product_image_embeddings + /api/image-index (vec.viewsFor() views per image, int8
+// round trip, VIEW_PENALTY per view) and, for comparison, the old one-view-per-image index. What it measures (model + dtype from thresholds.ts):
+//   (a) every product image, unchanged                         → EXACT top-1
 //   (b) the same image as JPEG q60 / resized to 480 px / centre-cropped 80 % / rotated 8° / "photographed"
 //       (brightness + saturation shift, blur, sensor noise, JPEG q75) / all of those at once
-//                                                              → should stay EXACT top-1 (at least top-3)
-//   (c) the garment cut out and laid on a table-like background → informative (closest to a real phone photo)
-//   (d) ≥ 10 unrelated images (plain colours, gradients, text, noise, checkerboard, stripes, brand drawings and
-//       textures from public/; optional real photos)          → must return NO RESULT
-// Then it suggests thresholds and prints the outcome with the thresholds currently in thresholds.ts.
+//                                                              → EXACT top-1 (at least top-3)
+//   (c) the middle of the mockup laid on a table               → informative
+//   (e) PHOTO-LIKE (scripts/lib/photo-sim.mts): perspective-skewed, rotated, shadowed, white-balance-shifted, blurred
+//       JPEGs on wood / bedsheet / floor / room backgrounds: the whole mockup · the garment cut out of the poster
+//       (front, back) · a close-up of the print (front, back) · the product centre of non-apparel mockups
+//   (d) negatives that must NOT be called EXACT:
+//       off-topic (plain colours, gradients, text, noise, patterns, textures from public/, photos) → NO RESULT;
+//       in-domain: our own brand drawings (badge, wordmarks: printed on our products, e.g. the earrings' card), our garment silhouette with foreign prints, our poster frame with a foreign print
+//       ("template"), real photos of other tees (--neg-dir), plain text → never EXACT (SIMILAR is acceptable)
+// Then: the outcome with the thresholds in thresholds.ts, a grid search for the tier-2 EXACT rule (vec.isExact) and
+// a SIMILAR threshold sweep.
 import fs from 'node:fs'
 import path from 'node:path'
 import sharp from 'sharp'
 import type * as Lib from './lib/visual-search-node.mjs'
+import type * as Sim from './lib/photo-sim.mjs'
 
-// runtime: the .mts source (Node strips the types); the type-only import above lets tsc follow it
+// runtime: the .mts sources (Node strips the types); the type-only imports above let tsc follow them
 const L: typeof Lib = await import(new URL('./lib/visual-search-node.mts', import.meta.url).href)
-const { createEmbedder, fetchProducts, loadImageBytes, productImages, ROOT, MATCH, MODEL_ID, MODEL_DTYPE, EMBED_DIM, vec } = L
+const S: typeof Sim = await import(new URL('./lib/photo-sim.mts', import.meta.url).href)
+const { createEmbedder, fetchProducts, loadImageBytes, productImages, ROOT, MATCH, MODEL_ID, MODEL_DTYPE, EMBED_DIM, VIEW_PENALTY, vec } = L
 
 const args = process.argv.slice(2)
 const WEB = args.includes('--web')
 const jsonOut = args.includes('--json') ? args[args.indexOf('--json') + 1] : null
+const negDirArg = args.includes('--neg-dir') ? args[args.indexOf('--neg-dir') + 1] : null
+const NEG_DIR = negDirArg ? path.resolve(negDirArg) : path.join(ROOT, 'qa', 'visual-search', 'neg-photos')
 
 // ---------------------------------------------------------------- seeded randomness (deterministic runs)
 function mulberry32(seed: number) {
@@ -136,109 +151,207 @@ const q = (xs: number[], p: number) => {
   return s[Math.min(s.length - 1, Math.max(0, Math.floor(p * (s.length - 1))))]
 }
 const f3 = (n: number) => (Number.isFinite(n) ? n.toFixed(3) : '—')
+const APPAREL = new Set(['tshirt', 'hoodie'])
 
 const { rows, source } = await fetchProducts({ publishedOnly: true })
-console.log(`catalogue: ${rows.length} published products (${source}) · model ${MODEL_ID} ${MODEL_DTYPE} · dim ${EMBED_DIM}`)
+console.log(`catalogue: ${rows.length} published products (${source}) · model ${MODEL_ID} ${MODEL_DTYPE} · dim ${EMBED_DIM} · views ${vec.INDEX_VIEWS.length}`)
 const embedder = await createEmbedder()
+const sim = S.createPhotoSim(1234)
 
-// index (int8 round trip, exactly like product_image_embeddings → /api/image-index)
-type P = { slug: string; vecs: Float32Array[] }
-const index: P[] = []
-const sources: Array<{ slug: string; src: string; bytes: Buffer }> = []
+// ---- index: multi-view (what product_image_embeddings stores) + single-view (the old index, for comparison)
+type P = { slug: string; vecs: Float32Array[]; offs?: number[] }
+const multi: P[] = []
+const rawIndex: Array<{ slug: string; images: string[] }> = [] // --json: every image's views (encodeVecs)
+const single: P[] = []
+const sources: Array<{ slug: string; type: string; side: string; src: string; bytes: Buffer }> = []
 let quantLoss = 1
 const t0 = Date.now()
 for (const r of rows) {
-  const p: P = { slug: r.slug, vecs: [] }
+  const m: P = { slug: r.slug, vecs: [], offs: [] }
+  const s1: P = { slug: r.slug, vecs: [] }
   for (const im of productImages(r)) {
     try {
       const bytes = await loadImageBytes(im.src)
-      const v = await embedder.embed(bytes)
-      const d = vec.decodeVec(vec.encodeVec(v), EMBED_DIM)!
-      quantLoss = Math.min(quantLoss, vec.dot(v, d))
-      p.vecs.push(d)
-      sources.push({ slug: r.slug, src: im.src, bytes })
+      const vs = await embedder.embedViews(bytes, vec.viewsFor(r.type, im.side))
+      const ds = vec.splitVecs(vec.encodeVecs(vs), EMBED_DIM).map((b) => vec.decodeVec(b, EMBED_DIM)!)
+      vs.forEach((v, i) => (quantLoss = Math.min(quantLoss, vec.dot(v, ds[i]))))
+      m.vecs.push(...ds)
+      m.offs!.push(...ds.map((_, i) => VIEW_PENALTY[i] ?? 0))
+      if (jsonOut) (rawIndex.find((x) => x.slug === r.slug) ?? (rawIndex.push({ slug: r.slug, images: [] }), rawIndex[rawIndex.length - 1])).images.push(vec.encodeVecs(vs))
+      s1.vecs.push(ds[0])
+      sources.push({ slug: r.slug, type: r.type, side: im.side, src: im.src, bytes })
     } catch (e) {
       console.warn(`! ${r.slug} ${im.src}: ${(e as Error).message}`)
     }
   }
-  if (p.vecs.length) index.push(p)
-}
-console.log(`indexed ${sources.length} images of ${index.length} products in ${((Date.now() - t0) / 1000).toFixed(1)} s · int8 round-trip min cos ${quantLoss.toFixed(5)}`)
-
-// nearest OTHER product for each original image = how alike our own designs are
-const crossBest: number[] = []
-
-interface Q { case: string; slug: string; src: string; correct: number; wrong: number; rank: number; topSlug: string; second: number }
-const results: Q[] = []
-let seed = 1
-for (const s of sources) {
-  for (const [name, fn] of Object.entries(PERTURB)) {
-    const bytes = await fn(s.bytes, seed++)
-    const v = await embedder.embed(bytes)
-    const ranked = vec.rankProducts(v, index)
-    const rank = ranked.findIndex((r) => r.product.slug === s.slug)
-    const correct = rank >= 0 ? ranked[rank].score : -1
-    const wrong = ranked.find((r) => r.product.slug !== s.slug)?.score ?? -1
-    results.push({ case: name, slug: s.slug, src: s.src, correct, wrong, rank: rank + 1, topSlug: ranked[0].product.slug, second: ranked[1]?.score ?? -1 })
-    if (name === 'original') crossBest.push(wrong)
+  if (m.vecs.length) {
+    multi.push(m)
+    single.push(s1)
   }
 }
+console.log(`indexed ${sources.length} images of ${multi.length} products (${multi.reduce((n, p) => n + p.vecs.length, 0)} vectors, view penalty ${VIEW_PENALTY.join('/')}) in ${((Date.now() - t0) / 1000).toFixed(1)} s · int8 round-trip min cos ${quantLoss.toFixed(5)}`)
 
-const negs = await negatives()
-const negResults: Array<{ name: string; top: number; slug: string; kind: string }> = []
-for (const n of negs) {
-  const v = await embedder.embed(n.bytes)
+// ---- queries
+interface Hit { slug: string; score: number }
+interface Summary { top: Hit[]; rank: number; correct: number }
+interface Row { group: 'copy' | 'photo' | 'offTopic' | 'inDomain'; case: string; name: string; slug: string | null; multi: Summary; single: Summary; q?: string }
+const results: Row[] = []
+function summarize(v: Float32Array, index: P[], slug: string | null): Summary {
   const ranked = vec.rankProducts(v, index)
-  negResults.push({ name: n.name, top: ranked[0].score, slug: ranked[0].product.slug, kind: vec.classify(ranked, MATCH).kind })
+  const rank = slug ? ranked.findIndex((r) => r.product.slug === slug) + 1 : 0
+  return { top: ranked.slice(0, 5).map((r) => ({ slug: r.product.slug, score: r.score })), rank, correct: rank ? ranked[rank - 1].score : -1 }
+}
+async function query(group: Row['group'], kase: string, name: string, slug: string | null, bytes: Buffer) {
+  const v = await embedder.embed(bytes)
+  results.push({ group, case: kase, name, slug, multi: summarize(v, multi, slug), single: summarize(v, single, slug), ...(jsonOut ? { q: vec.encodeVec(v) } : {}) })
 }
 
-// ---------------------------------------------------------------- report
-console.log('\n== positives: correct-product score / best wrong product ==')
-console.log('case        n    top1    top3   corr p05  corr med  wrong max  margin p05')
-for (const name of Object.keys(PERTURB)) {
-  const rs = results.filter((r) => r.case === name)
-  const margins = rs.map((r) => r.correct - r.wrong)
-  console.log(
-    `${name.padEnd(10)} ${String(rs.length).padStart(3)}  ${pct(rs.filter((r) => r.rank === 1).length, rs.length).padStart(6)}  ${pct(rs.filter((r) => r.rank <= 3).length, rs.length).padStart(6)}  ` +
-      `${f3(q(rs.map((r) => r.correct), 0.05)).padStart(9)}  ${f3(q(rs.map((r) => r.correct), 0.5)).padStart(8)}  ${f3(Math.max(...rs.map((r) => r.wrong))).padStart(9)}  ${f3(q(margins, 0.05)).padStart(10)}`,
-  )
-}
-console.log(`\nown designs: nearest other product (originals) median ${f3(q(crossBest, 0.5))} · p95 ${f3(q(crossBest, 0.95))} · max ${f3(Math.max(...crossBest))}`)
+let seed = 1
+for (const s of sources) for (const [name, fn] of Object.entries(PERTURB)) await query('copy', name, s.src, s.slug, await fn(s.bytes, seed++))
 
-console.log('\n== negatives: best product score ==')
-for (const n of [...negResults].sort((a, b) => b.top - a.top)) console.log(`${f3(n.top)}  ${n.kind.padEnd(7)}  ${n.name}  (→ ${n.slug})`)
-const negMax = Math.max(...negResults.map((n) => n.top))
-
-// suggestion: similar just above the worst negative; exact low enough for p05 of the hard positives (combo),
-// high enough that no negative and no wrong-product top-1 gets near it.
-const hard = results.filter((r) => MUST_EXACT.includes(r.case))
-const sugSimilar = Math.ceil((negMax + 0.03) * 100) / 100
-const sugExact = Math.max(sugSimilar + 0.1, Math.floor(q(hard.filter((r) => r.rank === 1).map((r) => r.correct), 0.02) * 100) / 100)
-console.log(`\nsuggested: similar ≥ ${sugSimilar.toFixed(2)} (worst negative ${f3(negMax)} + 0.03) · exact ≥ ${sugExact.toFixed(2)} (2nd percentile of correct top-1 scores on (a)+(b))`)
-
-console.log(`\n== outcome with thresholds.ts: exact ≥ ${MATCH.exact} & margin ≥ ${MATCH.margin}, similar ≥ ${MATCH.similar} ==`)
-console.log('case        n   EXACT ok  WRONG exact  SIMILAR, ours in top 3  SIMILAR, ours lower  NO RESULT')
-for (const name of Object.keys(PERTURB)) {
-  const rs = results.filter((r) => r.case === name)
-  let ok = 0, bad = 0, sim3 = 0, simLow = 0, none = 0
-  for (const r of rs) {
-    const top = Math.max(r.correct, r.wrong)
-    const isExact = top >= MATCH.exact && top - r.second >= MATCH.margin
-    if (isExact && r.topSlug === r.slug) ok++
-    else if (isExact) bad++
-    else if (top < MATCH.similar) none++
-    else if (r.rank <= 3 && r.correct >= MATCH.similar) sim3++
-    else simLow++
+// ---- (e) photo-like positives
+const bgs = await sim.backgrounds(WEB)
+const backCuts: Sim.Cut[] = []
+let bi = 0
+for (const s of sources) {
+  const bg = bgs[bi++ % bgs.length].bytes
+  const mock = await sharp(s.bytes).resize({ width: 600 }).ensureAlpha().png().toBuffer()
+  await query('photo', 'mockupOnPhoto', s.src, s.slug, await sim.onPhoto(mock, bg, 0.62, 0.1))
+  if (APPAREL.has(s.type)) {
+    const c = await sim.cutGarment(s.bytes)
+    if (!c) {
+      console.warn(`! no garment cut-out: ${s.src}`)
+      continue
+    }
+    if (s.side === 'back') backCuts.push(c)
+    await query('photo', `garmentOnPhoto:${s.side}`, s.src, s.slug, await sim.onPhoto(await sim.cutToPng(c), bg, 0.72, 0.08))
+    await query('photo', `printCloseup:${s.side}`, s.src, s.slug, await sim.onPhoto(await sim.cutToPng(c, sim.printRegion(c)), bg, 0.95, 0.06))
+  } else {
+    const m = await sharp(s.bytes).metadata()
+    const cw = m.width ?? 1, ch = m.height ?? 1
+    const ctr = await sharp(s.bytes).extract({ left: Math.round(cw * 0.15), top: Math.round(ch * 0.2), width: Math.round(cw * 0.7), height: Math.round(ch * 0.6) }).ensureAlpha().png().toBuffer()
+    await query('photo', 'centreOnPhoto', s.src, s.slug, await sim.onPhoto(ctr, bg, 0.6, 0.08))
   }
-  console.log(`${name.padEnd(10)} ${String(rs.length).padStart(3)}  ${pct(ok, rs.length).padStart(8)}  ${pct(bad, rs.length).padStart(11)}  ${pct(sim3, rs.length).padStart(22)}  ${pct(simLow, rs.length).padStart(19)}  ${pct(none, rs.length).padStart(9)}`)
 }
-const negOk = negResults.filter((n) => n.kind === 'none').length
-console.log(`negatives: ${negOk}/${negResults.length} NO RESULT`)
 
-const miss = results.filter((r) => MUST_EXACT.includes(r.case) && r.rank !== 1)
+// ---- (d) negatives
+for (const n of await negatives()) {
+  // our own brand drawings are printed on our products (the earrings' card): SIMILAR is a fair answer, EXACT is not
+  if (n.name.startsWith('public/brand/')) await query('inDomain', 'ownBrand', n.name, null, n.bytes)
+  else await query('offTopic', 'offTopic', n.name, null, n.bytes)
+}
+const arts = await sim.foreignArts(WEB)
+const cutSample = backCuts.filter((_, i) => i % Math.max(1, Math.floor(backCuts.length / 6)) === 0).slice(0, 6)
+for (const [ci, c] of cutSample.entries()) {
+  for (const [ai, a] of arts.entries()) {
+    for (const fabric of [[20, 20, 22], [235, 233, 228]] as [number, number, number][]) {
+      const tee = await sim.foreignTee(c, a.bytes, fabric)
+      await query('inDomain', 'foreignTee', `tee#${ci} ${fabric[0] > 100 ? 'white' : 'black'} · ${a.name}`, null, await sim.onPhoto(tee, bgs[(ci + ai) % bgs.length].bytes, 0.72, 0.08))
+    }
+  }
+}
+for (const [ci, s] of sources.filter((s) => s.side === 'back').slice(0, 6).entries()) {
+  const c = await sim.cutGarment(s.bytes)
+  if (!c) continue
+  const full = await sharp(s.bytes).resize({ width: 600 }).png().toBuffer()
+  const tee = await sim.foreignTee(c, arts[1 + (ci % (arts.length - 1))].bytes)
+  await query('inDomain', 'template', `${s.slug} frame + foreign print`, null, await sharp(full).composite([{ input: tee, left: c.bbox.x0, top: c.bbox.y0 }]).jpeg({ quality: 80 }).toBuffer())
+}
+if (fs.existsSync(NEG_DIR)) {
+  for (const f of fs.readdirSync(NEG_DIR).sort()) {
+    if (!/\.(jpe?g|png|webp|avif)$/i.test(f)) continue
+    try {
+      await query('inDomain', 'realPhoto', f, null, await sharp(path.join(NEG_DIR, f)).jpeg().toBuffer())
+    } catch {
+      /* unreadable: skip */
+    }
+  }
+} else console.log(`(no real-photo negatives: ${NEG_DIR} not found)`)
+for (const t of ['BEYOND THE WALL', 'THE ESCAPE DOOR', 'ANIME T-SHIRT']) {
+  await query('inDomain', 'textOnly', t, null, await sharp(Buffer.from(`<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1000"><rect width="800" height="1000" fill="#111"/><text x="400" y="520" text-anchor="middle" font-family="Arial Black,Arial" font-size="72" fill="#fff">${t}</text></svg>`)).png().toBuffer())
+}
+
+// ---------------------------------------------------------------- classification
+type T = typeof MATCH
+type Outcome = 'ok' | 'wrong' | 'sim3' | 'simLow' | 'none'
+const top1 = (s: Summary) => s.top[0]?.score ?? -1
+const top2 = (s: Summary) => s.top[1]?.score ?? -1
+function outcome(r: Row, s: Summary, t: T): Outcome {
+  const top = top1(s)
+  if (vec.isExact(top, top2(s), t)) return r.slug && s.top[0].slug === r.slug ? 'ok' : 'wrong'
+  if (top < t.similar) return 'none'
+  return r.slug && s.rank <= 3 && s.correct >= t.similar ? 'sim3' : 'simLow'
+}
+const POS_CASES = [...new Set(results.filter((r) => r.slug).map((r) => r.case))]
+const NEG_CASES = [...new Set(results.filter((r) => !r.slug).map((r) => r.case))]
+
+function table(t: T, which: 'multi' | 'single', title: string) {
+  console.log(`\n== ${title}: exact ≥ ${t.exact} & lead ≥ ${t.margin}  OR  ≥ ${t.exact2} & lead ≥ ${t.margin2} · similar ≥ ${t.similar} ==`)
+  console.log('case                    n   top1    top3   EXACT ok  WRONG exact  SIMILAR, ours top 3  SIMILAR, ours lower  NO RESULT  corr med')
+  for (const c of POS_CASES) {
+    const rs = results.filter((r) => r.case === c)
+    const o = rs.map((r) => outcome(r, r[which], t))
+    const n = (k: Outcome) => o.filter((x) => x === k).length
+    console.log(
+      `${c.padEnd(22)} ${String(rs.length).padStart(3)}  ${pct(rs.filter((r) => r[which].rank === 1).length, rs.length).padStart(6)}  ${pct(rs.filter((r) => r[which].rank <= 3).length, rs.length).padStart(6)}  ${pct(n('ok'), rs.length).padStart(8)}  ${pct(n('wrong'), rs.length).padStart(11)}  ${pct(n('sim3'), rs.length).padStart(19)}  ${pct(n('simLow'), rs.length).padStart(19)}  ${pct(n('none'), rs.length).padStart(9)}  ${f3(q(rs.map((r) => r[which].correct), 0.5))}`,
+    )
+  }
+  for (const c of NEG_CASES) {
+    const rs = results.filter((r) => r.case === c)
+    const o = rs.map((r) => outcome(r, r[which], t))
+    console.log(`neg ${c.padEnd(18)} ${String(rs.length).padStart(3)}  EXACT ${o.filter((x) => x === 'wrong').length} · SIMILAR ${o.filter((x) => x === 'simLow').length} · NO RESULT ${o.filter((x) => x === 'none').length} · top max ${f3(Math.max(...rs.map((r) => top1(r[which]))))}`)
+  }
+  const pos = results.filter((r) => r.slug)
+  const wrong = pos.filter((r) => outcome(r, r[which], t) === 'wrong').length
+  const negEx = results.filter((r) => !r.slug && outcome(r, r[which], t) === 'wrong').length
+  console.log(`→ WRONG exact ${wrong}/${pos.length} positives · EXACT on negatives ${negEx}/${results.length - pos.length}`)
+}
+
+// own designs: nearest OTHER product of each original image
+const crossBest = results.filter((r) => r.case === 'original').map((r) => r.multi.top.find((h) => h.slug !== r.slug)?.score ?? -1)
+console.log(`\nown designs (multi-view): nearest other product of an original image: median ${f3(q(crossBest, 0.5))} · p95 ${f3(q(crossBest, 0.95))} · max ${f3(Math.max(...crossBest))}`)
+
+table({ ...MATCH, exact2: 9, margin2: 9 }, 'single', 'OLD index (1 view) + OLD rule (tier 1 only)')
+table({ ...MATCH, exact2: 9, margin2: 9 }, 'multi', `NEW index (${vec.INDEX_VIEWS.length} views) + tier 1 only`)
+table(MATCH, 'multi', `NEW index (${vec.INDEX_VIEWS.length} views) + thresholds.ts`)
+
+// ---------------------------------------------------------------- tier-2 grid search (multi-view)
+// Valid = 0 wrong EXACT on every positive and 0 EXACT on every negative, ALSO one step looser on both axes
+// (exact2 − 0.02, margin2 − 0.02), so the choice isn't sitting on the edge. Best = most correct EXACT overall.
+const pos = results.filter((r) => r.slug)
+const negs = results.filter((r) => !r.slug)
+const errors = (t: T) => pos.filter((r) => outcome(r, r.multi, t) === 'wrong').length + negs.filter((r) => outcome(r, r.multi, t) === 'wrong').length
+const cands: Array<{ e2: number; m2: number; ok: number; okPhoto: number }> = []
+for (let e2 = 0.55; e2 <= 0.7601; e2 += 0.01) {
+  for (let m2 = 0.08; m2 <= 0.2001; m2 += 0.01) {
+    const t = { ...MATCH, exact2: +e2.toFixed(2), margin2: +m2.toFixed(2) }
+    if (errors(t) || errors({ ...t, exact2: t.exact2 - 0.02, margin2: t.margin2 - 0.02 })) continue
+    cands.push({ e2: t.exact2, m2: t.margin2, ok: pos.filter((r) => outcome(r, r.multi, t) === 'ok').length, okPhoto: pos.filter((r) => r.group === 'photo' && outcome(r, r.multi, t) === 'ok').length })
+  }
+}
+cands.sort((a, b) => b.ok - a.ok || b.e2 - a.e2 || b.m2 - a.m2)
+console.log('\n== tier-2 grid (multi-view; 0 errors here AND one step looser) — best 8 ==')
+for (const c of cands.slice(0, 8)) console.log(`exact2 ${c.e2.toFixed(2)} margin2 ${c.m2.toFixed(2)} → EXACT ok ${c.ok}/${pos.length} (photo-like ${c.okPhoto}/${pos.filter((r) => r.group === 'photo').length})`)
+const negLead = negs.map((r) => ({ top: top1(r.multi), lead: top1(r.multi) - top2(r.multi), name: `${r.case} ${r.name}` })).sort((a, b) => b.lead - a.lead)
+console.log('negatives with the biggest lead:', negLead.slice(0, 5).map((n) => `${f3(n.top)}/lead ${f3(n.lead)} ${n.name}`).join(' · '))
+
+// ---------------------------------------------------------------- SIMILAR sweep (multi-view, thresholds.ts EXACT rule)
+console.log('\n== SIMILAR threshold sweep (multi-view) ==')
+console.log('similar  off-topic shown  in-domain shown  positives where ours is not shown')
+for (let s = 0.45; s <= 0.6501; s += 0.025) {
+  const t = { ...MATCH, similar: +s.toFixed(3) }
+  const shown = (g: Row['group']) => negs.filter((r) => r.group === g && outcome(r, r.multi, t) !== 'none')
+  const lost = pos.filter((r) => {
+    const o = outcome(r, r.multi, t)
+    return o === 'none' || (o !== 'ok' && (r.multi.correct < t.similar || r.multi.rank > t.maxSimilar))
+  })
+  console.log(`${t.similar.toFixed(3)}    ${String(shown('offTopic').length).padStart(3)}/${negs.filter((r) => r.group === 'offTopic').length}           ${String(shown('inDomain').length).padStart(3)}/${negs.filter((r) => r.group === 'inDomain').length}          ${lost.length}/${pos.length}`)
+}
+
+const miss = results.filter((r) => r.group === 'copy' && MUST_EXACT.includes(r.case) && r.multi.rank > 3)
 if (miss.length) {
-  console.log('\nnot top-1 on (a)/(b):')
-  for (const r of miss.slice(0, 30)) console.log(`  ${r.case.padEnd(9)} ${r.src}  rank ${r.rank}  correct ${f3(r.correct)}  top ${r.topSlug} ${f3(Math.max(r.wrong, r.correct))}`)
+  console.log('\nnot in the top 3 on (a)/(b) (multi-view):')
+  for (const r of miss) console.log(`  ${r.case.padEnd(9)} ${r.name}  rank ${r.multi.rank}  correct ${f3(r.multi.correct)}  top ${r.multi.top[0].slug} ${f3(top1(r.multi))}`)
 }
 
-if (jsonOut) fs.writeFileSync(jsonOut, JSON.stringify({ model: MODEL_ID, dtype: MODEL_DTYPE, results, negatives: negResults, crossBest }, null, 1))
+if (jsonOut) fs.writeFileSync(jsonOut, JSON.stringify({ model: MODEL_ID, dtype: MODEL_DTYPE, views: vec.INDEX_VIEWS, thresholds: MATCH, index: rawIndex, results }, null, 1))

@@ -7,11 +7,13 @@
 //
 // Protocol (postMessage):
 //   in  { type: 'init', device?: 'wasm' }                  → progress… then { type: 'ready', device, dtype, ms }
-//   in  { type: 'embed', id, blob? | url? }                → { type: 'vec', id, vec: Float32Array(512), ms }
+//   in  { type: 'embed', id, blob? | url?, views? }        → { type: 'vec', id, vecs: Float32Array(512)[], ms }
+//        views: how many INDEX_VIEWS (default 1 = the whole image, a shopper's photo; admin indexing: vec.viewsFor)
 //   out { type: 'progress', loaded, total }                  bytes across all model files
-//   out { type: 'error', id?, stage: 'load' | 'embed', message }
-import { MODEL_DTYPE, MODEL_ID } from './thresholds'
-import { preShrinkSize } from './vec'
+//   out { type: 'error', id?, stage: 'load' | 'embed' | 'size', message }
+import { BIG_PIXELS, MAX_PIXELS, MODEL_DTYPE, MODEL_ID } from './thresholds'
+import { DIMS_HEAD_BYTES, imageDims } from './dims'
+import { INDEX_VIEWS, preShrinkSize, viewRect } from './vec'
 
 type Transformers = typeof import('@huggingface/transformers')
 type Loaded = {
@@ -21,12 +23,12 @@ type Loaded = {
   device: 'webgpu' | 'wasm'
 }
 
-export type WorkerIn = { type: 'init'; device?: 'wasm' } | { type: 'embed'; id: number; blob?: Blob; url?: string }
+export type WorkerIn = { type: 'init'; device?: 'wasm' } | { type: 'embed'; id: number; blob?: Blob; url?: string; views?: number }
 export type WorkerOut =
   | { type: 'progress'; loaded: number; total: number }
   | { type: 'ready'; device: string; dtype: string; ms: number }
-  | { type: 'vec'; id: number; vec: Float32Array; ms: number }
-  | { type: 'error'; id?: number; stage: 'load' | 'embed'; message: string }
+  | { type: 'vec'; id: number; vecs: Float32Array[]; ms: number }
+  | { type: 'error'; id?: number; stage: 'load' | 'embed' | 'size'; message: string }
 
 const ctx = self as unknown as DedicatedWorkerGlobalScope
 const post = (m: WorkerOut, transfer: Transferable[] = []) => ctx.postMessage(m, transfer)
@@ -91,28 +93,53 @@ function load(force?: 'wasm'): Promise<Loaded> {
   return loading
 }
 
-async function decode(T: Transformers, src: Blob): Promise<InstanceType<Transformers['RawImage']>> {
-  const full = await createImageBitmap(src)
-  let small: ImageBitmap | null = null
+/** A photo too big to decode safely (MAX_PIXELS) — reported as stage 'size' (the shopper sees the size message). */
+class TooBig extends Error {}
+
+/**
+ * Decode once at (EXIF-oriented) full size — or, for a big camera photo, straight to ~1024 px — then cut each
+ * requested view (vec.viewRect, the same rounding as the Node scripts), pre-shrink it with a proper filter and
+ * draw it on WHITE (transparent PNGs: Node flattens onto white too).
+ */
+async function decode(T: Transformers, src: Blob, views: ReadonlyArray<(typeof INDEX_VIEWS)[number]>): Promise<InstanceType<Transformers['RawImage']>[]> {
+  const dims = imageDims(new Uint8Array(await src.slice(0, DIMS_HEAD_BYTES).arrayBuffer()))
+  const px = dims ? dims.w * dims.h : 0
+  if (dims && px > MAX_PIXELS) throw new TooBig(`${dims.w}x${dims.h} px`)
+  // Big photo: let the decoder scale down (JPEG decodes at 1/2, 1/4, 1/8 natively). Only the width can be given
+  // without knowing the EXIF rotation; 1024 keeps the short side >= 256 for any aspect up to 4:1.
+  const full =
+    dims && px > BIG_PIXELS && Math.min(dims.w, dims.h) > 1024
+      ? await createImageBitmap(src, { resizeWidth: 1024, resizeQuality: 'high' })
+      : await createImageBitmap(src)
+  const out: InstanceType<Transformers['RawImage']>[] = []
   try {
-    // Pre-shrink with a proper (area-averaging) filter so the processor's own resize is ~identity. Without this the
-    // processor's canvas resize aliases the screentone / halftone art (measured: the same mockup scored 0.92 against
-    // its Node-built vector; with the matching pre-shrink in both pipelines it is ≈ 0.99).
-    const { w, h } = preShrinkSize(full.width, full.height)
-    small = await createImageBitmap(full, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
-    const canvas = new OffscreenCanvas(w, h)
-    const g = canvas.getContext('2d', { willReadFrequently: true })
-    if (!g) throw new Error('no-2d-context')
-    g.drawImage(small, 0, 0)
-    const { data } = g.getImageData(0, 0, w, h)
-    return new T.RawImage(data, w, h, 4).rgb()
+    for (const view of views) {
+      const r = viewRect(full.width, full.height, view)
+      // Pre-shrink with a proper (area-averaging) filter so the processor's own resize is ~identity. Without this the
+      // processor's canvas resize aliases the screentone / halftone art (measured: the same mockup scored 0.92 against
+      // its Node-built vector; with the matching pre-shrink in both pipelines it is ~0.99).
+      const { w, h } = preShrinkSize(r.width, r.height)
+      const small = await createImageBitmap(full, r.left, r.top, r.width, r.height, { resizeWidth: w, resizeHeight: h, resizeQuality: 'high' })
+      try {
+        const canvas = new OffscreenCanvas(w, h)
+        const g = canvas.getContext('2d', { willReadFrequently: true })
+        if (!g) throw new Error('no-2d-context')
+        g.fillStyle = '#ffffff'
+        g.fillRect(0, 0, w, h)
+        g.drawImage(small, 0, 0)
+        const { data } = g.getImageData(0, 0, w, h)
+        out.push(new T.RawImage(data, w, h, 4).rgb())
+      } finally {
+        small.close()
+      }
+    }
   } finally {
     full.close()
-    small?.close()
   }
+  return out
 }
 
-async function embed(id: number, blob?: Blob, url?: string) {
+async function embed(id: number, blob?: Blob, url?: string, views = 1) {
   const t0 = performance.now()
   let loaded: Loaded
   try {
@@ -128,17 +155,27 @@ async function embed(id: number, blob?: Blob, url?: string) {
     src = await res.blob()
   }
   if (!src) throw new Error('no-image')
-  const image = await decode(T, src)
-  const inputs = await processor(image)
-  const out = (await model(inputs)) as { image_embeds: { type: string; data: ArrayLike<number>; to?: (t: string) => { data: ArrayLike<number> } } }
-  const t = out.image_embeds
-  const data = t.type === 'float32' || !t.to ? t.data : t.to('float32').data
-  const vec = Float32Array.from(data as ArrayLike<number>)
-  let s = 0
-  for (let i = 0; i < vec.length; i++) s += vec[i] * vec[i]
-  const n = Math.sqrt(s) || 1
-  for (let i = 0; i < vec.length; i++) vec[i] /= n
-  post({ type: 'vec', id, vec, ms: Math.round(performance.now() - t0) }, [vec.buffer])
+  let images: InstanceType<Transformers['RawImage']>[]
+  try {
+    images = await decode(T, src, INDEX_VIEWS.slice(0, Math.max(1, Math.min(INDEX_VIEWS.length, views))))
+  } catch (err) {
+    if (err instanceof TooBig) throw Object.assign(err, { stage: 'size' as const })
+    throw err
+  }
+  const vecs: Float32Array[] = []
+  for (const image of images) {
+    const inputs = await processor(image)
+    const out = (await model(inputs)) as { image_embeds: { type: string; data: ArrayLike<number>; to?: (t: string) => { data: ArrayLike<number> } } }
+    const t = out.image_embeds
+    const data = t.type === 'float32' || !t.to ? t.data : t.to('float32').data
+    const vec = Float32Array.from(data as ArrayLike<number>)
+    let s = 0
+    for (let i = 0; i < vec.length; i++) s += vec[i] * vec[i]
+    const n = Math.sqrt(s) || 1
+    for (let i = 0; i < vec.length; i++) vec[i] /= n
+    vecs.push(vec)
+  }
+  post({ type: 'vec', id, vecs, ms: Math.round(performance.now() - t0) }, vecs.map((v) => v.buffer))
 }
 
 ctx.addEventListener('message', (e: MessageEvent<WorkerIn>) => {
@@ -146,9 +183,9 @@ ctx.addEventListener('message', (e: MessageEvent<WorkerIn>) => {
   if (m?.type === 'init') {
     load(m.device).catch((err: unknown) => post({ type: 'error', stage: 'load', message: String((err as Error)?.message ?? err) }))
   } else if (m?.type === 'embed') {
-    embed(m.id, m.blob, m.url).catch((err: unknown) => {
+    embed(m.id, m.blob, m.url, m.views).catch((err: unknown) => {
       const message = String((err as Error)?.message ?? err)
-      post({ type: 'error', id: m.id, stage: (err as { stage?: 'load' }).stage ?? 'embed', message })
+      post({ type: 'error', id: m.id, stage: (err as { stage?: 'load' | 'size' }).stage ?? 'embed', message })
     })
   }
 })

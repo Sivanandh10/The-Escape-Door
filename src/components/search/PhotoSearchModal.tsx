@@ -16,7 +16,7 @@ import { track } from '@/lib/analytics'
 import { useRequireLogin } from '@/lib/auth/customer'
 import { useIsTouch, useReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
-import { bootModel, loadImageIndex, offProgress, searchPhoto, VisualSearchError, type LoadProgress, type PhotoSearch } from '@/lib/visual-search/client'
+import { bootModel, disposeModel, loadImageIndex, offProgress, searchPhoto, VisualSearchError, type LoadProgress, type PhotoSearch } from '@/lib/visual-search/client'
 import { stashPhotoForCustom } from '@/lib/visual-search/handoff'
 import { MATCH, MAX_IMAGE_BYTES, MODEL_MB } from '@/lib/visual-search/thresholds'
 import { matchStrength, type DecodedProduct, type Ranked } from '@/lib/visual-search/vec'
@@ -35,6 +35,7 @@ type Phase =
   | { name: 'error'; kind: ErrorKind; file?: File; url?: string }
 
 type ModelState = 'idle' | 'loading' | 'ready' | 'failed'
+type IndexState = 'loading' | 'ready' | 'failed'
 
 const TYPE_LABEL: Record<string, string> = {
   tshirt: 'Tees', hoodie: 'Hoodies', polaroid: 'Polaroids', bookmark: 'Bookmarks', poster: 'Posters', badge: 'Badges',
@@ -53,6 +54,8 @@ const SUGGESTIONS = [
 ]
 const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), [tabindex]:not([tabindex="-1"])'
 const MIN_SCAN_MS = 650
+/** free the model (worker + onnxruntime session) this long after the modal closes; reopening reloads it from cache */
+const DISPOSE_AFTER_MS = 60_000
 
 const mb = (n: number) => (n / 1048576).toFixed(1)
 
@@ -71,6 +74,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
   const [mounted, setMounted] = useState(false)
   const [phase, setPhase] = useState<Phase>({ name: 'pick' })
   const [model, setModel] = useState<ModelState>('idle')
+  const [index, setIndex] = useState<IndexState>('loading')
   const [progress, setProgress] = useState<LoadProgress | null>(null)
   const [device, setDevice] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
@@ -82,21 +86,49 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
   }, [])
   const canPaste = mounted && !!navigator.clipboard && typeof navigator.clipboard.read === 'function'
 
-  // ---- wake the model + fetch the index as soon as the modal opens (first open only downloads)
-  // (state only changes in the promise callbacks; 'idle' renders as loading while open)
+  // ---- on open: fetch the index FIRST, and only when it has products wake the model (first open downloads it).
+  // An empty / unavailable index goes straight to the text-search fallback without spending ~23 MB of data.
+  // (state only changes in the promise callbacks; model 'idle' renders as loading while the index is fine)
   const wake = useCallback(() => {
-    bootModel(setProgress)
-      .then((info) => {
-        setDevice(info.device)
-        setModel('ready')
+    loadImageIndex()
+      .then(() => {
+        setIndex('ready')
+        return bootModel(setProgress).then(
+          (info) => {
+            setDevice(info.device)
+            setModel('ready')
+          },
+          (err: unknown) => {
+            if (!(err instanceof VisualSearchError && err.message === 'disposed')) setModel('failed')
+          },
+        )
       })
-      .catch(() => setModel('failed'))
-    loadImageIndex().catch(() => {})
+      .catch(() => {
+        setIndex('failed')
+        setPhase((p) => (p.name === 'pick' ? { name: 'error', kind: 'index' } : p))
+      })
   }, [])
   useEffect(() => {
-    if (open) wake()
+    if (!open) return
+    wake()
     return () => offProgress(setProgress)
   }, [open, wake])
+
+  // ---- free the model a while after closing, and when the page is hidden for good (low-RAM phones)
+  useEffect(() => {
+    const dispose = () => {
+      if (disposeModel()) {
+        setModel('idle')
+        setProgress(null)
+      }
+    }
+    window.addEventListener('pagehide', dispose)
+    const t = open ? 0 : window.setTimeout(dispose, DISPOSE_AFTER_MS)
+    return () => {
+      window.removeEventListener('pagehide', dispose)
+      if (t) window.clearTimeout(t)
+    }
+  }, [open])
 
   // ---- dialog plumbing: scroll lock (Lenis), focus in / back, close on navigation
   useEffect(() => {
@@ -133,7 +165,11 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
     runId.current++
     setPhase({ name: 'pick' })
     setLive('Pick another photo.')
-  }, [])
+    if (index === 'failed') {
+      setIndex('loading')
+      wake() // the index may be back; if not, wake() shows the fallback again
+    }
+  }, [index, wake])
 
   // keep keyboard focus inside the dialog as views swap (the button that was focused unmounts)
   useEffect(() => {
@@ -162,8 +198,9 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
       const url = URL.createObjectURL(file)
       setPhase({ name: 'scan', file, url })
       setLive('Scanning your photo…')
-      if (model === 'failed') {
-        setModel('loading')
+      if (model === 'failed' || index === 'failed') {
+        if (model === 'failed') setModel('loading')
+        if (index === 'failed') setIndex('loading')
         wake()
       }
       const t0 = performance.now()
@@ -184,14 +221,16 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
       } catch (err) {
         if (id !== runId.current) return
         const stage = err instanceof VisualSearchError ? err.stage : 'embed'
-        const kind: ErrorKind = stage === 'load' ? 'model' : stage === 'index' ? 'index' : 'decode'
+        // load / timeout → the matcher (Try again re-runs this photo) · size → too many pixels · embed → this photo
+        const kind: ErrorKind = stage === 'load' || stage === 'timeout' ? 'model' : stage === 'index' ? 'index' : stage === 'size' ? 'size' : 'decode'
         if (kind === 'model') setModel('failed')
+        if (kind === 'index') setIndex('failed')
         setPhase({ name: 'error', kind, file, url })
         setLive('Photo search hit a problem.')
         track('image_search_result', { kind: 'error', reason: kind, from })
       }
     },
-    [from, model, reduced, wake],
+    [from, model, index, reduced, wake],
   )
 
   const pickFiles = (list: FileList | null | undefined) => {
@@ -298,7 +337,14 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
   return createPortal(
     <AnimatePresence>
       {open && (
-        <div className="fixed inset-0 z-[130] flex items-end justify-center sm:items-center sm:p-6">
+        <div
+          className="fixed inset-0 z-[130] flex items-end justify-center sm:items-center sm:p-6"
+          // React events bubble through the portal to the React parent: the header search panel renders this modal
+          // inside its <form onSubmit>, which would also run (and drop the typed term). Keep them in here.
+          onSubmit={stopEvent}
+          onKeyDown={stopEvent}
+          onKeyUp={stopEvent}
+        >
           <motion.div
             aria-hidden="true"
             className="absolute inset-0 bg-ink/80"
@@ -387,7 +433,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
                 <Lock aria-hidden="true" className="size-4 shrink-0 text-volt" strokeWidth={2.6} />
                 Your photo stays on your {touch ? 'phone' : 'device'}. We match it right here, nothing is uploaded.
               </p>
-              <ModelStatus state={model === 'idle' ? 'loading' : model} progress={progress} device={device} />
+              <ModelStatus state={index === 'failed' ? 'off' : model === 'idle' ? 'loading' : model} progress={progress} device={device} />
             </div>
 
             {dragging && (
@@ -430,6 +476,8 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
   )
 }
 
+const stopEvent = (e: { stopPropagation: () => void }) => e.stopPropagation()
+
 // ---------------------------------------------------------------- pick
 function PickView({ dragging, touch, canPaste, onUpload, onCamera, onPaste }: { dragging: boolean; touch: boolean; canPaste: boolean; onUpload: () => void; onCamera: () => void; onPaste: () => void }) {
   return (
@@ -458,13 +506,13 @@ function PickView({ dragging, touch, canPaste, onUpload, onCamera, onPaste }: { 
         {touch && (
           <PickButton onClick={onCamera} icon={<Camera aria-hidden="true" className="size-5" />} label="Take a photo" hint="Opens your camera" tone="ink" />
         )}
-        <PickButton onClick={onUpload} icon={<ImageUp aria-hidden="true" className="size-5" />} label={touch ? 'Choose from gallery' : 'Upload from device'} hint="JPG, PNG, WebP, HEIC · up to 10 MB" tone={touch ? 'paper' : 'ink'} />
+        <PickButton onClick={onUpload} icon={<ImageUp aria-hidden="true" className="size-5" />} label={touch ? 'Choose from gallery' : 'Upload from device'} hint="JPG, PNG or WebP · up to 10 MB" tone={touch ? 'paper' : 'ink'} />
         {canPaste && (
           <PickButton onClick={onPaste} icon={<ClipboardPaste aria-hidden="true" className="size-5" />} label="Paste image" hint={touch ? 'From your clipboard' : 'Or press Ctrl+V / ⌘V anywhere here'} tone="paper" />
         )}
         <div className="mt-auto border-[3px] border-ink bg-paper p-3 text-[13px] leading-snug shadow-hard-sm">
           <p className="label mb-1 text-[10px] opacity-70">Best results</p>
-          Fill the frame with the print. For tees and hoodies, the <strong>back print</strong> finds the exact design.
+          Get the <strong>whole print</strong> in the shot, straight on and in good light. For tees and hoodies, the <strong>back print</strong> finds the exact design.
         </div>
       </div>
     </div>
@@ -607,8 +655,8 @@ function TypeChip({ on, onClick, label, count }: { on: boolean; onClick: () => v
   )
 }
 
-function Strength({ score, tone }: { score: number; tone: 'ink' | 'paper' }) {
-  const w = matchStrength(score)
+function Strength({ score, tone, exact }: { score: number; tone: 'ink' | 'paper'; exact?: boolean }) {
+  const w = matchStrength(score, MATCH, exact)
   const pct = Math.round(w * 100)
   return (
     <span className="flex items-center gap-2" aria-label={`Match strength ${pct} percent`}>
@@ -649,7 +697,7 @@ function ExactCard({ r, reduced, onOpen }: { r: Ranked<DecodedProduct>; reduced:
         <span className="font-mono text-[18px] font-bold">{p.price}</span>
         <span className="mt-auto flex flex-col gap-1">
           <span className="label text-[10px]">Same design</span>
-          <Strength score={r.score} tone="ink" />
+          <Strength score={r.score} tone="ink" exact />
         </span>
         <span className="label inline-flex items-center gap-1 text-[11px] font-bold underline decoration-2 underline-offset-4">
           View product <ArrowRight aria-hidden="true" className="size-4 transition-transform group-hover:translate-x-1" />
@@ -714,8 +762,8 @@ function NoneView({ onAgain, onRequest }: { onAgain: () => void; onRequest: () =
 }
 
 const ERRORS: Record<ErrorKind, { title: string; body: string }> = {
-  type: { title: 'That isn’t a picture', body: 'Use a photo or screenshot: JPG, PNG, WebP or HEIC.' },
-  size: { title: 'That photo is over 10 MB', body: 'Pick a smaller one, or take a screenshot of it and use that.' },
+  type: { title: 'That isn’t a picture', body: 'Use a photo or screenshot: JPG, PNG or WebP (HEIC works in Safari only).' },
+  size: { title: 'That photo is too big', body: 'Photos up to 10 MB and 100 megapixels work. Pick a smaller one, or take a screenshot of it and use that.' },
   decode: { title: 'We couldn’t read that photo', body: 'Try a JPG or PNG. On iPhone: Settings › Camera › Formats › Most Compatible.' },
   model: { title: 'The door-spirit didn’t wake up', body: 'The photo matcher couldn’t load (slow or blocked connection). Try again, or search by name.' },
   index: { title: 'Photo search is getting ready', body: 'The shop’s picture index isn’t available right now. Search by name in the meantime.' },
@@ -728,6 +776,7 @@ function ErrorView({ kind, onAgain, onRetryModel, onClose }: { kind: ErrorKind; 
   const fallback = kind === 'model' || kind === 'index'
   const submit = (ev: FormEvent) => {
     ev.preventDefault()
+    ev.stopPropagation() // never reach the header's own search form (the modal is its React child)
     const term = q.trim()
     onClose()
     router.push(term ? `/shop?q=${encodeURIComponent(term)}` : '/shop')
@@ -780,7 +829,8 @@ function ErrorView({ kind, onAgain, onRetryModel, onClose }: { kind: ErrorKind; 
 }
 
 // ---------------------------------------------------------------- model status
-function ModelStatus({ state, progress, device }: { state: ModelState; progress: LoadProgress | null; device: string | null }) {
+function ModelStatus({ state, progress, device }: { state: ModelState | 'off'; progress: LoadProgress | null; device: string | null }) {
+  if (state === 'off') return null
   if (state === 'ready') {
     return <p className="ml-auto font-mono text-[11px] text-paper/70">Door-spirit awake · {device === 'webgpu' ? 'GPU' : 'CPU'}</p>
   }

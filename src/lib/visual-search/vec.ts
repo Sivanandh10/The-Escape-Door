@@ -4,7 +4,7 @@
 // Storage format: every embedding is L2-normalised, then scalar-quantised to int8 with a per-vector scale
 // (q = round(x / max|x| · 127)) and stored as base64 of the raw 512 bytes (684 chars). Cosine similarity ignores the
 // scale, so decoding is "int8 → float → L2-normalise". Measured quantisation loss: cos(original, decoded) ≥ 0.9999.
-import { MATCH, PRE_SHRINK } from './thresholds'
+import { MATCH, PRE_SHRINK, VIEW_PENALTY, type MatchThresholds } from './thresholds'
 
 /**
  * Both pipelines (browser worker, Node scripts) first shrink every image so its SHORT side is PRE_SHRINK px with a
@@ -14,6 +14,35 @@ import { MATCH, PRE_SHRINK } from './thresholds'
 export function preShrinkSize(w: number, h: number, short = PRE_SHRINK): { w: number; h: number } {
   const k = Math.min(1, short / Math.max(1, Math.min(w, h)))
   return { w: Math.max(1, Math.round(w * k)), h: Math.max(1, Math.round(h * k)) }
+}
+
+/**
+ * Index views. Every product image is embedded several times (MEASURED, see thresholds.ts): the whole image, the
+ * product in the centre (drops the poster's title bar / footer type) and the print area. A shopper's photo is ONE
+ * view (the whole photo) and scores max over all of them, so a close-up of the print or a garment shot without the
+ * poster frame still lands near one of our vectors. Fractions of the (EXIF-oriented) image; null = the whole image.
+ * Both pipelines crop with viewRect() so the browser (admin auto-index) and Node (scripts) cut the same pixels.
+ */
+export const INDEX_VIEWS: ReadonlyArray<{ l: number; t: number; w: number; h: number } | null> = [
+  null,
+  { l: 0.12, t: 0.15, w: 0.76, h: 0.7 },
+  { l: 0.28, t: 0.25, w: 0.44, h: 0.42 },
+]
+
+/**
+ * How many INDEX_VIEWS an image gets (always the first n). Tee / hoodie FRONTS skip the print crop: it is plain black
+ * fabric + the small chest mark on every one of them (MEASURED: it scored 0.64 against a solid black image and 0.51–0.58
+ * against any flat colour, gradient or noise), so it adds nothing but false SIMILAR answers.
+ */
+export function viewsFor(type: string, side: string | undefined): number {
+  return (type === 'tshirt' || type === 'hoodie') && (side ?? 'front') === 'front' ? 2 : INDEX_VIEWS.length
+}
+
+export function viewRect(W: number, H: number, view: (typeof INDEX_VIEWS)[number]): { left: number; top: number; width: number; height: number } {
+  if (!view) return { left: 0, top: 0, width: W, height: H }
+  const left = Math.min(W - 1, Math.max(0, Math.round(W * view.l)))
+  const top = Math.min(H - 1, Math.max(0, Math.round(H * view.t)))
+  return { left, top, width: Math.max(1, Math.min(W - left, Math.round(W * view.w))), height: Math.max(1, Math.min(H - top, Math.round(H * view.h))) }
 }
 
 /** In-place L2 normalisation; returns the same array. A zero vector stays zero. */
@@ -68,6 +97,18 @@ export function decodeVec(b64: string, dim: number): Float32Array | null {
 /** Base64 length of an encoded vector of `dim` bytes (used by validators). */
 export const encodedLength = (dim: number) => Math.ceil(dim / 3) * 4
 
+/** Several views of one image → one string (the encoded vectors back to back; product_image_embeddings.vec). */
+export const encodeVecs = (vs: ArrayLike<number>[]) => vs.map(encodeVec).join('')
+
+/** product_image_embeddings.vec → the encoded vectors it holds ([] when the length is not a whole number of them). */
+export function splitVecs(s: string, dim: number): string[] {
+  const n = encodedLength(dim)
+  if (!s || s.length % n) return []
+  const out: string[] = []
+  for (let i = 0; i < s.length; i += n) out.push(s.slice(i, i + n))
+  return out
+}
+
 // ---------------------------------------------------------------- matching
 export interface IndexedProduct {
   slug: string
@@ -79,6 +120,7 @@ export interface IndexedProduct {
   type: string
   /** arc display name */
   arc: string
+  /** one string per product image: its index views back to back (product_image_embeddings.vec) */
   vecs: string[]
 }
 
@@ -92,33 +134,45 @@ export interface ImageIndex {
 
 export interface DecodedProduct extends Omit<IndexedProduct, 'vecs'> {
   vecs: Float32Array[]
+  /** subtracted from that vector's cosine (VIEW_PENALTY of its view) */
+  offs: number[]
 }
 
+/** items[].vecs are index rows (one per image: its views back to back); view i gets VIEW_PENALTY[i]. */
 export function decodeIndex(index: ImageIndex): DecodedProduct[] {
   const out: DecodedProduct[] = []
   for (const it of index.items) {
-    const vecs = it.vecs.map((v) => decodeVec(v, index.dim)).filter((v): v is Float32Array => !!v)
-    if (vecs.length) out.push({ ...it, vecs })
+    const vecs: Float32Array[] = []
+    const offs: number[] = []
+    for (const row of it.vecs) {
+      splitVecs(row, index.dim).forEach((b, i) => {
+        const v = decodeVec(b, index.dim)
+        if (!v) return
+        vecs.push(v)
+        offs.push(VIEW_PENALTY[i] ?? 0)
+      })
+    }
+    if (vecs.length) out.push({ ...it, vecs, offs })
   }
   return out
 }
 
 export interface Ranked<P = DecodedProduct> {
   product: P
-  /** cosine similarity, max over the product's images */
+  /** cosine similarity (minus the view penalty), max over the product's image views */
   score: number
   /** which image matched best */
   image: number
 }
 
-/** Product score = max cosine over its images; sorted best first. */
-export function rankProducts<P extends { vecs: ArrayLike<number>[] }>(query: ArrayLike<number>, products: P[]): Ranked<P>[] {
+/** Product score = max over its vectors of (cosine − offs[i]); sorted best first. */
+export function rankProducts<P extends { vecs: ArrayLike<number>[]; offs?: number[] }>(query: ArrayLike<number>, products: P[]): Ranked<P>[] {
   const out: Ranked<P>[] = []
   for (const p of products) {
     let best = -2
     let at = 0
     for (let i = 0; i < p.vecs.length; i++) {
-      const s = dot(query, p.vecs[i])
+      const s = dot(query, p.vecs[i]) - (p.offs?.[i] ?? 0)
       if (s > best) {
         best = s
         at = i
@@ -140,20 +194,31 @@ export interface MatchResult<P = DecodedProduct> {
 }
 
 /**
- * EXACT  = best ≥ exact threshold AND clearly ahead of the runner-up (margin) — one of our designs.
- * SIMILAR = everything else ≥ similar threshold (max 12).
- * NONE   = nothing reaches the similar threshold.
+ * Two ways to be EXACT (one of our designs), both need a clear lead over the runner-up product:
+ *   tier 1: a near-copy of an index image   score ≥ exact  and lead ≥ margin
+ *   tier 2: a real photo (skew, light, crop) score ≥ exact2 and lead ≥ margin2 (lower score, much bigger lead)
  */
-export function classify<P>(ranked: Ranked<P>[], t: { exact: number; margin: number; similar: number; maxSimilar: number } = MATCH): MatchResult<P> {
+export function isExact(top: number, second: number, t: Pick<MatchThresholds, 'exact' | 'margin' | 'exact2' | 'margin2'> = MATCH): boolean {
+  const lead = top - second
+  return (top >= t.exact && lead >= t.margin) || (top >= t.exact2 && lead >= t.margin2)
+}
+
+/**
+ * EXACT   = isExact(best, runner-up).
+ * SIMILAR = everything else ≥ similar threshold (max 12).
+ * NONE    = nothing reaches the similar threshold.
+ */
+export function classify<P>(ranked: Ranked<P>[], t: MatchThresholds = MATCH): MatchResult<P> {
   const top = ranked[0]?.score ?? -1
   const second = ranked[1]?.score ?? -1
-  const exact = ranked[0] && top >= t.exact && top - second >= t.margin ? ranked[0] : null
+  const exact = ranked[0] && isExact(top, second, t) ? ranked[0] : null
   const similar = ranked.filter((r) => r !== exact && r.score >= t.similar).slice(0, t.maxSimilar)
   return { kind: exact ? 'exact' : similar.length ? 'similar' : 'none', exact, similar, top }
 }
 
 /** 0..1 bar width for a score: similar threshold → 0.15, exact threshold → 0.8, a perfect match → 1 (piecewise). */
-export function matchStrength(score: number, t: { similar: number; exact: number } = MATCH): number {
+export function matchStrength(score: number, t: { similar: number; exact: number } = MATCH, exactMatch = false): number {
+  if (exactMatch && score < t.exact) return Math.max(0.8, Math.min(1, matchStrength(score, t)))
   if (score >= t.exact) return Math.min(1, 0.8 + (0.2 * (score - t.exact)) / Math.max(1e-6, 1 - t.exact))
   return Math.max(0, 0.15 + (0.65 * (score - t.similar)) / Math.max(1e-6, t.exact - t.similar))
 }

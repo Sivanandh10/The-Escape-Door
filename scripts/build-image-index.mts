@@ -1,5 +1,6 @@
 // Builds the photo-search index: embeds every product image and upserts product_image_embeddings. Owner: SEARCH.
 //   node scripts/build-image-index.mts            all products (hidden ones too), skip images already indexed
+//                                                 (one row per image: its vec.viewsFor() views back to back in `vec`)
 //   node scripts/build-image-index.mts --force    re-embed everything (after replacing files under the same URL)
 //   node scripts/build-image-index.mts --dry      embed + report, write nothing
 // Needs: supabase/migrations/0011_image_index.sql applied, SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_SECRET_KEY) +
@@ -57,15 +58,15 @@ let embedded = 0, skipped = 0, failed = 0, removed = 0
 const t0 = Date.now()
 for (const p of products) {
   const imgs = productImages(p)
-  const batch: { product_id: string; image_src: string; model: string; dim: number; vec: string }[] = []
+  const batch: { product_id: string; image_src: string; model: string; dim: number; views: number; vec: string }[] = []
   for (const im of imgs) {
     if (existing.has(`${p.id}\u0000${im.src}`)) {
       skipped++
       continue
     }
     try {
-      const v = await embedder.embed(await loadImageBytes(im.src))
-      batch.push({ product_id: p.id, image_src: im.src, model: MODEL_KEY, dim: EMBED_DIM, vec: vec.encodeVec(v) })
+      const vs = await embedder.embedViews(await loadImageBytes(im.src), vec.viewsFor(p.type, im.side))
+      batch.push({ product_id: p.id, image_src: im.src, model: MODEL_KEY, dim: EMBED_DIM, views: vs.length, vec: vec.encodeVecs(vs) })
       embedded++
     } catch (e) {
       failed++
