@@ -27,6 +27,7 @@ import { clearLocalViews, readLocalViews } from '@/lib/recs/local'
 import type { Customer, CustomerContextValue, CustomerProviderProps, LoginReplay, RequireLogin } from './contract'
 import { firstName, toCustomer } from './shared'
 import { loadAuthProviders, peekAuthProviders } from './providers'
+import { LOGIN_ALWAYS_REQUIRED, loginGateOn } from './policy'
 
 export type { Customer, LoginReplay } from './contract'
 
@@ -66,9 +67,9 @@ export function useRequireLogin(): RequireLogin {
       if (!internal || !internal.configured) return action()
       if (internal.ref.current) return action()
       // no login method works yet (Google off, MAL not configured, no email delivery) → no gate, the shop keeps working
-      if (peekAuthProviders()?.any === false) return action()
+      if (!LOGIN_ALWAYS_REQUIRED && peekAuthProviders()?.any === false) return action()
       // session / provider check still running (first ~100 ms of a page): decide once both land
-      void Promise.all([internal.ready(), loadAuthProviders()]).then(([c, p]) => (c || !p.any ? action() : openLogin(reason, action, replay)))
+      void Promise.all([internal.ready(), loadAuthProviders()]).then(([c, p]) => (c || !loginGateOn(p) ? action() : openLogin(reason, action, replay)))
     },
     [internal, openLogin],
   )
@@ -316,7 +317,7 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
       }
       if (url.origin !== window.location.origin || !GATED.test(url.pathname)) return
       const p = peekAuthProviders()
-      if (!p || !p.any) return // unknown yet / no login method live → don't block browsing
+      if (!LOGIN_ALWAYS_REQUIRED && (!p || !p.any)) return // login optional mode: unknown / no login method live → don't block
       e.preventDefault()
       e.stopPropagation()
       const href = url.pathname + url.search + url.hash

@@ -13,6 +13,7 @@ import { track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
 import { useRequireLogin } from '@/lib/checkout/auth'
 import { useAuthProviders } from '@/lib/auth/providers'
+import { loginGateOn } from '@/lib/auth/policy'
 
 export interface CheckoutCtaProps {
   /** where it sits (analytics) */
@@ -29,7 +30,7 @@ export function CheckoutCta({ where, onNavigate, pieces, total, className }: Che
   const go = useGoToCheckout()
   const [going, setGoing] = useState(false)
   const providers = useAuthProviders()
-  const guest = providers?.any === false
+  const guest = providers !== null && !loginGateOn(providers)
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>

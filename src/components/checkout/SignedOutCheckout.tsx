@@ -5,9 +5,11 @@
 import { useAuthProviders } from '@/lib/auth/providers'
 import { CheckoutFlow } from './CheckoutFlow'
 import { LoginWall } from './LoginWall'
+import { LOGIN_ALWAYS_REQUIRED, loginGateOn } from '@/lib/auth/policy'
 
 export function SignedOutCheckout({ giftWrapFee }: { giftWrapFee: number }) {
   const providers = useAuthProviders()
+  if (LOGIN_ALWAYS_REQUIRED) return <LoginWall />
   if (!providers) {
     return (
       <div className="grid gap-6 lg:grid-cols-12" aria-busy="true">
@@ -21,6 +23,6 @@ export function SignedOutCheckout({ giftWrapFee }: { giftWrapFee: number }) {
       </div>
     )
   }
-  if (providers.any) return <LoginWall />
+  if (loginGateOn(providers)) return <LoginWall />
   return <CheckoutFlow mode="guest" initialAddresses={[]} giftWrapFee={giftWrapFee} />
 }

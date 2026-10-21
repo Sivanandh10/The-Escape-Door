@@ -10,6 +10,7 @@
 // settings. If the total differs from what the shopper saw (expectedPayable) → 409 price-changed, nothing saved.
 // Idempotent: the client sends a nonce per checkout; a retry returns the first order instead of a second one.
 import { z } from 'zod'
+import { LOGIN_ALWAYS_REQUIRED } from '@/lib/auth/policy'
 import { buildCheckoutMessage } from '@/lib/checkout/message'
 import { addressFromRow, orderRequestSchema, type AddressSnapshot } from '@/lib/checkout/schema'
 import {
@@ -64,7 +65,7 @@ export async function POST(req: Request): Promise<Response> {
   const buyer = await getBuyer()
   const guest = !buyer
   if (guest) {
-    if (await customerLoginLive()) return json({ ok: false, error: 'login', message: 'Log in to place your order.' }, 401)
+    if (LOGIN_ALWAYS_REQUIRED || (await customerLoginLive())) return json({ ok: false, error: 'login', message: 'Log in to place your order.' }, 401)
     if (!reqBody.contact) return json({ ok: false, error: 'contact', message: 'Add your name and mobile number so we can confirm the order.' }, 400)
     if (!reqBody.address) return json({ ok: false, error: 'address', message: 'Add the delivery address.' }, 400)
   } else if (!reqBody.addressId) {
