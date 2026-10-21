@@ -156,6 +156,8 @@ export function AddToCartButton({
     setPhase('added')
     setBurst((n) => n + 1)
     later(() => setPhase('idle'), 1700)
+    // owner rule: once logged in, adding takes you to the cart
+    later(() => useCart.getState().setOpen(true), 650)
   }
 
   function onClick() {
@@ -199,6 +201,7 @@ export function AddToCartButton({
         duration: 2600,
       })
       later(() => setPhase('idle'), 1500)
+      later(() => useCart.getState().setOpen(true), 400)
       return
     }
 

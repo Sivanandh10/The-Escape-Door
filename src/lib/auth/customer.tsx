@@ -119,11 +119,8 @@ function performReplay(replay: LoginReplay, go: (href: string) => void) {
       go('/checkout')
       return
     }
-    toast.success(`Added ${item.name} to your cart`, {
-      description: 'Picked up right where you left off.',
-      action: { label: 'View cart', onClick: () => useCart.getState().setOpen(true) },
-      duration: 4000,
-    })
+    toast.success(`Added ${item.name} to your cart`, { description: 'Picked up right where you left off.', duration: 3000 })
+    window.setTimeout(() => useCart.getState().setOpen(true), 300)
   } else if (replay.type === 'wishlist') {
     const w = useWishlist.getState()
     if (!w.ids.includes(replay.productId)) w.toggle(replay.productId)
@@ -294,6 +291,41 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
     },
     [configured],
   )
+
+  // Owner rule: every shopping action except Share needs a login. Product / cart / wishlist / checkout / Design Your Own
+  // links are intercepted while signed out (and a login method is live): the login pop-up opens and, once logged in,
+  // the shopper continues to where they clicked. Ctrl/⌘/middle-click (new tab) and anything inside [data-share] or
+  // [data-no-login] are left alone.
+  useEffect(() => {
+    if (!configured) return
+    const GATED = /^\/(product\/|cart(\/|$)|wishlist(\/|$)|checkout(\/|$)|custom(\/|$))/
+    const onClick = (e: MouseEvent) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+      if (ref.current) return
+      const el = e.target as Element | null
+      const a = el?.closest?.('a[href]') as HTMLAnchorElement | null
+      if (!a || a.target === '_blank' || a.hasAttribute('download')) return
+      if (a.closest('[data-share],[data-no-login],[role="dialog"]')) return
+      // buttons inside a card link (quick add, wishlist, share) run their own login gate / no gate
+      if (el?.closest?.('button') && a.contains(el.closest('button'))) return
+      let url: URL
+      try {
+        url = new URL(a.href, window.location.href)
+      } catch {
+        return
+      }
+      if (url.origin !== window.location.origin || !GATED.test(url.pathname)) return
+      const p = peekAuthProviders()
+      if (!p || !p.any) return // unknown yet / no login method live → don't block browsing
+      e.preventDefault()
+      e.stopPropagation()
+      const href = url.pathname + url.search + url.hash
+      const what = url.pathname.startsWith('/product/') ? 'see this product' : url.pathname.startsWith('/custom') ? 'design your own' : 'continue'
+      openLogin(`Log in to ${what}`, () => router.push(href))
+    }
+    document.addEventListener('click', onClick, true)
+    return () => document.removeEventListener('click', onClick, true)
+  }, [configured, openLogin, router])
 
   const signOut = useCallback(async () => {
     const sb = supabaseBrowser()
