@@ -30,7 +30,9 @@
     Referrer-Policy = "strict-origin-when-cross-origin"
     X-Frame-Options = "DENY"
     Strict-Transport-Security = "max-age=31536000; includeSubDomains"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
+    # camera=(self): the photo search's live camera (getUserMedia) runs on our own pages; every other origin
+    # (iframes, embeds) stays blocked. camera=() would make getUserMedia throw NotAllowedError for everyone.
+    Permissions-Policy = "camera=(self), microphone=(), geolocation=(), payment=(), usb=(), interest-cohort=()"
     Cross-Origin-Opener-Policy = "same-origin"
     Content-Security-Policy = "frame-ancestors 'none'; base-uri 'self'; object-src 'none'"
 

@@ -1,6 +1,7 @@
 'use client'
 // Photo search modal (owner: SEARCH) — "search with a picture", like the big shops. Lazy chunk (PhotoSearchButton).
-// Pick a photo (upload, drag & drop, paste, or the phone camera) → the MobileCLIP image model runs in a Web Worker
+// Pick a photo (upload, drag & drop, paste, the phone camera, or the LIVE camera: LiveCamera.tsx scans continuously
+// and locks on its own) → the MobileCLIP image model runs in a Web Worker
 // in THIS browser → cosine match against the catalogue index (GET /api/image-index) → EXACT product, SIMILAR
 // products, or a clear "No matching product" (→ Request this design / Try another photo). The photo never leaves
 // the device unless the shopper chooses "Request this design" (it is then attached to their custom request).
@@ -10,12 +11,13 @@ import { createPortal } from 'react-dom'
 import Image from 'next/image'
 import { useRouter } from 'next/navigation'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowRight, Camera, ClipboardPaste, ImageUp, Lock, RotateCcw, Search, X } from 'lucide-react'
+import { ArrowRight, Camera, ClipboardPaste, ImageUp, Lock, RotateCcw, ScanLine, Search, X } from 'lucide-react'
 import { Mascot } from '@/components/brand/Mascot'
 import { track } from '@/lib/analytics'
 import { useRequireLogin } from '@/lib/auth/customer'
 import { useIsTouch, useReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
+import { LiveCamera } from './LiveCamera'
 import { bootModel, disposeModel, loadImageIndex, offProgress, searchPhoto, VisualSearchError, type LoadProgress, type PhotoSearch } from '@/lib/visual-search/client'
 import { stashPhotoForCustom } from '@/lib/visual-search/handoff'
 import { MATCH, MAX_IMAGE_BYTES, MODEL_MB } from '@/lib/visual-search/thresholds'
@@ -30,6 +32,7 @@ export interface PhotoSearchModalProps {
 type ErrorKind = 'type' | 'size' | 'decode' | 'model' | 'index'
 type Phase =
   | { name: 'pick' }
+  | { name: 'live' }
   | { name: 'scan'; file: File; url: string }
   | { name: 'result'; file: File; url: string; result: PhotoSearch }
   | { name: 'error'; kind: ErrorKind; file?: File; url?: string }
@@ -79,12 +82,22 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
   const [device, setDevice] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [live, setLive] = useState('')
+  /** LiveCamera's stop: called synchronously on close (AnimatePresence keeps the exiting tree mounted ~0.2 s) */
+  const liveStop = useRef<(() => void) | null>(null)
+  // every close path goes through here: the camera goes off at once, and a reopen starts at the picker
+  const close = useCallback(() => {
+    liveStop.current?.()
+    setPhase((p) => (p.name === 'live' ? { name: 'pick' } : p))
+    onClose()
+  }, [onClose])
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-time client mount flag for the portal
     setMounted(true)
   }, [])
   const canPaste = mounted && !!navigator.clipboard && typeof navigator.clipboard.read === 'function'
+  // shown when the browser can stream a camera, and on plain-http pages (LiveCamera explains why it can't there)
+  const canLive = mounted && (!!navigator.mediaDevices?.getUserMedia || !window.isSecureContext)
 
   // ---- on open: fetch the index FIRST, and only when it has products wake the model (first open downloads it).
   // An empty / unavailable index goes straight to the text-search fallback without spending ~23 MB of data.
@@ -105,7 +118,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
       })
       .catch(() => {
         setIndex('failed')
-        setPhase((p) => (p.name === 'pick' ? { name: 'error', kind: 'index' } : p))
+        setPhase((p) => (p.name === 'pick' || p.name === 'live' ? { name: 'error', kind: 'index' } : p))
       })
   }, [])
   useEffect(() => {
@@ -139,7 +152,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const t = window.setTimeout(() => panel.current?.querySelector<HTMLElement>('[data-autofocus]')?.focus(), 60)
-    const onNav = () => onClose()
+    const onNav = () => close()
     window.addEventListener('ted:navigate', onNav)
     return () => {
       window.clearTimeout(t)
@@ -148,7 +161,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
       lenis?.start()
       if (lastFocus.current instanceof HTMLElement && document.contains(lastFocus.current)) lastFocus.current.focus({ preventScroll: true })
     }
-  }, [open, onClose])
+  }, [open, close])
 
   // ---- object URLs: revoke the old preview whenever the phase drops it
   const urlRef = useRef<string | null>(null)
@@ -175,6 +188,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
   useEffect(() => {
     if (!open) return
     const raf = requestAnimationFrame(() => {
+      if (phase.name === 'live') return // LiveCamera focuses its own button (pre-prompt / shutter)
       const target = phase.name === 'scan' ? panel.current : panel.current?.querySelector<HTMLElement>('[data-autofocus]')
       target?.focus({ preventScroll: true })
     })
@@ -233,6 +247,39 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
     [from, model, index, reduced, wake],
   )
 
+  // ---- live camera: an auto-locked frame already has its result (no second search); the shutter runs the normal one
+  const liveLocked = useCallback(
+    (file: File, result: PhotoSearch) => {
+      runId.current++
+      const url = URL.createObjectURL(file)
+      setPhase({ name: 'result', file, url, result })
+      setLive(result.exact ? `Found it: ${result.exact.product.name}.${result.similar.length ? ` ${result.similar.length} similar products.` : ''}` : 'Results ready.')
+      track('image_search_result', { kind: result.kind, top: Math.round(result.top * 100) / 100, n: result.similar.length + (result.exact ? 1 : 0), ms: result.ms, from, via: 'live' })
+    },
+    [from],
+  )
+  const liveFail = useCallback((kind: 'model' | 'index') => {
+    if (kind === 'model') setModel('failed')
+    else setIndex('failed')
+    setPhase({ name: 'error', kind })
+    setLive('Photo search hit a problem.')
+  }, [])
+  const startLive = () => {
+    runId.current++
+    setPhase({ name: 'live' })
+    setLive('Live camera. Point it at the design.')
+    if (model === 'failed' || index === 'failed') {
+      if (model === 'failed') setModel('loading')
+      if (index === 'failed') setIndex('loading')
+      wake()
+    }
+  }
+  // the model was freed while the viewfinder stayed up (pagehide → back/forward-cache restore): load it again,
+  // or the live scan would wait for it forever
+  useEffect(() => {
+    if (open && phase.name === 'live' && model === 'idle' && index === 'ready') wake()
+  }, [open, phase.name, model, index, wake])
+
   const pickFiles = (list: FileList | null | undefined) => {
     const f = list?.[0]
     if (f) void run(f)
@@ -247,6 +294,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
       const f = item?.getAsFile()
       if (!f) return
       e.preventDefault()
+      liveStop.current?.() // pasting while the live camera is open: camera off, search the pasted picture
       void run(new File([f], f.name || 'pasted-image.png', { type: f.type }))
     }
     window.addEventListener('paste', onPaste)
@@ -291,7 +339,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
       if (e.key === 'Escape') {
         e.preventDefault()
         e.stopPropagation()
-        onClose()
+        close()
         return
       }
       if (e.key !== 'Tab' || !panel.current) return
@@ -313,14 +361,14 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
     }
     document.addEventListener('keydown', onKey, true)
     return () => document.removeEventListener('keydown', onKey, true)
-  }, [open, onClose])
+  }, [open, close])
 
   // ---- leaving the modal: product pages + Design Your Own keep the shop's login rule
   const goProduct = (e: ReactMouseEvent<HTMLAnchorElement>, slug: string) => {
     if (e.metaKey || e.ctrlKey || e.shiftKey || e.button !== 0) return
     e.preventDefault()
     const href = `/product/${slug}`
-    onClose()
+    close()
     requireLogin('Log in to see this product', () => router.push(href))
   }
   const requestDesign = () => {
@@ -329,7 +377,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
     const top = phase.name === 'result' ? (phase.result.exact ?? phase.result.similar[0])?.product.type : undefined
     const href = top && FORGE_KINDS.has(top) ? `/custom?product=${top}` : '/custom'
     track('custom_start', { from: 'photo_search' })
-    onClose()
+    close()
     requireLogin('Log in to design your own', () => router.push(href))
   }
 
@@ -352,7 +400,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: reduced ? 0 : 0.18 }}
-            onClick={onClose}
+            onClick={close}
           >
             <div className="screentone screentone-dense absolute inset-0 text-volt [--tone-opacity:0.12]" />
           </motion.div>
@@ -387,7 +435,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
               </div>
               <button
                 type="button"
-                onClick={onClose}
+                onClick={close}
                 aria-label="Close photo search"
                 className="press focus-ring grid size-11 shrink-0 place-items-center border-[3px] border-ink bg-paper shadow-hard-sm"
               >
@@ -397,7 +445,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
 
             <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6 sm:py-5">
               <p id={descId} className="sr-only">
-                Upload, drop, paste or take a photo of a tee, hoodie, poster or badge. It is matched on your device and never uploaded.
+                Upload, drop, paste or take a photo of a tee, hoodie, poster or badge, or point the live camera at it. It is matched on your device and never uploaded.
               </p>
               <p className="sr-only" role="status" aria-live="polite">{live}</p>
 
@@ -406,9 +454,27 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
                   dragging={dragging}
                   touch={touch}
                   canPaste={canPaste}
+                  canLive={canLive}
+                  onLive={startLive}
                   onUpload={() => fileInput.current?.click()}
                   onCamera={() => cameraInput.current?.click()}
                   onPaste={pasteFromClipboard}
+                />
+              )}
+              {phase.name === 'live' && (
+                <LiveCamera
+                  from={from}
+                  reduced={reduced}
+                  touch={touch}
+                  model={model}
+                  progress={progress?.total ? Math.min(100, Math.round((progress.loaded / progress.total) * 100)) : null}
+                  stopRef={liveStop}
+                  onLocked={liveLocked}
+                  onShutter={(file) => void run(file)}
+                  onFail={liveFail}
+                  onBack={reset}
+                  onUpload={() => fileInput.current?.click()}
+                  onTakePhoto={() => cameraInput.current?.click()}
                 />
               )}
               {phase.name === 'scan' && <ScanView url={phase.url} reduced={reduced} />}
@@ -423,7 +489,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
                 />
               )}
               {phase.name === 'error' && (
-                <ErrorView kind={phase.kind} onAgain={reset} onRetryModel={() => (phase.file ? void run(phase.file) : reset())} onClose={onClose} />
+                <ErrorView kind={phase.kind} onAgain={reset} onRetryModel={() => (phase.file ? void run(phase.file) : reset())} onClose={close} />
               )}
             </div>
 
@@ -479,7 +545,7 @@ export function PhotoSearchModal({ open, from, onClose }: PhotoSearchModalProps)
 const stopEvent = (e: { stopPropagation: () => void }) => e.stopPropagation()
 
 // ---------------------------------------------------------------- pick
-function PickView({ dragging, touch, canPaste, onUpload, onCamera, onPaste }: { dragging: boolean; touch: boolean; canPaste: boolean; onUpload: () => void; onCamera: () => void; onPaste: () => void }) {
+function PickView({ dragging, touch, canPaste, canLive, onLive, onUpload, onCamera, onPaste }: { dragging: boolean; touch: boolean; canPaste: boolean; canLive: boolean; onLive: () => void; onUpload: () => void; onCamera: () => void; onPaste: () => void }) {
   return (
     <div className="grid gap-4 md:grid-cols-[1.25fr_1fr] md:items-stretch">
       <button
@@ -503,6 +569,9 @@ function PickView({ dragging, touch, canPaste, onUpload, onCamera, onPaste }: { 
       </button>
 
       <div className="flex flex-col gap-2.5">
+        {canLive && (
+          <PickButton onClick={onLive} icon={<ScanLine aria-hidden="true" className="size-5" />} label="Live camera" hint="Point it at the design · finds it by itself" tone="volt" />
+        )}
         {touch && (
           <PickButton onClick={onCamera} icon={<Camera aria-hidden="true" className="size-5" />} label="Take a photo" hint="Opens your camera" tone="ink" />
         )}
@@ -519,14 +588,14 @@ function PickView({ dragging, touch, canPaste, onUpload, onCamera, onPaste }: { 
   )
 }
 
-function PickButton({ onClick, icon, label, hint, tone }: { onClick: () => void; icon: ReactNode; label: string; hint: string; tone: 'ink' | 'paper' }) {
+function PickButton({ onClick, icon, label, hint, tone }: { onClick: () => void; icon: ReactNode; label: string; hint: string; tone: 'ink' | 'paper' | 'volt' }) {
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
         'press focus-ring flex min-h-14 items-center gap-3 border-[3px] border-ink px-4 py-2.5 text-left shadow-hard-sm',
-        tone === 'ink' ? 'bg-ink text-paper can-hover:hover:bg-door' : 'bg-paper text-ink can-hover:hover:bg-volt',
+        tone === 'ink' ? 'bg-ink text-paper can-hover:hover:bg-door' : tone === 'volt' ? 'bg-volt text-ink can-hover:hover:bg-volt-hot' : 'bg-paper text-ink can-hover:hover:bg-volt',
       )}
     >
       <span className="shrink-0">{icon}</span>

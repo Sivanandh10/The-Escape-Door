@@ -7,8 +7,10 @@
 //
 // Protocol (postMessage):
 //   in  { type: 'init', device?: 'wasm' }                  → progress… then { type: 'ready', device, dtype, ms }
-//   in  { type: 'embed', id, blob? | url?, views? }        → { type: 'vec', id, vecs: Float32Array(512)[], ms }
+//   in  { type: 'embed', id, blob? | url? | bitmap?, views? } → { type: 'vec', id, vecs: Float32Array(512)[], ms }
 //        views: how many INDEX_VIEWS (default 1 = the whole image, a shopper's photo; admin indexing: vec.viewsFor)
+//        bitmap: a live-camera frame (transferred ImageBitmap, already the square crop at ~256 px; the worker owns
+//        and closes it)
 //   out { type: 'progress', loaded, total }                  bytes across all model files
 //   out { type: 'error', id?, stage: 'load' | 'embed' | 'size', message }
 import { BIG_PIXELS, MAX_PIXELS, MODEL_DTYPE, MODEL_ID } from './thresholds'
@@ -23,7 +25,7 @@ type Loaded = {
   device: 'webgpu' | 'wasm'
 }
 
-export type WorkerIn = { type: 'init'; device?: 'wasm' } | { type: 'embed'; id: number; blob?: Blob; url?: string; views?: number }
+export type WorkerIn = { type: 'init'; device?: 'wasm' } | { type: 'embed'; id: number; blob?: Blob; url?: string; bitmap?: ImageBitmap; views?: number }
 export type WorkerOut =
   | { type: 'progress'; loaded: number; total: number }
   | { type: 'ready'; device: string; dtype: string; ms: number }
@@ -101,16 +103,21 @@ class TooBig extends Error {}
  * requested view (vec.viewRect, the same rounding as the Node scripts), pre-shrink it with a proper filter and
  * draw it on WHITE (transparent PNGs: Node flattens onto white too).
  */
-async function decode(T: Transformers, src: Blob, views: ReadonlyArray<(typeof INDEX_VIEWS)[number]>): Promise<InstanceType<Transformers['RawImage']>[]> {
-  const dims = imageDims(new Uint8Array(await src.slice(0, DIMS_HEAD_BYTES).arrayBuffer()))
-  const px = dims ? dims.w * dims.h : 0
-  if (dims && px > MAX_PIXELS) throw new TooBig(`${dims.w}x${dims.h} px`)
-  // Big photo: let the decoder scale down (JPEG decodes at 1/2, 1/4, 1/8 natively). Only the width can be given
-  // without knowing the EXIF rotation; 1024 keeps the short side >= 256 for any aspect up to 4:1.
-  const full =
-    dims && px > BIG_PIXELS && Math.min(dims.w, dims.h) > 1024
-      ? await createImageBitmap(src, { resizeWidth: 1024, resizeQuality: 'high' })
-      : await createImageBitmap(src)
+async function decode(T: Transformers, src: Blob | ImageBitmap, views: ReadonlyArray<(typeof INDEX_VIEWS)[number]>): Promise<InstanceType<Transformers['RawImage']>[]> {
+  let full: ImageBitmap
+  if (src instanceof ImageBitmap) {
+    full = src // a live-camera frame: already decoded and small (closed below like any other)
+  } else {
+    const dims = imageDims(new Uint8Array(await src.slice(0, DIMS_HEAD_BYTES).arrayBuffer()))
+    const px = dims ? dims.w * dims.h : 0
+    if (dims && px > MAX_PIXELS) throw new TooBig(`${dims.w}x${dims.h} px`)
+    // Big photo: let the decoder scale down (JPEG decodes at 1/2, 1/4, 1/8 natively). Only the width can be given
+    // without knowing the EXIF rotation; 1024 keeps the short side >= 256 for any aspect up to 4:1.
+    full =
+      dims && px > BIG_PIXELS && Math.min(dims.w, dims.h) > 1024
+        ? await createImageBitmap(src, { resizeWidth: 1024, resizeQuality: 'high' })
+        : await createImageBitmap(src)
+  }
   const out: InstanceType<Transformers['RawImage']>[] = []
   try {
     for (const view of views) {
@@ -139,16 +146,17 @@ async function decode(T: Transformers, src: Blob, views: ReadonlyArray<(typeof I
   return out
 }
 
-async function embed(id: number, blob?: Blob, url?: string, views = 1) {
+async function embed(id: number, blob?: Blob, url?: string, views = 1, bitmap?: ImageBitmap) {
   const t0 = performance.now()
   let loaded: Loaded
   try {
     loaded = await load()
   } catch (err) {
+    bitmap?.close()
     throw Object.assign(new Error(String((err as Error)?.message ?? err)), { stage: 'load' as const })
   }
   const { T, processor, model } = loaded
-  let src = blob
+  let src: Blob | ImageBitmap | undefined = bitmap ?? blob
   if (!src && url) {
     const res = await fetch(url, { mode: 'cors', credentials: 'omit' })
     if (!res.ok) throw new Error(`image ${res.status}`)
@@ -183,7 +191,7 @@ ctx.addEventListener('message', (e: MessageEvent<WorkerIn>) => {
   if (m?.type === 'init') {
     load(m.device).catch((err: unknown) => post({ type: 'error', stage: 'load', message: String((err as Error)?.message ?? err) }))
   } else if (m?.type === 'embed') {
-    embed(m.id, m.blob, m.url, m.views).catch((err: unknown) => {
+    embed(m.id, m.blob, m.url, m.views, m.bitmap).catch((err: unknown) => {
       const message = String((err as Error)?.message ?? err)
       post({ type: 'error', id: m.id, stage: (err as { stage?: 'load' | 'size' }).stage ?? 'embed', message })
     })

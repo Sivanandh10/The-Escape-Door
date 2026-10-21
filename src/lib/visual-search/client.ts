@@ -6,6 +6,8 @@
 //   loadImageIndex()                GET /api/image-index once per page session, decoded
 //   searchPhoto(file)               → MatchResult (exact / similar / none) with the calibrated thresholds; loads the
 //                                     index FIRST, so an empty / unavailable index never downloads the model
+//   searchFrame(bitmap)             the same for one live-camera frame (an ImageBitmap, transferred to the worker)
+//   modelReady()                    whether the model has finished loading (live scanning only starts then)
 //   disposeModel()                  terminate the worker (frees the model session); the next call boots it again
 //                                   from Cache Storage (~1 s)
 import type { WorkerIn, WorkerOut } from './embed.worker'
@@ -88,7 +90,10 @@ function getWorker(): Worker {
   return w
 }
 
-const send = (m: WorkerIn) => getWorker().postMessage(m)
+const send = (m: WorkerIn, transfer: Transferable[] = []) => getWorker().postMessage(m, transfer)
+
+/** The model is loaded and answering (live scanning waits for this instead of queueing frames behind the download). */
+export const modelReady = () => isReady
 
 /** Start (or join) the model load. Safe to call many times. */
 export function bootModel(onProgress?: (p: LoadProgress) => void): Promise<ModelInfo> {
@@ -126,8 +131,13 @@ export function disposeModel(): boolean {
   return true
 }
 
-async function embed(msg: { blob?: Blob; url?: string; views?: number }): Promise<Float32Array[]> {
-  await bootModel()
+async function embed(msg: { blob?: Blob; url?: string; bitmap?: ImageBitmap; views?: number }): Promise<Float32Array[]> {
+  try {
+    await bootModel()
+  } catch (err) {
+    msg.bitmap?.close()
+    throw err
+  }
   const id = ++seq
   return new Promise<Float32Array[]>((resolve, reject) => {
     const timer = setTimeout(() => {
@@ -146,11 +156,13 @@ async function embed(msg: { blob?: Blob; url?: string; views?: number }): Promis
         reject(e)
       },
     })
-    send({ type: 'embed', id, ...msg })
+    send({ type: 'embed', id, ...msg }, msg.bitmap ? [msg.bitmap] : [])
   })
 }
 
 export const embedBlob = async (blob: Blob) => (await embed({ blob }))[0]
+/** one live-camera frame; the bitmap is transferred (unusable here afterwards) */
+export const embedBitmap = async (bitmap: ImageBitmap) => (await embed({ bitmap }))[0]
 export const embedUrlViews = (url: string, views: number) => embed({ url: new URL(url, window.location.href).href, views })
 
 // ---------------------------------------------------------------- index
@@ -192,6 +204,21 @@ export async function searchPhoto(file: Blob): Promise<PhotoSearch> {
   const t0 = performance.now()
   const index = await loadImageIndex() // first: no index → no model download
   const vec = await embedBlob(file)
+  const result = classify(rankProducts(vec, index))
+  return { ...result, ms: Math.round(performance.now() - t0) }
+}
+
+/** One live-camera frame (the square the viewfinder shows, ~256 px). The bitmap is transferred to the worker. */
+export async function searchFrame(bitmap: ImageBitmap): Promise<PhotoSearch> {
+  const t0 = performance.now()
+  let index: DecodedProduct[]
+  try {
+    index = await loadImageIndex()
+  } catch (err) {
+    bitmap.close()
+    throw err
+  }
+  const vec = await embedBitmap(bitmap)
   const result = classify(rankProducts(vec, index))
   return { ...result, ms: Math.round(performance.now() - t0) }
 }
