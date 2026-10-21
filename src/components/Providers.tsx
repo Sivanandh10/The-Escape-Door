@@ -3,6 +3,7 @@
 // SmoothScroll (Lenis) · Cursor (#31) · sonner Toaster (manga panels) · ArcTheme (--arc-a/--arc-b tween)
 // · analytics init · cart/wishlist rehydration · lazy CartDrawer · route effects (aria-current, refresh).
 // · CustomerProvider (customer login + login modal — owner: AUTH, see src/lib/auth/customer.tsx).
+// · SignalTracker (session trail for recommendations — searches, arcs, categories, cart adds, saves; owner: RECS).
 import {
   createContext,
   Suspense,
@@ -28,6 +29,7 @@ import { initAnalytics } from '@/lib/analytics'
 import { ensureHydrated, useCart } from '@/lib/cart'
 import { SiteSettingsProvider } from '@/components/SiteSettingsProvider'
 import { CustomerProvider } from '@/lib/auth/customer'
+import { SignalTracker } from '@/components/recs/SignalTracker'
 import type { BundleRule } from '@/lib/types'
 
 export { useBundleRules, useSiteSettings, useWhatsappNumber } from '@/components/SiteSettingsProvider'
@@ -157,6 +159,7 @@ export function Providers({ children, arcs = [], whatsapp = '', bundleRules }: P
           <Suspense fallback={null}>
             <RouteEffects onRoute={onRoute} />
             <ScrollTop />
+            <SignalTracker />
           </Suspense>
           {children}
           <Cursor />

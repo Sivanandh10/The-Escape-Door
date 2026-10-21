@@ -42,7 +42,10 @@ export async function clearRecentViews(): Promise<ActionResult> {
   const auth = await getAuthUser()
   if (!auth) return SIGNED_OUT
   const { error } = await auth.sb.from('recent_views').delete().eq('user_id', auth.user.id)
-  return error ? { ok: false, error: 'Couldn’t clear your history. Try again.' } : { ok: true, data: null }
+  if (error) return { ok: false, error: 'Couldn’t clear your history. Try again.' }
+  // the stored browsing trail (customer_signals, 0012) goes too — a table that isn't there yet is fine
+  await auth.sb.from('customer_signals').delete().eq('user_id', auth.user.id)
+  return { ok: true, data: null }
 }
 
 // ---------------------------------------------------------------- MyAnimeList

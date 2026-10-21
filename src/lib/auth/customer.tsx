@@ -24,6 +24,7 @@ import type { User } from '@supabase/supabase-js'
 import { supabaseBrowser, isSupabaseConfigured } from '@/lib/supabase/client'
 import { useCart, useWishlist } from '@/lib/cart'
 import { clearLocalViews, readLocalViews } from '@/lib/recs/local'
+import { syncTrail } from '@/lib/recs/signals'
 import type { Customer, CustomerContextValue, CustomerProviderProps, LoginReplay, RequireLogin } from './contract'
 import { firstName, toCustomer } from './shared'
 import { loadAuthProviders, peekAuthProviders } from './providers'
@@ -171,14 +172,10 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
     } catch {
       /* no storage → sync every load (cheap, rate limited) */
     }
+    // pre-login product views → recent_views; the session trail (searches, arcs, categories, cart adds, saves,
+    // views) → customer_signals, so the account's recommendations start from everything browsed so far
     const views = readLocalViews()
-    void fetch('/api/auth/me/sync', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ views }),
-    })
-      .then((r) => (r.ok ? clearLocalViews() : undefined))
-      .catch(() => {})
+    void syncTrail({ views }).then((ok) => (ok ? clearLocalViews() : undefined))
   }, [])
 
   const commit = useCallback(
@@ -287,6 +284,9 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
         return
       }
       pending.current = { then, replay }
+      // a gate hit inside the cart drawer ("+ Add" in Complete the look, Checkout): the drawer (z-160, own focus
+      // trap + Esc) would sit on top of the login pop-up — close it; a cart add re-opens it after login.
+      if (useCart.getState().open) useCart.getState().setOpen(false)
       setModalMounted(true)
       setModalState({ reason, success: false })
     },

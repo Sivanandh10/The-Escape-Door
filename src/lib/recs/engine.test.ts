@@ -284,3 +284,17 @@ test('buildRecs: a logged-in shopper with only a stored trail (searches, arcs, c
   const none = buildRecs({ products: CAT, collections: COLS as never, views: [], stored: [{ kind: 'view', value: 'ds-cape', at }], now: NOW })
   assert.equal(none.picks.length, 0, 'stored views alone are ignored (recent_views carries them)')
 })
+
+test('stored search terms → affinity: an arc NAME typed in search ("one piece") lifts that arc for a logged-in shopper', () => {
+  const at = NOW - 3 * H
+  const out = buildRecs({ products: CAT, collections: COLS as never, views: [], stored: [{ kind: 'search', value: 'one piece', at, weight: 1 }], now: NOW })
+  assert.ok(out.picks.length > 0)
+  assert.equal(out.picks[0].collection, 'op', 'the searched arc leads')
+  assert.ok(out.picks.slice(0, 3).every((p) => p.collection === 'op'), 'top 3 are One Piece pieces')
+  // an old search still counts, but a fresh one of another arc beats it
+  const mixed = buildRecs({
+    products: CAT, collections: COLS as never, views: [], now: NOW,
+    stored: [{ kind: 'search', value: 'one piece', at: NOW - 60 * D }, { kind: 'search', value: 'demon slayer', at: NOW - H }, { kind: 'search', value: 'demon slayer', at: NOW - 2 * H }],
+  })
+  assert.equal(mixed.picks[0].collection, 'ds', 'recent + repeated search wins')
+})

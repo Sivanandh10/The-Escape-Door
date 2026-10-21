@@ -244,3 +244,35 @@ export function recsQuery(opts: {
   if (opts.exclude?.length) q.set('x', opts.exclude.slice(0, 12).join(','))
   return q.toString()
 }
+
+// ---------------------------------------------------------------- trail → account (POST /api/auth/me/sync)
+let trailInflight = false
+/** customer_signals isn't there yet (migration 0012 not run): keep the trail locally and stop flushing this tab. */
+let trailOff = false
+
+/** Send the session trail (and, on the login sync, the pre-login product views) to the signed-in account.
+ *  Stored events are dropped locally; when the server can't store them yet they stay for a later session.
+ *  Resolves true when the request succeeded. Never throws. */
+export async function syncTrail(opts: { views?: string[]; flush?: boolean } = {}): Promise<boolean> {
+  const trail = readTrailRaw()
+  if (opts.flush && (!trail.length || trailOff || trailInflight)) return false
+  const upTo = trail.reduce((m, e) => Math.max(m, e.at), 0)
+  trailInflight = true
+  try {
+    const r = await fetch('/api/auth/me/sync', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ views: opts.views, trail: trail.length ? trail : undefined, flush: opts.flush || undefined }),
+      keepalive: !!opts.flush,
+    })
+    if (!r.ok) return false
+    const j = (await r.json().catch(() => ({}))) as { signalsStored?: boolean }
+    if (j.signalsStored === false) trailOff = true
+    else if (trail.length) dropTrail(upTo)
+    return true
+  } catch {
+    return false
+  } finally {
+    trailInflight = false
+  }
+}

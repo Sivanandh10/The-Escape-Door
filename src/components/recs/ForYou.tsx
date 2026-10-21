@@ -1,6 +1,7 @@
 'use client'
 // Recommendation surfaces (owner: AUTH → RECS). Built from REAL signals only — recently viewed (recency-decayed),
-// cart + wishlist, past orders, shop searches and (when linked) MyAnimeList — ranked by the hybrid engine
+// cart + wishlist, past orders, shop searches, arcs + categories browsed (the session trail, stored on the account
+// after login) and (when linked) MyAnimeList — ranked by the hybrid engine
 // (src/lib/recs/engine.ts) with an explainable reason chip on every card.
 //   <ForYou exclude={slug} />            product page: "You may also like" (similar + bought together, everyone)
 //                                        + signed-in extras ("Because you watched", recently viewed) / login nudge
@@ -10,15 +11,15 @@
 //   <ForYou variant="cart" onNavigate /> cart drawer: "Complete the look"
 // Data: GET /api/recs (everyone; signals from the browser + DB when signed in) and GET /api/auth/me/recs
 // (signed-in MAL / recent rows). Both are client fetches, so the pages themselves stay static.
-import { useCallback, useEffect, useMemo, useState } from 'react'
-import { clearSignals, SIGNALS_EVENT } from '@/lib/recs/signals'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { clearSignals, SIGNALS_EVENT, TRAIL_KEY } from '@/lib/recs/signals'
 import { clearLocalViews } from '@/lib/recs/local'
 import { CompleteTheLook } from './CompleteTheLook'
 import { RecsRow, RecsSkeleton as RowSkeleton } from './RecsRow'
 import { useHasSignals, useRecs, type RecItem } from './useRecs'
 import Link from 'next/link'
 import { motion } from 'motion/react'
-import { ArrowUpRight, Check, Loader2, RefreshCw, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
+import { ArrowUpRight, Check, Loader2, MoreHorizontal, RefreshCw, RotateCcw, Sparkles, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
 import { ProductCard } from '@/components/shop/ProductCard'
 import { useCustomer } from '@/lib/auth/customer'
@@ -91,7 +92,7 @@ function TasteRow({ context, className }: { context: 'shop' | 'home'; className?
   const reset = () => {
     let snap: Array<[string, string | null]> = []
     try {
-      snap = ['ted-recs-v1', 'ted-recent-v1'].map((k) => [k, window.localStorage.getItem(k)] as [string, string | null])
+      snap = ['ted-recs-v1', 'ted-recent-v1', TRAIL_KEY].map((k) => [k, window.localStorage.getItem(k)] as [string, string | null])
     } catch {
       /* storage blocked */
     }
@@ -127,9 +128,18 @@ function TasteRow({ context, className }: { context: 'shop' | 'home'; className?
         items={r.items}
         cols={6}
         action={
-          <button type="button" onClick={reset} className="label focus-ring inline-flex min-h-11 items-center gap-1.5 text-[0.6875rem] text-paper/75 underline decoration-2 underline-offset-4 hover:text-volt">
-            <RotateCcw aria-hidden="true" className="size-3.5" /> Reset picks
-          </button>
+          <RowMenu label="Options for your picks">
+            {(close) => (
+              <MenuItem
+                onSelect={() => {
+                  close()
+                  reset()
+                }}
+              >
+                <RotateCcw aria-hidden="true" className="size-4" /> Reset picks on this device
+              </MenuItem>
+            )}
+          </RowMenu>
         }
       />
     </section>
@@ -316,6 +326,7 @@ function RecentRow({ products, onCleared }: { products: Product[]; onCleared: ()
     const r = await clearRecentViews()
     setBusy(false)
     if (r.ok) {
+      clearSignals() // this browser's trail too, or it would be synced straight back
       toast.success('History cleared.')
       onCleared()
     } else toast.error(r.error)
@@ -324,9 +335,19 @@ function RecentRow({ products, onCleared }: { products: Product[]; onCleared: ()
     <div>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
         <Head kicker="Your trail" before="Recently " accent="viewed" jp="最近見た" />
-        <button type="button" onClick={clear} disabled={busy} className="label focus-ring inline-flex min-h-11 items-center gap-1.5 text-[0.6875rem] text-paper/80 hover:text-hype disabled:opacity-60">
-          {busy ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <Trash2 aria-hidden="true" className="size-4" />} Clear history
-        </button>
+        <RowMenu label="Options for recently viewed" busy={busy}>
+          {(close) => (
+            <MenuItem
+              danger
+              onSelect={() => {
+                close()
+                void clear()
+              }}
+            >
+              <Trash2 aria-hidden="true" className="size-4" /> Clear history
+            </MenuItem>
+          )}
+        </RowMenu>
       </div>
       <ul role="list" className="grid grid-cols-2 gap-x-3 gap-y-5 sm:gap-5 md:grid-cols-4 xl:grid-cols-6">
         {products.map((p, i) => (
@@ -336,6 +357,79 @@ function RecentRow({ products, onCleared }: { products: Product[]; onCleared: ()
         ))}
       </ul>
     </div>
+  )
+}
+
+// ---------------------------------------------------------------- "⋯" row menu (housekeeping stays out of the way)
+function RowMenu({ label, busy, children }: { label: string; busy?: boolean; children: (close: () => void) => ReactNode }) {
+  const [open, setOpen] = useState(false)
+  const id = useId()
+  const box = useRef<HTMLDivElement>(null)
+  const btn = useRef<HTMLButtonElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const onDown = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false)
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setOpen(false)
+        btn.current?.focus()
+      }
+    }
+    document.addEventListener('pointerdown', onDown)
+    document.addEventListener('keydown', onKey)
+    // move focus into the menu for keyboard users
+    box.current?.querySelector<HTMLElement>('[role="menuitem"]')?.focus()
+    return () => {
+      document.removeEventListener('pointerdown', onDown)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [open])
+  return (
+    <div ref={box} className="relative">
+      <button
+        ref={btn}
+        type="button"
+        aria-label={label}
+        aria-haspopup="menu"
+        aria-expanded={open}
+        aria-controls={id}
+        disabled={busy}
+        onClick={() => setOpen((o) => !o)}
+        className={cn(
+          'press focus-ring grid size-11 place-items-center border-[3px] border-paper/25 text-paper/80 transition-colors duration-150 hover:border-volt hover:text-volt disabled:opacity-60',
+          open && 'border-volt text-volt',
+        )}
+      >
+        {busy ? <Loader2 aria-hidden="true" className="size-4 animate-spin" /> : <MoreHorizontal aria-hidden="true" className="size-5" />}
+      </button>
+      {open && (
+        <motion.div
+          id={id}
+          role="menu"
+          initial={{ opacity: 0, y: -6, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ type: 'spring', stiffness: 600, damping: 32 }}
+          className="absolute right-0 top-[calc(100%+6px)] z-20 min-w-[13rem] origin-top-right border-[3px] border-ink bg-paper p-1 text-ink shadow-hard-sm"
+        >
+          {children(() => setOpen(false))}
+        </motion.div>
+      )}
+    </div>
+  )
+}
+
+function MenuItem({ onSelect, danger, children }: { onSelect: () => void; danger?: boolean; children: ReactNode }) {
+  return (
+    <button
+      type="button"
+      role="menuitem"
+      onClick={onSelect}
+      className={cn('focus-ring flex min-h-11 w-full items-center gap-2 px-3 text-left text-[14px] font-bold', danger ? 'hover:bg-hype hover:text-paper' : 'hover:bg-volt')}
+    >
+      {children}
+    </button>
   )
 }
 

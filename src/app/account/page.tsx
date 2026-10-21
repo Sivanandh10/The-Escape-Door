@@ -11,6 +11,7 @@ import { ForYou } from '@/components/recs/ForYou'
 import { ProfileForm } from '@/components/auth/account/ProfileForm'
 import { MalPanel, type MalPanelData } from '@/components/auth/account/MalPanel'
 import { OrdersList } from '@/components/auth/account/OrdersList'
+import { HashAnchor } from '@/components/auth/account/HashAnchor'
 import { SignedOutAccount, SignOutButton } from '@/components/auth/account/SignedOut'
 import type { MalAnime } from '@/lib/recs/types'
 
@@ -36,6 +37,7 @@ const SECTIONS = [
   { id: 'myanimelist', label: 'MyAnimeList' },
   { id: 'for-you', label: 'For you' },
 ]
+const SECTION_IDS = SECTIONS.map((s) => s.id)
 
 function topAnime(list: MalAnime[]): MalAnime[] {
   const rank = (a: MalAnime) => (a.status === 'watching' ? 20 : 0) + a.score * 2 + (a.status === 'completed' ? 3 : 0)
@@ -63,6 +65,8 @@ async function AccountContent() {
 
   return (
     <div className="relative overflow-hidden pb-24">
+      {/* /account#for-you ("Picked for you" in the header menu), #orders …: land on the section once it streams in */}
+      <HashAnchor ids={SECTION_IDS} />
       <header className="relative border-b-4 border-paper/10 pb-8 pt-10 md:pb-12 md:pt-16">
         <p
           aria-hidden="true"
@@ -84,7 +88,7 @@ async function AccountContent() {
         </div>
       </header>
 
-      <nav aria-label="Account sections" className="sticky top-[var(--header-h)] z-[5] border-b-4 border-ink bg-ink/95">
+      <nav aria-label="Account sections" data-account-nav="" className="sticky top-[var(--header-h)] z-[5] border-b-4 border-ink bg-ink/95">
         <ul className="container-x flex gap-2 overflow-x-auto py-3 [scrollbar-width:none]">
           {SECTIONS.map((s) => (
             <li key={s.id} className="shrink-0">

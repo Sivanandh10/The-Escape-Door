@@ -24,7 +24,7 @@
 
 /* label morph: all labels stacked in one grid cell → stable width; the active one slides in */
 .ted-atc-labels { display: grid; overflow: hidden; }
-.ted-atc-labels > span { grid-area: 1 / 1; display: block; text-align: center; transform: translateY(110%); opacity: 0;
+.ted-atc-labels > span { grid-area: 1 / 1; display: block; align-self: center; text-align: center; transform: translateY(110%); opacity: 0;
   transition: transform 260ms var(--ease-slam), opacity 120ms linear; }
 .ted-atc-labels > span[data-on] { transform: translateY(0); opacity: 1 }
 .ted-atc-labels > span[data-past] { transform: translateY(-110%); opacity: 0; transition-timing-function: var(--ease-exit, ease-in) }

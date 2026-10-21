@@ -380,7 +380,9 @@ export interface Profile {
   any: boolean
 }
 
-export function buildProfile(products: Product[], signals: RecSignals = {}, now = Date.now(), anchor?: string | null): Profile {
+/** `colNames` (collection slug → display name) lets a search for an arc's NAME ("one piece", "demon slayer") match
+ *  its products even when the product text only carries the slug. */
+export function buildProfile(products: Product[], signals: RecSignals = {}, now = Date.now(), anchor?: string | null, colNames?: ReadonlyMap<string, string>): Profile {
   const bySlug = new Map(products.map((p) => [p.slug, p]))
   const byId = new Map(products.map((p) => [p.id, p]))
   const resolve = (ref: string) => bySlug.get(ref) ?? byId.get(ref)
@@ -473,7 +475,7 @@ export function buildProfile(products: Product[], signals: RecSignals = {}, now 
   const search = new Map<string, number>()
   let searchTerm: string | null = null
   const terms = (signals.searches ?? []).map((s) => String(s).trim().toLowerCase()).filter((s) => s.length >= 2).slice(0, 8)
-  const hays = terms.length ? new Map(products.map((p) => [p.slug, searchHay(p)])) : null
+  const hays = terms.length ? new Map(products.map((p) => [p.slug, searchHay(p, colNames?.get(p.collection) ?? '')])) : null
   terms.forEach((term, i) => {
     const words = searchWords(term)
     if (!words.length || !hays) return
@@ -661,7 +663,7 @@ export function rankRecs(input: RankInput): ScoredRec[] {
   const bySlug = new Map(products.map((p) => [p.slug, p]))
   const byId = new Map(products.map((p) => [p.id, p]))
   const anchorP = input.anchor ? bySlug.get(input.anchor) ?? byId.get(input.anchor) ?? null : null
-  const prof = buildProfile(products, input.signals, now, anchorP?.slug)
+  const prof = buildProfile(products, input.signals, now, anchorP?.slug, names)
   const excluded = new Set<string>()
   for (const ref of input.exclude ?? []) {
     const p = bySlug.get(ref) ?? byId.get(ref)
@@ -922,7 +924,7 @@ export function buildRecs(input: RecsInput): RecsPayload {
     },
     input.stored?.length ? withNames(storedToSignals(input.stored, now), collections) : {},
   )
-  const personal = buildProfile(products, signals, now).any
+  const personal = buildProfile(products, signals, now, null, new Map(collections.map((c) => [c.slug, c.name]))).any
   const picksR = personal
     ? rankRecs({
         context: 'account',
