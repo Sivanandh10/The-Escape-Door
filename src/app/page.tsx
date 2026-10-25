@@ -1,7 +1,15 @@
-// Home: composes the manga volume S00 → S13 (CONTRACTS §7 + §10.8). Owner: F1.
+// Home: a SHORT manga volume (review feedback #4 — was 20+ phone screens). Owner: HOME.
+//   hero door → fast shop (categories + arcs + honest library line) → fest credibility (moved high)
+//   → drop of the week with the back-print flip → 4 FAQs → one-row Instagram (desktop).
+// Everything cut from the old 15-section home still lives on its own page:
+//   squad grid → /shop · polaroid & sticker wall → /shop/polaroids · GSM power levels → /shop/hoodies
+//   cosplay stage → /cosplay · custom forge → /custom · beyond anime → /arc/beyond-anime
+//   arc corridor → /arc/<slug> (arc chips in the fast-shop block) · partner timeline + stalls → /fests.
 // Every read is a 'use cache' repo function (cookie-less), so the page stays fully static.
 import type { Metadata } from 'next'
+import { cacheLife } from 'next/cache'
 import {
+  getBundleRules,
   getCollections,
   getDropOfWeek,
   getEvents,
@@ -11,34 +19,32 @@ import {
   getProducts,
   getSettings,
 } from '@/lib/data/repo'
+import { whatsappNumber } from '@/lib/whatsapp'
+import { isoDay, splitUpcoming } from '@/components/content/events'
 import S00Preloader from '@/components/home/S00Preloader'
 import S01Hero from '@/components/home/S01Hero'
-import S02ChooseArc from '@/components/home/S02ChooseArc'
-import S03Drop from '@/components/home/S03Drop'
-import S04BackPrint from '@/components/home/S04BackPrint'
-import S05Squad from '@/components/home/S05Squad'
-import S06Wall from '@/components/home/S06Wall'
-import S07Gsm from '@/components/home/S07Gsm'
-import S08Cosplay from '@/components/home/S08Cosplay'
-import S09ForgeTeaser from '@/components/home/S09ForgeTeaser'
-import S10Partners from '@/components/home/S10Partners'
-import S11Live from '@/components/home/S11Live'
-import S12Beyond from '@/components/home/S12Beyond'
+import HomeQuickShop from '@/components/home/HomeQuickShop'
+import HomeFests from '@/components/home/HomeFests'
+import HomeDrop from '@/components/home/HomeDrop'
 import S14Faq from '@/components/home/S14Faq'
-import S13Instagram from '@/components/home/S13Instagram'
+import HomeInstagram from '@/components/home/HomeInstagram'
 
 export const metadata: Metadata = {
   alternates: { canonical: '/' },
-  openGraph: { url: '/' },
+  openGraph: { type: 'website', siteName: 'The Escape Door', locale: 'en_IN', url: '/' },
 }
 
-const CV = { contentVisibility: 'auto', containIntrinsicSize: 'auto 900px' } as const
+const CV = { contentVisibility: 'auto', containIntrinsicSize: 'auto 700px' } as const
 
-const WALL_TYPES = new Set(['polaroid', 'sticker', 'poster', 'bookmark', 'badge'])
-const COSPLAY_TYPES = new Set(['cosplay', 'katana', 'cape', 'figurine', 'accessory'])
+/** Today's date, cached for an hour so the page stays static (confirmed stalls drop off once they end). */
+async function today() {
+  'use cache'
+  cacheLife('hours')
+  return isoDay()
+}
 
 export default async function HomePage() {
-  const [collections, products, drop, events, partnerships, settings, posts, tiers] = await Promise.all([
+  const [collections, products, drop, events, partnerships, settings, posts, tiers, rules, day] = await Promise.all([
     getCollections(),
     getProducts(),
     getDropOfWeek(),
@@ -47,45 +53,24 @@ export default async function HomePage() {
     getSettings(),
     getInstaPosts(),
     getHoodieTiers(),
+    getBundleRules(),
+    today(),
   ])
-
-  const featured = products.filter((p) => p.featured)
-  const wall = products.filter((p) => WALL_TYPES.has(p.type))
-  const cosplay = products.filter((p) => COSPLAY_TYPES.has(p.type))
-  const beyond = collections.find((c) => c.group === 'beyond') ?? null
+  // feedback #6: only confirmed + dated stalls reach the home page; "next season" ones live on /fests
+  const { dated } = splitUpcoming(events, day)
 
   return (
     <>
       <S00Preloader />
       <S01Hero settings={settings} products={products} />
-      <S02ChooseArc collections={collections} />
-      <S03Drop product={drop} />
-      <S04BackPrint product={drop} />
-      <S05Squad products={featured} />
-      <S06Wall products={wall} />
-      <S07Gsm tiers={tiers} />
-      {/* perf: below the last pinned section (S07) the browser may skip layout/paint until near view.
-          contain-intrinsic-size 'auto' remembers the real height after first render (no ScrollTrigger drift above). */}
-      <div style={CV}>
-        <S08Cosplay products={cosplay} />
-      </div>
-      <div style={CV}>
-        <S09ForgeTeaser />
-      </div>
-      <div style={CV}>
-        <S10Partners partnerships={partnerships} />
-      </div>
-      <div style={CV}>
-        <S11Live events={events} />
-      </div>
-      <div style={CV}>
-        <S12Beyond collection={beyond} />
-      </div>
+      <HomeQuickShop products={products} collections={collections} tiers={tiers} rules={rules} whatsapp={whatsappNumber(settings.whatsapp)} />
+      <HomeFests partnerships={partnerships} dated={dated} />
+      <HomeDrop product={drop} />
       <div style={CV}>
         <S14Faq />
       </div>
       <div style={CV}>
-        <S13Instagram posts={posts} instagram={settings.instagram} />
+        <HomeInstagram posts={posts} instagram={settings.instagram} />
       </div>
     </>
   )

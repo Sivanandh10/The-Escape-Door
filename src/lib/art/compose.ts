@@ -77,7 +77,7 @@ function halftoneCorner(x0: number, y0: number, w: number, h: number, color: str
 
 /**
  * Full 1200x1500 feed-style composition: colour block, giant repeated outline title (#47),
- * garment / flat-lay with a hard offset shadow, labels and the SAMPLE corner tag.
+ * garment / flat-lay with a hard offset shadow and labels (no corner tag).
  */
 export function compositionSvg(product: ArtProduct, opts: ArtOptions = {}): string {
   const side = opts.side ?? 'front'
@@ -122,8 +122,9 @@ export function compositionSvg(product: ArtProduct, opts: ArtOptions = {}): stri
     subjectTransform = `translate(${r1(W / 2 - fx * z)},${r1(sy + SUBJECT_H / 2 - fy * z)}) scale(${z})`
   }
 
-  const tagRot = r.range(1.5, 3.5)
-  const sampleTag = `<g transform="translate(${W - 44},44) rotate(${r1(tagRot)})"><rect x="-430" y="0" width="430" height="58" fill="${INK}" transform="translate(6,6)"/><rect x="-430" y="0" width="430" height="58" fill="${PAPER}" stroke="${INK}" stroke-width="3"/><circle cx="-406" cy="29" r="7" fill="#FF2D3D"/>${text('SAMPLE — replace with real photo', { x: -390, y: 36, size: 18.5, fill: INK, font: F.mono })}</g>`
+  // The old "SAMPLE — replace with real photo" corner tag is gone (storefront never shows it now); the
+  // draw is kept so every later random value — sticker side, rotation — lands exactly where it did.
+  r.range(1.5, 3.5)
 
   const brand = `<g transform="translate(48,50)"><path d="M0,0 H30 V10 H12 V62 H30 V72 H0 Z" fill="${fg}"/><rect x="16" y="14" width="10" height="44" fill="${spec.colorA}"/>${text('THE ESCAPE DOOR', { x: 44, y: 46, size: 40, fill: fg, tracking: 0.02 })}${text(`${typeLabel(spec)} · ${sideLabel(spec, side)}`, { x: 46, y: 70, size: 15, fill: fg, font: F.mono, tracking: 0.12 })}</g>`
 
@@ -134,7 +135,7 @@ export function compositionSvg(product: ArtProduct, opts: ArtOptions = {}): stri
   const footer = `<g><rect x="0" y="${H - 132}" width="${W}" height="132" fill="${INK}"/><rect x="0" y="${H - 132}" width="${W}" height="8" fill="${spec.colorA}"/>${text(spec.title.toUpperCase(), { x: 48, y: H - 58, size: 58, fill: PAPER, maxW: 700, tracking: 0.01 })}${spec.jp ? `<text x="48" y="${H - 26}" font-size="22" fill="${PAPER}" fill-opacity=".7" font-weight="700" letter-spacing="4" style="font-family:${F.jp}">${esc(spec.jp)}</text>` : ''}${text(spec.collectionName.toUpperCase(), { x: W - 48, y: H - 76, size: 18, fill: VOLT, font: F.mono, anchor: 'end', tracking: 0.14 })}${text('ORIGINAL FAN-INSPIRED DESIGN', { x: W - 48, y: H - 46, size: 14, fill: PAPER, font: F.mono, anchor: 'end', tracking: 0.14 })}</g>`
 
   const shadowId = `${uid}-sh`
-  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(`${spec.title} ${typeLabel(spec).toLowerCase()} — ${side} — sample mockup`)}"><defs>${hardShadowFilter(shadowId, 22, 26, INK, 0.32)}<clipPath id="${uid}-canvas"><rect width="${W}" height="${H}"/></clipPath>${subject.defs}</defs><g clip-path="url(#${uid}-canvas)"><rect width="${W}" height="${H}" fill="${block}"/>${halftoneCorner(W - 520, H - 132 - 420, 520, 420, deep, 22, true)}${halftoneCorner(0, 140, 360, 300, mix(block, PAPER, 0.35), 20)}${rows}<g filter="url(#${shadowId})"><g transform="${subjectTransform}">${subject.body}</g></g>${apparel ? sticker : ''}${brand}${sampleTag}${footer}</g></svg>`
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="${esc(`${spec.title} ${typeLabel(spec).toLowerCase()} — ${side} — product mockup`)}"><defs>${hardShadowFilter(shadowId, 22, 26, INK, 0.32)}<clipPath id="${uid}-canvas"><rect width="${W}" height="${H}"/></clipPath>${subject.defs}</defs><g clip-path="url(#${uid}-canvas)"><rect width="${W}" height="${H}" fill="${block}"/>${halftoneCorner(W - 520, H - 132 - 420, 520, 420, deep, 22, true)}${halftoneCorner(0, 140, 360, 300, mix(block, PAPER, 0.35), 20)}${rows}<g filter="url(#${shadowId})"><g transform="${subjectTransform}">${subject.body}</g></g>${apparel ? sticker : ''}${brand}${footer}</g></svg>`
 }
 
 /** Just the product (transparent background), in a 1000x1100 viewBox — for animated sections. */

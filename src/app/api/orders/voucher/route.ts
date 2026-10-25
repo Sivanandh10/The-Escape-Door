@@ -1,12 +1,13 @@
-// POST /api/orders/voucher — voucher check for GUEST checkout (no login method live yet). Owner: CHECKOUT.
+// POST /api/orders/voucher — voucher check for GUEST checkout (login is optional — policy.ts). Owner: CHECKOUT.
 // Same answers as POST /api/vouchers/validate (signed-in customers keep using that one): the cart is re-priced from
 // the database, unknown / paused / not-yet-live / personal codes all answer the same 404. Personal (email-assigned)
 // and per-customer-limited vouchers never work for a guest — a typed phone / email proves nothing, so their limit
-// couldn't be enforced (they answer the same 404). Refused once a login method is live (then login is mandatory).
+// couldn't be enforced (they answer the same 404). Refused only when NEXT_PUBLIC_LOGIN_REQUIRED=1 (login mandatory).
 import { z } from 'zod'
 import { formatINR } from '@/lib/pricing'
+import { LOGIN_ALWAYS_REQUIRED } from '@/lib/auth/policy'
 import { guestVoucherSchema, normalizePhone } from '@/lib/checkout/schema'
-import { CheckoutError, GUEST_VOUCHERS_OFF, applyVoucherFor, customerLoginLive, getBuyer, guestSchemaReady, priceLines } from '@/lib/checkout/server'
+import { CheckoutError, GUEST_VOUCHERS_OFF, applyVoucherFor, getBuyer, guestSchemaReady, priceLines } from '@/lib/checkout/server'
 import { voucherHeadline } from '@/lib/checkout/types'
 import { isSupabaseAdminConfigured } from '@/lib/supabase/env'
 import { allow, clientKey, json, readJson, sameOrigin } from '../../_lib/guard'
@@ -19,7 +20,7 @@ export async function POST(req: Request): Promise<Response> {
   if (!allow(`voucher:ip:${clientKey(req)}`, 30, 10 * 60_000)) {
     return json({ ok: false, error: 'rate-limited', message: 'Too many tries — wait a few minutes and try again.' }, 429, { 'retry-after': '600' })
   }
-  if ((await getBuyer()) || (await customerLoginLive())) return json({ ok: false, error: 'login', message: 'Log in to use a voucher.' }, 401)
+  if (LOGIN_ALWAYS_REQUIRED || (await getBuyer())) return json({ ok: false, error: 'login', message: 'Log in to use a voucher.' }, 401)
   if (!isSupabaseAdminConfigured()) return json({ ok: false, error: 'unavailable', message: 'Vouchers aren’t switched on yet.' }, 503)
 
   const body = await readJson(req, 16 * 1024)

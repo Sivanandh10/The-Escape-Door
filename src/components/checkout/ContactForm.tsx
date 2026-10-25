@@ -1,8 +1,9 @@
 'use client'
-// Guest checkout · step 01 "Who's ordering": name, Indian mobile (+91 fixed prefix, 10 digits), optional email.
+// Guest checkout · step 01 "Your details": name + WhatsApp number (+91 fixed prefix, 10 digits) are all that's
+// required; email optional; `extra` slot for the address choice.
 // zod-validated inline (after a field is visited, < 100 ms, no network). The email is how the order finds its way into
 // an account later (same verified email at login), so the hint says so. Owner: CHECKOUT.
-import { useId, useRef, useState, type FormEvent } from 'react'
+import { useId, useRef, useState, type FormEvent, type ReactNode } from 'react'
 import { motion } from 'motion/react'
 import { ArrowRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
@@ -43,9 +44,11 @@ export interface ContactFormProps {
   /** the details came from this browser's memory → offer "Not you? Clear details" */
   remembered?: boolean
   onForget?: () => void
+  /** rendered between the fields and the submit button (guest checkout: the address choice) */
+  extra?: ReactNode
 }
 
-export function ContactForm({ initial, onSubmit, submitLabel = 'Continue', formId, className, remembered = false, onForget }: ContactFormProps) {
+export function ContactForm({ initial, onSubmit, submitLabel = 'Continue', formId, className, remembered = false, onForget, extra }: ContactFormProps) {
   const id = useId()
   const formRef = useRef<HTMLFormElement>(null)
   const [remember, setRemember] = useState(remembered)
@@ -112,7 +115,7 @@ export function ContactForm({ initial, onSubmit, submitLabel = 'Continue', formI
       </div>
       <div className="grid gap-4 sm:grid-cols-2">
         <TextInput id={`${id}-name`} name="name" label="Your name" required autoComplete="name" value={values.name} error={err('name')} onChange={(v) => set('name', v)} onBlur={() => blur('name')} />
-        <FieldShell id={`${id}-phone`} label="WhatsApp / mobile number" required error={phoneErr} hint="We confirm the order on this number.">
+        <FieldShell id={`${id}-phone`} label="WhatsApp number" required error={phoneErr} hint="We confirm the order and sort the rest in this chat.">
           <span className="flex">
             <span aria-hidden="true" className="grid h-12 shrink-0 place-items-center border-[3px] border-r-0 border-ink bg-volt px-3 font-mono text-[15px] font-bold">
               +91
@@ -143,12 +146,13 @@ export function ContactForm({ initial, onSubmit, submitLabel = 'Continue', formI
         autoComplete="email"
         label="Email"
         placeholder="you@example.com"
-        hint="Optional. Log in later with this email and the order shows up in your account."
+        hint="Optional — skip it. Handy only if you make an account later: the order shows up there."
         value={values.email}
         error={err('email')}
         onChange={(v) => set('email', v)}
         onBlur={() => blur('email')}
       />
+      {extra}
       <label className="flex min-h-11 cursor-pointer items-center gap-3 text-[14px] leading-snug">
         <input type="checkbox" checked={remember} onChange={(e) => setRemember(e.target.checked)} className="size-5 shrink-0 accent-ink" />
         <span>

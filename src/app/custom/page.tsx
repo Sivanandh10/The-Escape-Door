@@ -23,8 +23,8 @@ export const metadata: Metadata = {
   title: { absolute: TITLE },
   description: DESCRIPTION,
   alternates: { canonical: '/custom' },
-  openGraph: { title: TITLE, description: DESCRIPTION, url: '/custom', type: 'website' },
-  twitter: { title: TITLE, description: DESCRIPTION },
+  openGraph: { title: TITLE, description: DESCRIPTION, url: '/custom', type: 'website', siteName: 'The Escape Door', locale: 'en_IN' },
+  twitter: { card: 'summary_large_image', title: TITLE, description: DESCRIPTION },
 }
 
 function SectionHead({ id, kicker, jp, children, className }: { id: string; kicker: string; jp: string; children: React.ReactNode; className?: string }) {

@@ -57,6 +57,10 @@ export function buildCheckoutMessage(
     out.push('Deliver to:')
     out.push(`${clean(a.name, 80)} · ${formatPhone(a.phone)}`)
     for (const line of addressLines(a)) out.push(clean(line, 200))
+  } else if (o.guest) {
+    // guest skipped the address at checkout ("I'll share it on WhatsApp")
+    out.push('')
+    out.push('Address: will share here')
   }
 
   // guests: who placed it (the receiver above may be someone else) — the team replies to this number

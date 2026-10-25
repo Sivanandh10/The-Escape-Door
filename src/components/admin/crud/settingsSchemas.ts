@@ -4,11 +4,13 @@
 //   apparel_custom ApparelCustomRules   catalog.edit   (/custom, S05, S09)
 //   qr_links      QrLink[]              qr.use         (/admin/qr saved links)
 //   site          SiteSettings          settings.edit  (hero copy, banner, ticker, WhatsApp, Instagram — every page)
+//   size_charts   SizeCharts            catalog.edit   (product-page "Size chart" modal; Admin → Pricing; nothing seeded)
 // Writes go through saveSettingValue() (settingsActions.ts): permission re-check, zod, and — for lists —
 // removing an existing item counts as a delete, so it needs the superadmin (checkDelete).
 import { z } from 'zod'
 import type { Perm } from '@/lib/admin/permissions'
 import { apparelCustom, hoodieTiers, teeFits } from '@/lib/data/rules'
+import { MAX_SIZE_ROWS } from '@/components/shop/sizeChartData'
 
 export interface QrLink {
   id: string
@@ -76,6 +78,32 @@ export const siteSettingsSchema = z.object({
   instagram: z.string().trim().regex(/^(https:\/\/(www\.)?instagram\.com\/.+)?$/, 'An instagram.com link'),
 })
 
+/** Admin → Pricing → Size charts ('size_charts'): per fit, rows of size → chest / length / shoulder in inches. */
+const inches = (label: string) =>
+  z.number({ error: `${label} in inches` }).positive(`${label} must be more than 0`).max(80, `${label}: max 80 in`)
+export const sizeChartRowSchema = z.object({
+  size: z.string().trim().min(1, 'Size label, e.g. M').max(8, 'Keep the size label short (max 8)'),
+  chest: inches('Chest'),
+  length: inches('Length'),
+  shoulder: inches('Shoulder').nullable(),
+})
+const sizeChartRows = z
+  .array(sizeChartRowSchema)
+  .max(MAX_SIZE_ROWS, `At most ${MAX_SIZE_ROWS} sizes per chart`)
+  .refine((rows) => new Set(rows.map((r) => r.size.toUpperCase())).size === rows.length, 'Two rows share a size')
+export const sizeChartsSchema = z.object({
+  // keys = SIZE_FITS ids (sizeChartData.ts)
+  charts: z
+    .object({
+      oversized: sizeChartRows.optional(),
+      regular: sizeChartRows.optional(),
+      baby: sizeChartRows.optional(),
+      hoodie: sizeChartRows.optional(),
+    })
+    .strict(),
+  note: z.string().trim().max(300, 'Keep the note under 300 characters'),
+})
+
 export const SETTING_KEYS = {
   hoodie_tiers: {
     perm: 'catalog.edit' as Perm,
@@ -105,6 +133,12 @@ export const SETTING_KEYS = {
     perm: 'settings.edit' as Perm,
     list: false,
     schema: siteSettingsSchema,
+    fallback: null as unknown,
+  },
+  size_charts: {
+    perm: 'catalog.edit' as Perm,
+    list: false,
+    schema: sizeChartsSchema,
     fallback: null as unknown,
   },
 } as const

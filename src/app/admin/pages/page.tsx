@@ -1,5 +1,6 @@
 // /admin/pages — Pages CMS (CMS + ADMIN-DATA): policy / info pages with a live markdown preview.
 // Needs pages.edit (editor, admin, superadmin); delete / reset-to-built-in = superadmin only.
+// Drafts (public.page_drafts, migration 0014): Save draft / Publish / Discard draft.
 // Session reads stay inside <Suspense> (Cache Components).
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
@@ -14,8 +15,8 @@ export const metadata: Metadata = { title: 'Pages' }
 async function Body() {
   const gate = await requireAdmin('pages.edit')
   if (!gate.allowed) return <NoAccess perm="pages.edit" session={gate.session} inline />
-  const { rows, error } = await loadAdminPages(gate.demo)
-  return <PagesManager initial={rows} loadError={error} demo={gate.demo} />
+  const { rows, error, draftError } = await loadAdminPages(gate.demo)
+  return <PagesManager initial={rows} loadError={error} draftError={draftError} demo={gate.demo} />
 }
 
 export default function PagesPage() {
@@ -25,7 +26,7 @@ export default function PagesPage() {
       kicker="Site · Pages & policies"
       title={<>Pages &amp; <em>policies</em></>}
       jp="ページ · ポリシー"
-      description="Privacy, shipping, returns and terms — edit the words here and the site updates the moment you publish. Write in simple markdown; the preview shows exactly how it will look."
+      description="Privacy, shipping, returns and terms. Save a draft while you work — nothing changes on the site until you press Publish. Write in simple markdown; the preview shows exactly how it will look."
     >
       <Suspense
         fallback={

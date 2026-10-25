@@ -169,7 +169,7 @@ export default function S01Hero({ settings, products }: { settings?: SiteSetting
                   </span>
                 </Link>
               </div>
-              <nav data-soft data-reveal="pending" aria-label="Shop by type" className="mt-4 lg:mt-5">
+              <nav data-soft data-reveal="pending" aria-label="Shop by type" className="mt-4 hidden lg:mt-5 lg:block">
                 <ul className="-mx-1 flex flex-wrap items-center gap-x-2">
                   {CATEGORIES.map((c) => (
                     <li key={c.href} className="flex items-center">
@@ -231,14 +231,14 @@ export default function S01Hero({ settings, products }: { settings?: SiteSetting
                 <div className="absolute inset-0 flex items-center justify-center">
                   <p data-burst-text className="text-center text-ink">
                     <span className="jp-sub block !opacity-80">第一章 · 扉の向こう</span>
-                    <span className="h-display mt-2 block text-[min(12vw,22svh)] leading-[0.84]">Pick your arc</span>
-                    <span className="label mt-4 block">↓ keep scrolling</span>
+                    <span className="h-display mt-2 block text-[min(12vw,22svh)] leading-[0.84]">Step inside</span>
+                    <span className="label mt-4 block">↓ the shop is right here</span>
                   </p>
                 </div>
               </div>
             </div>
             {/* scroll distance for the sticky door (phones/tablets only) */}
-            <div aria-hidden="true" className="h-[80svh] lg:hidden" />
+            <div aria-hidden="true" className="h-[38svh] lg:hidden" />
           </div>
 
           {/* ── P3 + P4: two small panels (desktop; phones get the cue inside the sticky door panel) ── */}

@@ -4,7 +4,8 @@ import { notFound } from 'next/navigation'
 import Link from 'next/link'
 import { getCollection, getProduct, getProducts, getRelatedProducts } from '@/lib/data/repo'
 import { productPriceLabel } from '@/lib/pricing'
-import { breadcrumbJsonLd, productJsonLd } from '@/lib/seo'
+import { breadcrumbJsonLd, productJsonLd, SITE_NAME } from '@/lib/seo'
+import { DEFAULT_OG, OG_SIZE, OG_TYPE, ogCard } from '@/lib/og-image'
 import { JsonLd } from '@/components/seo/JsonLd'
 import { ProductView } from '@/components/shop/ProductView'
 import { ProductCard } from '@/components/shop/ProductCard'
@@ -34,14 +35,22 @@ export async function generateMetadata({ params }: PageProps<'/product/[slug]'>)
   if (title.length > 60) title = `${p.name} — ${price}`
   if (title.length > 60) title = p.name
   const desc = `${p.name}, fan-inspired by ${arc}. ${price}. ${p.description.split('. ')[0]}. Original design by The Escape Door.`.slice(0, 155)
-  const img = p.images[0]
   const path = `/product/${p.slug}`
+  // Share card: the generated 1200×630 JPEG (art + name + price), else the product's own JPEG/PNG photo,
+  // else the root card. Never WebP — WhatsApp drops it and the link previews blank.
+  const card = ogCard('products', p.slug)
+  const photo = p.images.find((i) => /\.(jpe?g|png)(\?|$)/i.test(i.src))
+  const image = card
+    ? { url: card, ...OG_SIZE, type: OG_TYPE, alt: `${p.name}, ${price}: fan-inspired ${arc} design by The Escape Door` }
+    : photo
+      ? { url: photo.src, alt: photo.alt }
+      : DEFAULT_OG
   return {
     title: { absolute: title },
     description: desc,
     alternates: { canonical: path },
-    openGraph: { title, description: desc, url: path, type: 'website', images: img ? [{ url: img.src, width: 1200, height: 1500, alt: img.alt }] : undefined },
-    twitter: { card: 'summary_large_image', title, description: desc, images: img ? [img.src] : undefined },
+    openGraph: { type: 'website', siteName: SITE_NAME, locale: 'en_IN', title, description: desc, url: path, images: [image] },
+    twitter: { card: 'summary_large_image', title, description: desc, images: [{ url: image.url, alt: image.alt }] },
   }
 }
 
@@ -76,7 +85,7 @@ export default async function ProductPage({ params }: PageProps<'/product/[slug]
           <SectionHead id="details-h" before={p.sizes?.length ? 'Size and ' : 'What’s in the '} accent={p.sizes?.length ? 'fit' : 'pack'} className="mb-3 [&_h2]:text-[clamp(2rem,4vw,3.25rem)]" />
           <p className="text-tone-2">
             {p.sizes?.length
-              ? `Available in ${p.sizes.join(', ')}. We don’t publish measurements yet — message us on WhatsApp for the size chart before you order.`
+              ? `Available in ${p.sizes.join(', ')}. Open the size chart above, or tell us your usual size on WhatsApp and we’ll match the fit before you pay.`
               : `${p.variants.map((v) => v.label).join(' · ')}. ${p.bundleRuleId ? 'Bundle pricing applies automatically in the cart.' : ''}`}
           </p>
         </div>
@@ -86,7 +95,7 @@ export default async function ProductPage({ params }: PageProps<'/product/[slug]
             “{p.designTitle}” is an original illustration inspired by {arc}. Not official merchandise; not affiliated with or endorsed by any studio, publisher or rights holder.
           </p>
           <p className="mt-3 text-sm text-tone-2">
-            Delivery and returns: being finalised — see <Link href="/policies/shipping" className="underline decoration-2 underline-offset-2">shipping</Link> or ask us on WhatsApp.
+            Delivery and returns: the delivery date, shipping charge and payment are confirmed on WhatsApp before you pay — see <Link href="/policies/shipping" className="underline decoration-2 underline-offset-2">shipping</Link> and <Link href="/policies/returns" className="underline decoration-2 underline-offset-2">returns</Link>.
           </p>
         </div>
       </section>

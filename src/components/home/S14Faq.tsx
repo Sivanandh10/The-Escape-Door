@@ -1,48 +1,39 @@
-// STUB by F1 so the home page composes. Owner: P5 (CONTRACTS §10.8) — replace freely.
-// Visible Q&A (SITEMAP §4 #1, #2, #9) + the matching FAQPage JSON-LD.
+// HOME · Questions, answered — 4 answer blocks (GEO) as the #49 accordion + "More questions" → /faq.
+// Answers come from the shared FAQ data (src/components/content/faq.ts) so home, /faq and the FAQPage JSON-LD
+// never drift. Answers stay in the DOM (crawlable) while closed. Owner: HOME.
 import Link from 'next/link'
+import { ArrowRight } from 'lucide-react'
 import JsonLd from '@/components/seo/JsonLd'
 import { faqJsonLd } from '@/lib/seo'
+import { Accordion } from '@/components/content/Accordion'
+import { FAQ } from '@/components/content/faq'
 
-const QA = [
-  {
-    q: 'How much does an anime oversized t-shirt cost?',
-    a: 'At The Escape Door, an anime oversized t-shirt costs ₹800, which keeps it under ₹1000. Regular-fit anime t-shirts cost ₹600 and baby tees cost ₹400. Every design is fan-inspired and original, chosen from a library of around 2000 t-shirt designs spanning anime, shows, movies, games, sports and more.',
-  },
-  {
-    q: 'How are hoodies priced by GSM?',
-    a: 'Hoodies at The Escape Door are priced by fabric weight. A 280–330 GSM hoodie costs ₹1200, 330–380 GSM costs ₹1500, 380–430 GSM costs ₹1800, and the heaviest 430–600 GSM hoodie costs ₹2500. Higher GSM means a thicker, warmer hoodie. Any hoodie design can also be printed with your own artwork.',
-  },
-  {
-    q: 'Is this official licensed anime merch?',
-    a: 'No. The Escape Door sells original, fan-inspired designs made by fans for fans. It is not affiliated with, endorsed by or licensed by the creators, publishers or studios of any series named on the site. Series names are used only to describe what each design is inspired by.',
-  },
-]
+const HOME_IDS = ['oversized-tee-price', 'hoodie-gsm', 'own-design', 'official-merch']
 
 export default function S14Faq() {
+  const items = HOME_IDS.map((id) => FAQ.find((f) => f.id === id)).filter((f): f is (typeof FAQ)[number] => !!f)
   return (
-    <section id="faq" aria-labelledby="faq-title" className="section-y border-t-4 border-ink bg-paper text-ink grain">
-      <div className="container-x">
-        <p className="label text-tone-3">Chapter 13 · Questions, answered</p>
-        <h2 id="faq-title" className="h-display mt-4 max-w-[16ch] text-h2">
-          Questions fans ask us <em>first</em>
-        </h2>
-        <span lang="ja" aria-hidden="true" className="jp-sub mt-4 block">
-          よくある質問
-        </span>
-        <div className="mt-10 grid gap-4 lg:grid-cols-3">
-          {QA.map((x) => (
-            <article key={x.q} className="border-4 border-ink bg-paper p-5 shadow-hard">
-              <h3 className="text-[20px] font-bold leading-tight">{x.q}</h3>
-              <p className="mt-3 text-[15px] text-tone-2">{x.a}</p>
-            </article>
-          ))}
+    <section id="faq" aria-labelledby="faq-title" className="border-t-4 border-ink bg-paper py-12 text-ink grain md:py-16">
+      <div className="container-x grid gap-8 lg:grid-cols-12 lg:gap-10">
+        <div className="lg:col-span-4">
+          <p className="label text-tone-3">Chapter 05 · Questions, answered</p>
+          <h2 id="faq-title" className="h-display mt-3 max-w-[12ch] text-[clamp(40px,5vw,72px)] leading-[0.88]">
+            Asked <em>first</em>
+          </h2>
+          <span lang="ja" aria-hidden="true" className="jp-sub mt-3 block">
+            よくある質問
+          </span>
+          <Link
+            href="/faq"
+            className="press focus-ring group mt-6 inline-flex min-h-12 items-center gap-2 border-[3px] border-ink bg-volt px-5 font-bold text-ink shadow-hard-sm"
+          >
+            More questions
+            <ArrowRight aria-hidden="true" className="size-4 transition-transform duration-200 group-hover:translate-x-1" strokeWidth={3} />
+          </Link>
         </div>
-        <Link href="/faq" className="label mt-8 inline-flex min-h-11 items-center underline decoration-2 underline-offset-4">
-          Every question about prices, custom orders and fests
-        </Link>
+        <Accordion items={items} level={3} defaultOpen={-1} tone="paper" className="lg:col-span-8" />
       </div>
-      <JsonLd id="ld-home-faq" data={faqJsonLd(QA)} />
+      <JsonLd id="ld-home-faq" data={faqJsonLd(items.map(({ q, a }) => ({ q, a })))} />
     </section>
   )
 }

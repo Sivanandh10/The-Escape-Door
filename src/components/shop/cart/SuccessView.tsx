@@ -22,6 +22,7 @@ import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { buildCheckoutMessage } from '@/lib/checkout/message'
 import { addressLines, formatPhone } from '@/lib/checkout/schema'
 import { orderSnapshotFromRow, statusMeta } from '@/lib/checkout/types'
+import { LoginHint } from '@/components/auth/LoginHint'
 import { detailBits, patchLastOrder, readLastOrder, restoreOrder, type LastOrder } from './order'
 import s from './receipt.module.css'
 
@@ -233,7 +234,7 @@ export function SuccessView() {
                 {status ? <> · <span className="font-semibold">{status.label}</span></> : null}. {status?.customer}
                 {snap.guest && (
                   <span className="mt-1 block text-[13px] text-tone-4">
-                    Placed as a guest. {snap.contact?.email ? <>Once accounts open, log in with <strong className="text-paper">{snap.contact.email}</strong> (email link or Google) and it shows up under your orders.</> : 'Keep your order number — we confirm everything on WhatsApp.'}
+                    Placed as a guest — no account needed. {snap.contact?.email ? <>Log in later with <strong className="text-paper">{snap.contact.email}</strong> (email link) and it shows up under your orders.</> : 'Keep your order number — we confirm everything on WhatsApp.'}
                   </span>
                 )}
               </p>
@@ -244,6 +245,7 @@ export function SuccessView() {
               )}
             </div>
           )}
+          {snap?.guest && <LoginHint tone="dark" where="success" className="mt-3" />}
 
           <ol className="mt-10 grid gap-3 sm:grid-cols-3">
             {[
@@ -362,6 +364,14 @@ export function SuccessView() {
                     )}
                     {order.totals.hasPriceOnRequest && <p className="mt-1 text-right text-[11px] text-tone-2">+ quoted items</p>}
                   </dl>
+                  {snap && !snap.address && snap.guest && (
+                    <div className="mt-4 border-t-2 border-dashed border-ink/50 pt-2 text-[12.5px] leading-snug">
+                      <p className="label flex items-center gap-1.5 text-[10px] text-tone-3">
+                        <MapPin aria-hidden="true" className="size-3" /> Deliver to
+                      </p>
+                      <p className="mt-1 font-semibold">You’ll share the address on WhatsApp</p>
+                    </div>
+                  )}
                   {snap?.address && (
                     <div className="mt-4 border-t-2 border-dashed border-ink/50 pt-2 text-[12.5px] leading-snug">
                       <p className="label flex items-center gap-1.5 text-[10px] text-tone-3">

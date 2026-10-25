@@ -4,7 +4,7 @@
 //    H1 (#04): SplitText lines get a volt ink-bar wipe — the H1 is server-rendered and NEVER hidden by CSS
 //    (it is the LCP); the bar covers each line, the line rises behind it, the bar retracts.
 //    Waits for the S00 preloader (`[data-preloader]` + `ted:preloader-done`, 2.6 s failsafe).
-//  • desktop ≥1024: pinned ~180vh scrub — the door creaks, swings open onto the floating product object, the
+//  • desktop ≥1024: pinned ~100vh scrub — the door creaks, swings open onto the floating product object, the
 //    portal panel grows to full screen (#15) while the camera walks up to the threshold; the object swaps
 //    (tee → hoodie → back print → polaroids, ./objects.ts) at fixed scroll thresholds, the chip names it, then a
 //    volt speed-line burst hands over to S02.
@@ -227,7 +227,7 @@ export function HeroMotion({ children, className, style }: { children: ReactNode
               scrollTrigger: {
                 trigger: stage,
                 start: () => `top ${headerH()}px`,
-                end: () => `+=${Math.round(window.innerHeight * 1.8)}`,
+                end: () => `+=${Math.round(window.innerHeight * 1.0)}`, // was 1.8 — shorter home (review #4)
                 pin: true,
                 scrub: 0.7,
                 anticipatePin: 1,

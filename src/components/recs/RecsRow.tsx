@@ -49,13 +49,14 @@ export function ReasonChip({ reason, tone = 'volt', className, delay = 0 }: { re
   )
 }
 
-export function RecsHead({ id, kicker, before, accent, jp }: { id?: string; kicker?: string; before: string; accent: string; jp?: string }) {
+export function RecsHead({ id, kicker, before, accent, jp, after }: { id?: string; kicker?: string; before: string; accent: string; jp?: string; after?: ReactNode }) {
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
       {kicker && <p className="label text-[0.6875rem] text-volt">{kicker}</p>}
       <h2 id={id} className="h-display text-[clamp(2rem,4.6vw,3.75rem)] text-paper">
         {before}
         <em>{accent}</em>
+        {after}
       </h2>
       {jp && (
         <p lang="ja" className="jp-sub text-paper">
@@ -67,13 +68,15 @@ export function RecsHead({ id, kicker, before, accent, jp }: { id?: string; kick
 }
 
 export function RecsRow({
-  id, kicker, before, accent, jp, items, action, cols = 4, className,
+  id, kicker, before, accent, jp, after, items, action, cols = 4, className,
 }: {
   id?: string
   kicker?: string
   before: string
   accent: string
   jp?: string
+  /** extra inline content after the accent word (e.g. "(40 eps)") */
+  after?: ReactNode
   items: RecItem[]
   action?: ReactNode
   cols?: 4 | 6
@@ -83,7 +86,7 @@ export function RecsRow({
   return (
     <div className={cn('mt-12 first:mt-0', className)}>
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <RecsHead id={id} kicker={kicker} before={before} accent={accent} jp={jp} />
+        <RecsHead id={id} kicker={kicker} before={before} accent={accent} jp={jp} after={after} />
         {action}
       </div>
       <ul role="list" className={cn('grid grid-cols-2 gap-x-3 gap-y-6 sm:gap-x-5', cols === 6 ? 'md:grid-cols-3 xl:grid-cols-6' : 'lg:grid-cols-4')}>

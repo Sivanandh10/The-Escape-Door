@@ -224,8 +224,8 @@ export function applyVoucher(code: string, totals: ReturnType<typeof computeTota
 
 // ---------------------------------------------------------------- guest checkout switches
 /**
- * Guests may order only while NO customer login method works (owner rule: once login is live, it's mandatory).
- * Same test as GET /api/auth/providers (Google enabled in Supabase Auth, MAL configured, or email that reaches
+ * Is any customer login method live? (Informational since login became optional — guests can always order; the
+ * order routes no longer call this.) Same test as GET /api/auth/providers (Google enabled in Supabase Auth, MAL configured, or email that reaches
  * shoppers). Memoised 60 s per instance. Fails OPEN to guest ordering only when Supabase can't be reached AND
  * MAL is off — then nobody could log in anyway.
  */
@@ -233,7 +233,7 @@ let loginMemo: { at: number; live: boolean } | null = null
 export async function customerLoginLive(): Promise<boolean> {
   const now = Date.now()
   if (loginMemo && now - loginMemo.at < 60_000) return loginMemo.live
-  let live = isMalConfigured()
+  let live = await isMalConfigured()
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL
   const anon = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
   if (!live && url && anon) {

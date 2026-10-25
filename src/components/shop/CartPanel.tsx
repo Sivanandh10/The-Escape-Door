@@ -1,6 +1,7 @@
 'use client'
 // The cart itself — shared by the door drawer and the /cart page. Owner: CHECKOUT (was P2).
-// drawer: scrolling lines + pinned totals footer with the login-gated "Checkout" button.
+// drawer: scrolling lines + pinned totals footer with the "Checkout" button (no login needed — guests check out;
+//         a dismissible LoginHint offers the account extras).
 // page:   lines + deals on the left, sticky receipt-panel with totals + "Checkout" on the right.
 // Checkout itself (address, gift, voucher, order + WhatsApp) lives on /checkout.
 import Link from 'next/link'
@@ -17,6 +18,7 @@ import { Deals, TotalsStack } from './cart/Totals'
 import { EmptyCart } from './cart/EmptyCart'
 import { SkeletonLines } from './cart/bits'
 import { CompleteTheLook } from '@/components/recs/CompleteTheLook'
+import { LoginHint } from '@/components/auth/LoginHint'
 
 /** kept for older imports — the drawer has a single step now */
 export type CartStep = 'cart'
@@ -85,6 +87,7 @@ export function CartPanel({ variant = 'page', onNavigate }: CartPanelProps) {
         <div className="border-t-4 border-ink bg-paper px-4 pb-[max(16px,env(safe-area-inset-bottom))] pt-3">
           <TotalsStack totals={totals} />
           <CheckoutCta where="drawer" pieces={pieces} total={totals.total} onNavigate={onNavigate} className="mt-3" />
+          <LoginHint where="drawer" className="mt-2" />
           <Link href="/cart" onClick={onNavigate} className="label mt-1 inline-flex min-h-11 items-center text-[10.5px] underline decoration-2 underline-offset-4 can-hover:hover:text-door">
             View full cart
           </Link>
@@ -117,9 +120,10 @@ export function CartPanel({ variant = 'page', onNavigate }: CartPanelProps) {
           </div>
           <div className="p-4 sm:p-5">
             <TotalsStack totals={totals} size="lg" />
-            <p className="mt-3 text-[13px] leading-snug text-tone-2">Vouchers, gift wrap and your delivery address come next, at checkout.</p>
+            <p className="mt-3 text-[13px] leading-snug text-tone-2">Next: your name and WhatsApp number — that’s it. Address, gift wrap and vouchers are optional.</p>
             <div className="my-5 h-0 border-t-[3px] border-dashed border-ink/40" />
             <CheckoutCta where="page" pieces={pieces} total={totals.total} />
+            <LoginHint where="cart" className="mt-3" />
           </div>
         </div>
       </aside>

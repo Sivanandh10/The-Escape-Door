@@ -54,8 +54,6 @@ function onAccent(hex: string): string {
 export async function generateMetadata({ params }: Props): Promise<Metadata> {
   const c = await getCollection((await params).collection)
   if (!c) return {}
-  const [first] = await getProducts({ collection: c.slug })
-  const img = first?.images[0]
   const title = `${c.name} Merch India — Original Fan-Inspired Designs`
   const description = describe(c)
   const path = `/arc/${c.slug}`
@@ -63,8 +61,9 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title: { absolute: title },
     description,
     alternates: { canonical: path },
-    openGraph: { title, description, url: path, type: 'website', images: img ? [{ url: img.src, alt: img.alt }] : undefined },
-    twitter: { card: 'summary_large_image', title, description, images: img ? [img.src] : undefined },
+    // share image: ./opengraph-image.tsx + ./twitter-image.tsx (public/og/arcs/<slug>.jpg, JPEG — WhatsApp ignores WebP)
+    openGraph: { title, description, url: path, type: 'website', siteName: 'The Escape Door', locale: 'en_IN' },
+    twitter: { card: 'summary_large_image', title, description },
   }
 }
 

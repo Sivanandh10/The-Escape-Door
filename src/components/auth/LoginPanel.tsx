@@ -249,7 +249,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
         </p>
         {mode !== 'sent' && !success && (
           <p className="text-[15px] leading-snug text-tone-2">
-            Log in to add to cart, keep your wishlist and get fest reminders{mal ? ' — plus picks based on what you watch' : ''}.
+            Optional — you can shop and order without an account. Logging in saves your cart and addresses, tracks your orders{mal ? ' and, with MyAnimeList, puts merch from the anime you watch most first' : ''}.
           </p>
         )}
 
@@ -310,7 +310,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
                   </span>
                 )}
               </button>
-              {mal && <p className="text-[12.5px] text-tone-3">MyAnimeList imports what you watch so we can match merch to your shows. We never post anything.</p>}
+              {mal && <p className="text-[12.5px] text-tone-3">MyAnimeList reads your list (read-only) so your shop opens on the shows you watch most. We never post anything.</p>}
             </div>
 
             <div className="my-5 flex items-center gap-3" aria-hidden="true">

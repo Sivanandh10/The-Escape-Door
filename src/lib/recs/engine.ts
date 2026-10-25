@@ -13,10 +13,15 @@
 //     bring their stored session trail (customer_signals → storedToSignals(), merged with mergeSignals()).
 //   buildItemGraph() — item→item co-occurrence (orders + same-session product views) and 30-day popularity.
 //   buildRecs()      — the signed-in payload for <ForYou variant="account"> (recent / picks / MAL rows), with
-//                      hybrid picks + per-pick reasons. Payload shape unchanged (pickReasons is additive).
+//                      hybrid picks + per-pick reasons. Payload shape unchanged (pickReasons, topAnime, malLead additive).
+//   MyAnimeList (affinity.ts): franchise affinity → arc + fandom-tag affinity, and for MAL users the most-watched
+//   franchise we stock LEADS every "Picked for you" surface (first row: its pieces, MMR inside; the hybrid ranker
+//   with full diversity fills the rest). Reason: "Because you watched <franchise>".
 import type { Collection, Product, ProductType } from '@/lib/types'
 import { makeMapper } from './mal-map'
-import type { AnimeRef, MalAnime, MalSnapshotStats, MalSuggestion, RecentView, RecsPayload, SuggestionRef, WatchedRow } from './types'
+import { franchiseHas, malModel, topAnime as topAnimeOf, type MalLeadSignal } from './affinity'
+export { animeAffinity, animeFranchises, franchiseBase, malModel, topAnime } from './affinity'
+import type { AnimeRef, MalAnime, MalLead, MalSnapshotStats, MalSuggestion, RecentView, RecsPayload, SuggestionRef, WatchedRow } from './types'
 import { EMPTY_RECS } from './types'
 
 const DAY = 86_400_000
@@ -39,6 +44,8 @@ export interface ScoredRec {
   reason: RecReason
   /** weighted feature contributions (debug / tests) */
   parts: Partial<Record<Feature, number>>
+  /** set on the MyAnimeList lead picks: the franchise key they lead for */
+  lead?: string
 }
 
 /** Visitor signals. Product references may be ids or slugs (both resolve). */
@@ -53,6 +60,10 @@ export interface RecSignals {
   searches?: string[]
   /** MyAnimeList → collection affinity (already mapped) */
   mal?: Array<{ collection: string; weight: number; title: string }>
+  /** MyAnimeList → fandom-tag affinity for pieces not tied to an arc (Beyond Anime: racing → f1 …) */
+  malTags?: Array<{ tag: string; weight: number; title: string }>
+  /** MyAnimeList franchises in affinity order — the first one with pieces in stock leads the list */
+  malLead?: MalLeadSignal[]
   /** collection (arc) pages browsed — `weight` ≈ number of recent visits (recency-decayed) */
   collections?: Array<{ slug: string; weight: number; name?: string }>
   /** shop categories / product types browsed (a ProductType or a /shop/[category] slug) */
@@ -349,6 +360,8 @@ export function mergeSignals(a: RecSignals, b: Partial<RecSignals>): RecSignals 
     orders: uniq([...(a.orders ?? []), ...(b.orders ?? [])], (s) => s, 80),
     searches: uniq([...(a.searches ?? []), ...(b.searches ?? [])], (s) => s, 8),
     mal: a.mal?.length ? a.mal : b.mal,
+    malTags: a.malTags?.length ? a.malTags : b.malTags,
+    malLead: a.malLead?.length ? a.malLead : b.malLead,
     collections: sumBy([...(a.collections ?? []), ...(b.collections ?? [])], (c) => c.slug).slice(0, 16),
     types: sumBy([...(a.types ?? []), ...(b.types ?? [])], (t) => t.type).slice(0, 12),
     added: uniq([...(a.added ?? []), ...(b.added ?? [])], (s) => s, 40),
@@ -363,6 +376,9 @@ export interface Profile {
   type: Map<string, number>
   band: Map<number, number>
   mal: Map<string, number>
+  /** fandom tag → MAL affinity (same scale as `mal`) */
+  malTag: Map<string, number>
+  malTagTitle: Map<string, string>
   /** collection → personal sources, strongest first (name the reason chip) */
   colSource: Map<string, Source[]>
   malTitle: Map<string, string>
@@ -389,6 +405,8 @@ export function buildProfile(products: Product[], signals: RecSignals = {}, now 
   const col = new Map<string, number>(), type = new Map<string, number>(), band = new Map<number, number>(), mal = new Map<string, number>()
   const colSource = new Map<string, Source[]>()
   const malTitle = new Map<string, string>()
+  const malTag = new Map<string, number>()
+  const malTagTitle = new Map<string, string>()
   const seeds = new Map<string, number>()
   const cart = new Set<string>(), wish = new Set<string>(), bought = new Set<string>(), justViewed = new Set<string>(), viewed = new Set<string>()
 
@@ -440,6 +458,13 @@ export function buildProfile(products: Product[], signals: RecSignals = {}, now 
     if (!m || !m.collection || !(m.weight > 0)) continue
     bump(mal, m.collection, m.weight)
     if (!malTitle.has(m.collection)) malTitle.set(m.collection, m.title)
+  }
+  for (const m of (signals.malTags ?? []).slice(0, 40)) {
+    if (!m || !m.tag || !(m.weight > 0)) continue
+    if ((malTag.get(m.tag) ?? 0) < m.weight) {
+      malTag.set(m.tag, m.weight)
+      malTagTitle.set(m.tag, m.title)
+    }
   }
   // products added to the cart before (account history): interest, but weaker than what's in the cart now
   let history = false
@@ -501,9 +526,13 @@ export function buildProfile(products: Product[], signals: RecSignals = {}, now 
     if (a) bump(seeds, a.slug, 3)
   }
 
-  const any = viewed.size > 0 || cart.size > 0 || wish.size > 0 || bought.size > 0 || mal.size > 0 || search.size > 0 || history
+  const any = viewed.size > 0 || cart.size > 0 || wish.size > 0 || bought.size > 0 || mal.size > 0 || malTag.size > 0 || search.size > 0 || history
+  // arc + tag MAL affinity share one scale (the shopper's strongest anime = 1)
+  let malMax = 0
+  for (const v of [...mal.values(), ...malTag.values()]) if (v > malMax) malMax = v
+  const malNorm = (m: Map<string, number>) => (malMax > 0 ? new Map([...m].map(([k, v]) => [k, v / malMax])) : new Map<string, number>())
   return {
-    col: normalise(col), type: normalise(type), band: normalise(band), mal: normalise(mal),
+    col: normalise(col), type: normalise(type), band: normalise(band), mal: malNorm(mal), malTag: malNorm(malTag), malTagTitle,
     colSource, malTitle, seeds, search: normalise(search), searchTerm, cart, wish, bought, justViewed, viewed, any,
   }
 }
@@ -686,6 +715,16 @@ export function rankRecs(input: RankInput): ScoredRec[] {
     return { v: best, base }
   }
   const anchorBand = anchorP ? priceBand(anchorP) : -1
+  // MAL affinity of a product: its arc, or its strongest fandom tag (Beyond Anime pieces)
+  const malFor = (p: Product): { v: number; title: string | null } => {
+    let v = prof.mal.get(p.collection) ?? 0
+    let title = v > 0 ? prof.malTitle.get(p.collection) ?? null : null
+    for (const t of p.tags) {
+      const tv = prof.malTag.get(t) ?? 0
+      if (tv > v + 1e-9) { v = tv; title = prof.malTagTitle.get(t) ?? null }
+    }
+    return { v, title }
+  }
 
   const cands: ScoredRec[] = []
   for (const p of products) {
@@ -702,7 +741,8 @@ export function rankRecs(input: RankInput): ScoredRec[] {
     add('coView', cv.s)
     add('pop', graph.popularity[p.slug] ?? 0)
     add('fresh', newness(p, now) * 0.6 + (p.dropOfWeek ? 0.25 : 0) + (p.featured ? 0.15 : 0))
-    add('mal', prof.mal.get(p.collection) ?? 0)
+    const mv = malFor(p)
+    add('mal', mv.v)
     const b = priceBand(p)
     if (b >= 0) add('price', anchorBand >= 0 ? Math.max(0, 1 - Math.abs(anchorBand - b) * 0.45) : prof.band.get(b) ?? 0)
     if (anchorP) add('sim', contentSim(anchorP, p))
@@ -720,15 +760,34 @@ export function rankRecs(input: RankInput): ScoredRec[] {
     if (p.priceOnRequest) score -= PENALTY.priceOnRequest
     if (context === 'cart' && cartKinds.has(`${p.type}|${p.collection}`)) score -= PENALTY.sameAsCart
     score = round(score)
-    cands.push({ product: p, score, parts, reason: explain(p, parts, { prof, cb, cv, comp, anchorP, bySlug, colName, context }) })
+    cands.push({ product: p, score, parts, reason: explain(p, parts, { prof, cb, cv, comp, anchorP, bySlug, colName, context, malFrom: mv.title }) })
   }
 
   const productish = context === 'product' || context === 'cart'
-  return diversify(
-    cands.filter((c) => c.score > 0.05),
-    { limit, perTypeTop: 2, perCollectionTop: context === 'cart' ? 4 : 3, window: 6, lambda: productish ? 0.78 : 0.72 },
-  )
+  const pool = cands.filter((c) => c.score > 0.05)
+  const opts: MmrOptions = { limit, perTypeTop: 2, perCollectionTop: context === 'cart' ? 4 : 3, window: 6, lambda: productish ? 0.78 : 0.72 }
+
+  // MyAnimeList lead: the most-watched franchise we stock comes FIRST (its best pieces, varied by type), then the
+  // hybrid ranker with full diversity. Product page / cart keep their job (similar · complete the look): 2 lead slots.
+  const leadN = Math.min(limit, productish ? 2 : 4)
+  for (const f of input.signals?.malLead ?? []) {
+    if (!f || (!f.collection && !f.tags?.length)) continue
+    const fr = { collection: f.collection, tags: new Map((f.tags ?? []).map((t) => [t, 1])) }
+    const mine = pool.filter((c) => franchiseHas(fr, c.product))
+    if (!mine.length) continue // not stocked → the UI offers "Request it"; the next franchise leads
+    const lead = diversify(
+      mine.map((c) => ({ ...c, score: round(c.score + (c.parts.mal ?? 0) + 0.15 * (LEAD_TYPE[c.product.type] ?? 0)) })),
+      { limit: leadN, perTypeTop: 2, perCollectionTop: leadN, window: leadN, lambda: 0.8 },
+    ).map((c) => ({ ...c, lead: f.key, reason: { kind: 'watched' as const, label: `Because you watched ${f.title}` } }))
+    const taken = new Set(lead.map((c) => c.product.slug))
+    const rest = limit > lead.length ? diversify(pool.filter((c) => !taken.has(c.product.slug)), { ...opts, limit: limit - lead.length }) : []
+    return [...lead, ...rest]
+  }
+  return diversify(pool, opts)
 }
+
+/** lead row: wearables first (the shopper came for a hoodie), collectibles after */
+const LEAD_TYPE: Partial<Record<ProductType, number>> = { hoodie: 1, tshirt: 1, poster: 0.6, polaroid: 0.5, cape: 0.5, katana: 0.5, keychain: 0.3, badge: 0.3 }
 
 interface ExplainCtx {
   prof: Profile
@@ -739,6 +798,8 @@ interface ExplainCtx {
   bySlug: Map<string, Product>
   colName: (s: string) => string
   context: RecsContext
+  /** the MAL franchise behind this product's mal feature */
+  malFrom?: string | null
 }
 
 /** The strongest contribution names the chip. */
@@ -770,7 +831,7 @@ export function explain(p: Product, parts: Partial<Record<Feature, number>>, x: 
           ? { kind: 'similar', label: `Similar ${TYPE_WORD[p.type]}` }
           : { kind: 'similar', label: 'Similar style' }
     case 'mal': {
-      const t = prof.malTitle.get(p.collection)
+      const t = x.malFrom ?? prof.malTitle.get(p.collection)
       return { kind: 'watched', label: t ? `Because you watched ${t}` : 'From your MyAnimeList' }
     }
     case 'search':
@@ -836,26 +897,16 @@ export function animeWeight(a: Pick<MalAnime, 'status' | 'score'>): number {
   return w
 }
 
-/** MAL list → per-collection affinity (the strongest title per collection names the reason). */
-export function malSignals(list: MalAnime[], collections: Pick<Collection, 'slug' | 'name' | 'group'>[]): NonNullable<RecSignals['mal']> {
-  const mapper = makeMapper(collections)
-  const out = new Map<string, { collection: string; weight: number; title: string; best: number }>()
-  for (const a of list) {
-    const w = animeWeight(a)
-    if (w <= 0) continue
-    const slug = mapper.map(a)
-    if (!slug) continue
-    const title = a.en || a.title
-    const cur = out.get(slug)
-    if (!cur) out.set(slug, { collection: slug, weight: w, title, best: w })
-    else {
-      cur.weight += w
-      if (w > cur.best) { cur.best = w; cur.title = title }
-    }
-  }
-  return [...out.values()]
-    .sort((a, b) => b.weight - a.weight || a.collection.localeCompare(b.collection))
-    .map(({ collection, weight, title }) => ({ collection, weight, title }))
+/** MAL list → per-collection affinity via the franchise affinity model (affinity.ts); the strongest franchise per
+ *  collection names the reason. Kept for callers that only need arcs — use malSignalSet() for tags + lead too. */
+export function malSignals(list: MalAnime[], collections: Pick<Collection, 'slug' | 'name' | 'group'>[], now = Date.now()): NonNullable<RecSignals['mal']> {
+  return malModel(list, collections, now).mal
+}
+
+/** Every MAL signal the ranker uses: arc affinity, fandom-tag affinity and the lead order. */
+export function malSignalSet(list: MalAnime[], collections: Pick<Collection, 'slug' | 'name' | 'group'>[], now = Date.now()): Pick<RecSignals, 'mal' | 'malTags' | 'malLead'> {
+  const m = malModel(list, collections, now)
+  return { mal: m.mal, malTags: m.malTags, malLead: m.malLead }
 }
 
 /** Attach display names to collection signals (for the "Because you browsed …" chip). */
@@ -879,38 +930,31 @@ export function buildRecs(input: RecsInput): RecsPayload {
   const sortedViews = [...views].sort((a, b) => b.viewedAt.localeCompare(a.viewedAt))
   const recent = sortedViews.map((v) => bySlug.get(v.slug)).filter((p): p is Product => !!p && p.slug !== exclude).slice(0, L.recent)
 
-  // ---- MyAnimeList → collections
+  // ---- MyAnimeList → franchise affinity (affinity.ts) → arcs, fandom tags, "most watched", request-able anime
   const mapper = makeMapper(collections)
   const watched: WatchedRow[] = []
   const unmapped: AnimeRef[] = []
-  const malCols = new Map<string, MalAnime>()
-  if (mal?.list?.length) {
-    const ranked = [...mal.list]
-      .filter((a) => animeWeight(a) > 0)
-      .sort((a, b) => animeWeight(b) - animeWeight(a) || (b.updatedAt ?? '').localeCompare(a.updatedAt ?? ''))
-    const seenUnmapped = new Set<string>()
-    for (const a of ranked) {
-      const slug = mapper.map(a)
-      if (slug) {
-        if (!malCols.has(slug)) malCols.set(slug, a)
-      } else if ((a.status === 'watching' || a.score >= 7) && unmapped.length < 6) {
-        // group seasons of one show under its first title word-run
-        const key = a.title.toLowerCase().split(/[:(]/)[0].replace(/\s+(season|part|movie|film)\b.*$/, '').trim()
-        if (!seenUnmapped.has(key)) {
-          seenUnmapped.add(key)
-          unmapped.push({ id: a.id, title: a.en || a.title, picture: a.picture })
-        }
+  const model = mal?.list?.length ? malModel(mal.list, collections, now) : null
+  const topAnime = model ? topAnimeOf(model.franchises, products, 5) : []
+  if (model) {
+    const seenCol = new Set<string>()
+    for (const f of model.franchises) {
+      const stocked = products.some((p) => available(p) && franchiseHas(f, p))
+      if (f.collection && !seenCol.has(f.collection) && watched.length < L.watchedRows) {
+        seenCol.add(f.collection)
+        const c = colBySlug.get(f.collection)
+        const row = c
+          ? products
+              .filter((p) => p.collection === f.collection && available(p))
+              .sort((x, y) => (typeRank[y.type] ?? 0) + (y.featured ? 1 : 0) - ((typeRank[x.type] ?? 0) + (x.featured ? 1 : 0)) || x.slug.localeCompare(y.slug))
+              .slice(0, L.perRow)
+          : []
+        if (c && row.length) watched.push({ anime: { id: f.lead.id, title: f.title, picture: f.lead.picture, episodes: f.episodes }, collection: { slug: c.slug, name: c.name, jp: c.jp }, products: row })
+      } else if (!stocked && unmapped.length < 6) {
+        // shows they really watch (or rate) that we don't make anything for yet → "Request it"
+        const real = f.status === 'watching' || f.score >= 7 || f.episodes >= 12 || f.affinity >= 0.5
+        if (real) unmapped.push({ id: f.lead.id, title: f.title, picture: f.lead.picture, episodes: f.episodes })
       }
-    }
-    for (const [slug, a] of malCols) {
-      if (watched.length >= L.watchedRows) break
-      const c = colBySlug.get(slug)
-      if (!c) continue
-      const row = products
-        .filter((p) => p.collection === slug && available(p))
-        .sort((x, y) => (typeRank[y.type] ?? 0) + (y.featured ? 1 : 0) - ((typeRank[x.type] ?? 0) + (x.featured ? 1 : 0)) || x.slug.localeCompare(y.slug))
-        .slice(0, L.perRow)
-      if (row.length) watched.push({ anime: { id: a.id, title: a.en || a.title, picture: a.picture }, collection: { slug: c.slug, name: c.name, jp: c.jp }, products: row })
     }
   }
 
@@ -920,7 +964,7 @@ export function buildRecs(input: RecsInput): RecsPayload {
       views: sortedViews.slice(0, 40).map((v) => ({ slug: v.slug, at: Date.parse(v.viewedAt) || now - 7 * DAY, count: v.count })),
       cart: signalIds,
       orders: input.orderIds ?? [],
-      mal: mal?.list?.length ? malSignals(mal.list, collections) : [],
+      ...(mal?.list?.length ? malSignalSet(mal.list, collections, now) : { mal: [] }),
     },
     input.stored?.length ? withNames(storedToSignals(input.stored, now), collections) : {},
   )
@@ -940,7 +984,18 @@ export function buildRecs(input: RecsInput): RecsPayload {
   const picks = picksR.map((r) => r.product)
   const pickReasons = Object.fromEntries(picksR.map((r) => [r.product.id, r.reason]))
   const topCol = picks[0]?.collection
-  const pickReason = picks.length ? (topCol && colBySlug.get(topCol) ? `Because you’re into ${colBySlug.get(topCol)!.name}` : 'Picked from what you browsed') : null
+  const leadKey = picksR[0]?.lead
+  const leadF = leadKey ? model?.franchises.find((f) => f.key === leadKey) : undefined
+  const malLead: MalLead | null = leadF
+    ? { key: leadF.key, title: leadF.title, episodes: leadF.episodes, collection: leadF.collection, count: picksR.filter((r) => r.lead === leadKey).length }
+    : null
+  const pickReason = malLead
+    ? `Because you watched ${malLead.title}${malLead.episodes ? ` (${malLead.episodes} eps)` : ''}`
+    : picks.length
+      ? topCol && colBySlug.get(topCol)
+        ? `Because you’re into ${colBySlug.get(topCol)!.name}`
+        : 'Picked from what you browsed'
+      : null
 
   // ---- MAL suggestions
   const suggestions: SuggestionRef[] = (mal?.suggestions ?? []).slice(0, 12).map((s) => ({
@@ -966,5 +1021,7 @@ export function buildRecs(input: RecsInput): RecsPayload {
     beyond,
     suggestions,
     mal: mal ? { username: mal.username, syncedAt: mal.syncedAt, stats: mal.stats ?? null } : null,
+    topAnime,
+    malLead,
   }
 }

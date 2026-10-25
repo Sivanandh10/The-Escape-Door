@@ -8,16 +8,22 @@ import { useCart, useHydrated, useWishlist } from '@/lib/cart'
 import { recsQuery, SIGNALS_EVENT, hasLocalSignals } from '@/lib/recs/signals'
 import type { RecReason, RecsContext } from '@/lib/recs/engine'
 import type { Product } from '@/lib/types'
+import type { MalLead, TopAnime } from '@/lib/recs/types'
 
 export interface RecItem {
   product: Product
   reason: RecReason
   score: number
+  /** a MyAnimeList lead pick (the most-watched franchise's pieces come first) */
+  lead?: boolean
 }
 
+/** MyAnimeList users: "Your most-watched anime" + the franchise leading the row */
+export type RecsMal = { top: TopAnime[]; lead: MalLead | null } | null
+
 export type RecsState =
-  | { status: 'idle' | 'loading' | 'error'; items: RecItem[]; personal: boolean }
-  | { status: 'ready'; items: RecItem[]; personal: boolean }
+  | { status: 'idle' | 'loading' | 'error'; items: RecItem[]; personal: boolean; mal?: RecsMal }
+  | { status: 'ready'; items: RecItem[]; personal: boolean; mal?: RecsMal }
 
 function subscribeSignals(cb: () => void) {
   window.addEventListener(SIGNALS_EVENT, cb)
@@ -82,8 +88,8 @@ export function useRecs(context: RecsContext, opts: { slug?: string | null; limi
     setState((s) => (s.status === 'ready' ? s : { ...s, status: 'loading' }))
     fetch(`/api/recs?${query}`, { signal: ctrl.signal, cache: 'no-store' })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error(String(r.status)))))
-      .then((j: { items?: RecItem[]; personal?: boolean }) =>
-        setState({ status: 'ready', items: Array.isArray(j.items) ? j.items : [], personal: !!j.personal }),
+      .then((j: { items?: RecItem[]; personal?: boolean; mal?: RecsMal }) =>
+        setState({ status: 'ready', items: Array.isArray(j.items) ? j.items : [], personal: !!j.personal, mal: j.mal && Array.isArray(j.mal.top) ? j.mal : null }),
       )
       .catch((e: unknown) => {
         if ((e as { name?: string })?.name !== 'AbortError') setState((s) => ({ ...s, status: s.items.length ? 'ready' : 'error' }) as RecsState)

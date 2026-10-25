@@ -1,11 +1,11 @@
 // /policies/privacy | shipping | returns | terms (+ any page added in Admin → Pages). Owner: CMS.
 // Text comes from public.pages (cached, tag 'pages' — admin saves refresh it instantly) with the built-in
 // copy in @/components/content/policies as the fallback. Rendered with the tiny safe markdown renderer
-// (no raw HTML). Unknown facts stay marked "being finalised — message us" ({pending} sections).
+// (no raw HTML). A {pending} section gets an "Ask us for details" badge that links to the contact page.
 import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
-import { ArrowRight, Hourglass } from 'lucide-react'
+import { ArrowRight, MessageCircle } from 'lucide-react'
 import JsonLd from '@/components/seo/JsonLd'
 import { PageHero } from '@/components/content/PageHero'
 import { pageMeta } from '@/components/content/meta'
@@ -64,7 +64,7 @@ export default async function PolicyPage({ params }: Props) {
                       <Link href={`#${s.id}`} className="focus-ring group flex min-h-10 items-center gap-2 py-1 text-[15px] font-medium hover:text-door">
                         <span className="font-mono text-[11px] text-tone-3 transition-colors group-hover:text-door">{String(i + 1).padStart(2, '0')}</span>
                         <span className="flex-1">{s.toc}</span>
-                        {s.pending && <Hourglass aria-label="being finalised" className="size-3.5 shrink-0 text-tone-3" />}
+                        {s.pending && <MessageCircle aria-label="ask us for details" className="size-3.5 shrink-0 text-tone-3" />}
                       </Link>
                     </li>
                   ))}
@@ -91,10 +91,9 @@ export default async function PolicyPage({ params }: Props) {
                 </h2>
                 {s.pending && (
                   <p className="mt-4 inline-flex flex-wrap items-center gap-2 border-[3px] border-ink bg-volt px-3 py-2 text-[14px] font-semibold shadow-hard-sm">
-                    <Hourglass aria-hidden="true" className="size-4" />
-                    Being finalised —{' '}
+                    <MessageCircle aria-hidden="true" className="size-4" />
                     <Link href="/contact" className="underline decoration-2 underline-offset-2 hover:text-door">
-                      message us
+                      Ask us for details
                     </Link>
                   </p>
                 )}

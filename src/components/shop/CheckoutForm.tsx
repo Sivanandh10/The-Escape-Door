@@ -1,8 +1,8 @@
 'use client'
 // The cart's "Checkout" call to action (drawer + /cart page). Owner: CHECKOUT.
 // Every order goes through /checkout (contact / address / gift / voucher / review → order saved → WhatsApp).
-// While a login method is live, login is required first (the login modal opens with the reason, then continues to
-// /checkout); while none is, the gate lets everyone through and /checkout runs as a guest checkout.
+// Login is OPTIONAL (src/lib/auth/policy.ts): everyone goes straight to /checkout — signed out = guest checkout (name +
+// WhatsApp number only). With NEXT_PUBLIC_LOGIN_REQUIRED=1 the gate opens the login modal first, as before.
 // (The old WhatsApp-only shortcut that skipped the address is gone.)
 import { useRouter } from 'next/navigation'
 import { useState } from 'react'
@@ -11,8 +11,7 @@ import { DoorIcon } from '@/components/brand/DoorIcon'
 import { useCart } from '@/lib/cart'
 import { track } from '@/lib/analytics'
 import { cn } from '@/lib/utils'
-import { useRequireLogin } from '@/lib/checkout/auth'
-import { useAuthProviders } from '@/lib/auth/providers'
+import { useCustomer, useRequireLogin } from '@/lib/checkout/auth'
 import { loginGateOn } from '@/lib/auth/policy'
 
 export interface CheckoutCtaProps {
@@ -25,12 +24,12 @@ export interface CheckoutCtaProps {
   className?: string
 }
 
-/** Login-gated (when login is live) → /checkout. Instant feedback: the door on the button opens on press. */
+/** → /checkout (login gate only with NEXT_PUBLIC_LOGIN_REQUIRED=1). Instant feedback: the door on the button opens on press. */
 export function CheckoutCta({ where, onNavigate, pieces, total, className }: CheckoutCtaProps) {
   const go = useGoToCheckout()
   const [going, setGoing] = useState(false)
-  const providers = useAuthProviders()
-  const guest = providers !== null && !loginGateOn(providers)
+  const { customer } = useCustomer()
+  const guest = !customer && !loginGateOn()
 
   return (
     <div className={cn('flex flex-col gap-2', className)}>
@@ -59,19 +58,19 @@ export function CheckoutCta({ where, onNavigate, pieces, total, className }: Che
       </button>
       <p className="flex items-center justify-center gap-1.5 text-center text-[12px] text-tone-3">
         <Lock aria-hidden="true" className="size-3 shrink-0" />
-        {guest ? 'Your details · delivery address · pay on WhatsApp — nothing is charged on site' : 'Log in · pick an address · pay on WhatsApp — nothing is charged on site'}
+        {guest ? 'No account needed · name + WhatsApp number · pay in the chat — nothing is charged on site' : customer ? 'Pick an address · pay on WhatsApp — nothing is charged on site' : 'Log in · pick an address · pay on WhatsApp — nothing is charged on site'}
       </p>
     </div>
   )
 }
 
-/** Shared "go to checkout" (login gate when live → close the drawer → /checkout). */
+/** Shared "go to checkout" (close the drawer → /checkout; the gate is a pass-through while login is optional). */
 export function useGoToCheckout() {
   const router = useRouter()
   const requireLogin = useRequireLogin()
   return ({ where, pieces, total, onGo }: { where: string; pieces?: number; total?: number; onGo?: () => void }) => {
     router.prefetch('/checkout')
-    // the gate runs the action straight away while no login method is live (guest checkout)
+    // login optional → the gate runs the action straight away (guest checkout)
     requireLogin('Log in to check out', () => {
       track('checkout_start', { where, pieces: pieces ?? null, total: total ?? null })
       onGo?.()

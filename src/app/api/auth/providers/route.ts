@@ -2,7 +2,7 @@
 // The login modal disables the ones that are off, and the shop drops the login gate (WhatsApp ordering, as before
 // accounts) while NONE works, so customers can never be locked out of the cart. Owner: INTEGRATOR (AUTH area).
 // google  = Supabase Auth → Providers → Google is enabled (read from the public /auth/v1/settings endpoint)
-// mal     = MAL_CLIENT_ID is set on the server
+// mal     = MAL_CLIENT_ID is set on the server (Netlify env, or public.app_secrets via getServerSecret — 0013)
 // email   = email sign-in is on AND mail actually reaches shoppers: either "Confirm email" is off (autoconfirm) or the
 //           owner set AUTH_EMAIL_LIVE=1 after configuring custom SMTP (the built-in mailer only reaches team addresses).
 // Never returns keys. Cached for 60 s per instance + 60 s at the CDN.
@@ -16,7 +16,7 @@ let memo: { at: number; value: AuthProviders } | null = null
 const TTL = 60_000
 
 async function read(): Promise<AuthProviders> {
-  const mal = isMalConfigured()
+  const mal = await isMalConfigured()
   let google = false
   let email = false
   if (isSupabaseConfigured()) {

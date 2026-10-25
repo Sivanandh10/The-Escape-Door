@@ -91,7 +91,7 @@ export function AddToCartButton({
   className,
 }: AddToCartButtonProps) {
   const reduced = useReducedMotion()
-  const requireLogin = useRequireLogin() // login is mandatory to add / buy (AUTH)
+  const requireLogin = useRequireLogin() // pass-through while login is optional (policy.ts) — guests add / buy freely
   const router = useRouter()
   const btn = useRef<HTMLButtonElement>(null)
   const [phase, setPhase] = useState<Phase>('idle')
@@ -170,7 +170,7 @@ export function AddToCartButton({
       later(() => setPhase((p) => (p === 'need' ? 'idle' : p)), 1400)
       return
     }
-    // signed out → login modal; the add/buy continues right after login (Google/MAL: replayed on return)
+    // login optional → runs now; only with NEXT_PUBLIC_LOGIN_REQUIRED=1: login modal, then the add/buy continues
     requireLogin(
       mode === 'buy' ? 'Log in to buy this' : 'Log in to add to your cart',
       proceed,

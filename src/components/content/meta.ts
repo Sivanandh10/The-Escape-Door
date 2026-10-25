@@ -16,7 +16,7 @@ export function pageMeta({
   ogImage?: boolean
   noindex?: boolean
 }): Metadata {
-  const images = ogImage ? [{ url: '/opengraph-image', width: 1200, height: 630, alt: 'The Escape Door — anime merch, drawn like a manga volume' }] : undefined
+  const images = ogImage ? [{ url: '/opengraph-image', width: 1200, height: 630, type: 'image/jpeg', alt: 'The Escape Door — anime merch, drawn like a manga volume' }] : undefined
   return {
     title: { absolute: title },
     description,

@@ -19,6 +19,14 @@ export interface MalAnime extends MalAnimeBase {
   score: number
   episodes: number
   updatedAt: string | null
+  /** richer import (src/lib/auth/mal-import.ts) — optional: older snapshots don't carry them */
+  rewatching?: boolean
+  /** times rewatched (MAL num_times_rewatched) */
+  rewatches?: number
+  /** the show's total episode count (0 / null = unknown or airing) */
+  total?: number | null
+  /** MAL media type: tv · movie · ova · ona · special · music */
+  media?: string | null
 }
 export type MalSuggestion = MalAnimeBase
 
@@ -42,6 +50,36 @@ export interface AnimeRef {
   id: number
   title: string
   picture: string | null
+  /** episodes watched across the franchise (affinity model) */
+  episodes?: number
+}
+
+/** One franchise from the shopper's MyAnimeList, ranked by the affinity model (src/lib/recs/affinity.ts). */
+export interface TopAnime extends AnimeRef {
+  /** franchise key (normalised title) */
+  key: string
+  /** best MyAnimeList score the shopper gave any entry (0 = not scored) */
+  score: number
+  /** strongest list status across the franchise */
+  status: MalStatus | null
+  /** list entries grouped into this franchise (seasons, films …) */
+  entries: number
+  /** 0..1 relative to the shopper's top franchise */
+  affinity: number
+  /** our collection slug when we make an arc for it */
+  collection: string | null
+  /** we stock at least one in-stock piece for it (arc or tagged product) */
+  stocked: boolean
+}
+
+/** The franchise that leads "Picked for you". */
+export interface MalLead {
+  key: string
+  title: string
+  episodes: number
+  collection: string | null
+  /** how many of the first picks belong to it */
+  count: number
 }
 
 export interface WatchedRow {
@@ -75,6 +113,10 @@ export interface RecsPayload {
   /** MAL "anime you might watch next" */
   suggestions: SuggestionRef[]
   mal: { username: string; syncedAt: string | null; stats: MalSnapshotStats | null } | null
+  /** "Your most-watched anime" (top 5 franchises by affinity; MAL users only) */
+  topAnime?: TopAnime[]
+  /** the franchise whose pieces lead `picks` ("Because you watched X (N eps)") */
+  malLead?: MalLead | null
 }
 
 export const EMPTY_RECS: RecsPayload = {

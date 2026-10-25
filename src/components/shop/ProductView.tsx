@@ -1,18 +1,16 @@
 'use client'
 // ProductView — PDP interactive column + gallery (owner: P1 shop).
 // Gallery: <ImageCarousel variant="gallery"> — swipe/arrows/pips/thumbs (Front/Back/Detail), ←/→, zoom.
-// Buy box: variant chips, size chips (+ "ask on WhatsApp" size chart), qty stepper, BundleHint,
+// Buy box: variant chips, size chips (+ <SizeChart> pop-up: Admin → Pricing → Size charts, WhatsApp fallback), qty stepper, BundleHint,
 // #66 AddToCartButton, "Buy now" (login → adds to the cart → /checkout: address, gift, voucher, then WhatsApp —
 // buy-handler owned by CHECKOUT), wishlist, custom card.
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useSyncExternalStore } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { Minus, Plus, Ruler, Wand2, ArrowRight } from 'lucide-react'
+import { Minus, Plus, Wand2, ArrowRight } from 'lucide-react'
 import type { Product } from '@/lib/types'
 import { track } from '@/lib/analytics'
-import { waLink } from '@/lib/whatsapp'
-import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { cn } from '@/lib/utils'
 import { AddToCartButton } from './AddToCartButton'
 import { PriceTag } from './PriceTag'
@@ -20,6 +18,7 @@ import { WishlistButton } from './WishlistButton'
 import { ShareButton } from './ShareButton'
 import { BundleHint } from './BundleHint'
 import { ImageCarousel } from './ImageCarousel'
+import { SizeChart } from './SizeChart'
 import './shop.css'
 
 export interface ProductViewProps {
@@ -30,7 +29,6 @@ export interface ProductViewProps {
 }
 
 export function ProductView({ product: p, collectionName, collectionJp, accent = '#C9B8FF' }: ProductViewProps) {
-  const waNumber = useWhatsappNumber()
   const router = useRouter()
   const [variantId, setVariantId] = useState(p.variants[0]?.id ?? '')
   const [size, setSize] = useState<string | null>(null)
@@ -45,7 +43,6 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
   }, [p.slug, p.type, p.collection])
 
   const variantName = p.type === 'hoodie' ? 'GSM tier' : p.variants.some((v) => v.attrs?.fit) ? 'Fit' : 'Style'
-  const askSize = waLink(`Hi! Could you share the size chart for “${p.name}” (${variant?.label ?? ''})?`, waNumber)
 
   return (
     <div className="grid gap-8 lg:grid-cols-[1.15fr_1fr] lg:gap-12">
@@ -123,9 +120,7 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
                 )
               })}
             </div>
-            <a href={askSize} target="_blank" rel="noopener noreferrer" className="label inline-flex w-fit items-center gap-2 text-[0.6875rem] text-paper/80 underline decoration-2 underline-offset-4 hover:text-volt focus-ring">
-              <Ruler aria-hidden="true" className="h-4 w-4" strokeWidth={2.4} /> Size chart: coming soon — ask on WhatsApp
-            </a>
+            <SizeChart product={p} variant={variant} size={size} />
           </fieldset>
         )}
 
@@ -179,7 +174,7 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
             }}
             onNeedSize={() => { setNeedSize(true); sizeGroup.current?.querySelector('button')?.focus() }}
           />
-          <p className="label text-[0.625rem] text-paper/60">Pick your address at checkout — we confirm stock and size and take payment on WhatsApp.</p>
+          <p className="label text-[0.625rem] text-paper/60">No account needed — just your name and WhatsApp number. We confirm stock, size, address and payment in the chat.</p>
         </div>
 
         {p.customizable && (
@@ -201,14 +196,25 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
   )
 }
 
+const noSubscribe = () => () => {}
+function readStaffFlag(): boolean {
+  try {
+    return window.localStorage.getItem('ted-staff') === '1'
+  } catch {
+    return false
+  }
+}
+
 function Gallery({ product: p, ref, accent }: { product: Product; ref: React.Ref<HTMLDivElement>; accent: string }) {
   // Every image in order, front first. Front / Back print / Detail thumbs are jump-to-slide shortcuts.
   const front = p.images.find((i) => i.side !== 'back') ?? p.images[0]
   const imgs = front ? [front, ...p.images.filter((i) => i !== front)] : []
-  const sample = imgs.some((i) => i.sample)
-  const badge = sample ? (
-    <span className="label pointer-events-none absolute bottom-3 left-3 z-[2] border-2 border-ink bg-paper px-2 py-1 text-[0.625rem] text-ink">
-      SAMPLE — replace with real photo
+  // `sample` (generated art, no real photo yet) is staff-only: shoppers never see a note; a browser that
+  // has opened /admin (analytics STAFF_KEY 'ted-staff') gets a small reminder badge.
+  const staff = useSyncExternalStore(noSubscribe, readStaffFlag, () => false)
+  const badge = staff && imgs.some((i) => i.sample) ? (
+    <span className="label pointer-events-none absolute bottom-3 left-3 z-[2] border-2 border-ink bg-paper px-2 py-1 text-[0.625rem] text-ink" title="Only staff browsers see this">
+      Admin · sample art
     </span>
   ) : null
 

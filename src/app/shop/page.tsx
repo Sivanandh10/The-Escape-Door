@@ -9,13 +9,13 @@ import { CategoryTiles, CustomCta, PacksStrip, SectionHead, ShopHero, ArcDoorStr
 import { ForYou } from '@/components/recs/ForYou'
 
 const TITLE = 'Shop Anime Merch Online — All Fandoms | The Escape Door'
-const DESC = 'Browse 2000 t-shirt designs, 1500 polaroids, 750 posters and 400+ badges. Filter by arc, size, GSM and price. Fan-inspired, original designs.'
+const DESC = 'Shop 60+ anime designs online, with 2,000+ more in our library on WhatsApp. Filter by arc, size, GSM and price. Fan-inspired, original designs.'
 
 export const metadata: Metadata = {
   title: { absolute: TITLE },
   description: DESC,
   alternates: { canonical: '/shop' },
-  openGraph: { title: TITLE, description: DESC, url: '/shop', type: 'website' },
+  openGraph: { title: TITLE, description: DESC, url: '/shop', type: 'website', siteName: 'The Escape Door', locale: 'en_IN' },
   twitter: { card: 'summary_large_image', title: TITLE, description: DESC },
 }
 

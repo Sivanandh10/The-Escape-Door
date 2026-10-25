@@ -14,7 +14,8 @@ import { SectionHead } from '@/components/content/SectionHead'
 import { CountUp } from '@/components/content/CountUp'
 import { CtaPanel } from '@/components/content/CtaPanel'
 import { pageMeta } from '@/components/content/meta'
-import { getCollections, getEvents, getPartnerships } from '@/lib/data/repo'
+import { getCollections, getEvents, getPartnerships, getProducts, getSettings } from '@/lib/data/repo'
+import { waLink, whatsappNumber } from '@/lib/whatsapp'
 import { absUrl, DISCLAIMER, INSTAGRAM_URL, ORG_ID, orgJsonLd, WEBSITE_ID } from '@/lib/seo'
 import { readableOn } from '@/components/layout/nav'
 
@@ -40,7 +41,13 @@ const LIBRARY = [
 ] as const
 
 export default async function AboutPage() {
-  const [collections, partnerships, events] = await Promise.all([getCollections(), getPartnerships(), getEvents()])
+  const [collections, partnerships, events, products, settings] = await Promise.all([getCollections(), getPartnerships(), getEvents(), getProducts(), getSettings()])
+  const online = products.length
+  const onlineLabel = online >= 10 ? `${Math.floor(online / 10) * 10}+` : String(online)
+  const askLibrary = waLink(
+    `Hi Escape Door! I'm looking for a design that isn't in the online shop. Can you show me the full library? Fandom/character: `,
+    whatsappNumber(settings.whatsapp),
+  )
   const anime = collections.filter((c) => c.group === 'anime').sort((a, b) => a.order - b.order)
   const beyond = collections.find((c) => c.group === 'beyond')
   const fests = [...partnerships].sort((a, b) => a.order - b.order)
@@ -137,8 +144,8 @@ export default async function AboutPage() {
       {/* 02 — library */}
       <section aria-labelledby="designs" className="section-y relative bg-ink text-paper">
         <div className="container-x">
-          <SectionHead n="02" label="The library" jp="デザイン" id="designs" intro={<p>Our design libraries, counted from our own price book. Every design is original fan art, not studio artwork.</p>}>
-            Over 2000 <em>designs</em> and counting
+          <SectionHead n="02" label="The library" jp="デザイン" id="designs" intro={<p>Our full design libraries, counted from our own price book. Only part of each library is in the online shop ({onlineLabel} pieces right now); <a href={askLibrary} target="_blank" rel="noopener noreferrer" className="underline decoration-2 underline-offset-4 hover:text-volt focus-ring">ask us on WhatsApp for the full library<span className="sr-only"> (opens WhatsApp)</span></a>. Every design is original fan art, not studio artwork.</p>}>
+            2,000+ <em>designs</em> in the library
           </SectionHead>
           <Reveal as="dl" variant="slam" stagger={0.08} className="mt-12 grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-3">
             {LIBRARY.map((x) => (

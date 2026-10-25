@@ -1,7 +1,7 @@
 // /checkout — (contact →) address → gift → voucher → review → order saved FIRST, then WhatsApp. Owner: CHECKOUT.
 // Static shell (masthead) + the customer part inside <Suspense> (reads the session cookie). Signed in → saved
-// addresses. Signed out → login wall while a login method is live (login is mandatory then), otherwise the same
-// full checkout as a guest. The cart itself lives in the browser (localStorage). noindex.
+// addresses. Signed out → the fast guest checkout (login is optional; name + WhatsApp number are all it needs).
+// The cart itself lives in the browser (localStorage). noindex.
 import type { Metadata } from 'next'
 import { Suspense } from 'react'
 import { Masthead } from '@/components/shop/cart/Masthead'
@@ -12,7 +12,7 @@ import { getCheckoutSettings, getMyAddresses } from '@/lib/checkout/orders-serve
 
 export const metadata: Metadata = {
   title: 'Checkout',
-  description: 'Pick a delivery address, gift wrap and voucher, then place your Escape Door order on WhatsApp.',
+  description: 'Your name and WhatsApp number — then place your Escape Door order on WhatsApp. No account needed.',
   alternates: { canonical: '/checkout' },
   robots: { index: false, follow: false },
 }

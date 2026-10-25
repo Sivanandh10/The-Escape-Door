@@ -35,7 +35,7 @@ export function WishlistButton({ productId, name, slug, size = 'md', tone = 'pap
   const toggle = useWishlist((s) => s.toggle)
   const [pop, setPop] = useState(0)
   const router = useRouter()
-  const requireLogin = useRequireLogin() // saving needs an account (AUTH); removing never does
+  const requireLogin = useRequireLogin() // pass-through while login is optional: the wishlist lives in this browser
 
   const onClick = (e: React.MouseEvent) => {
     e.preventDefault()

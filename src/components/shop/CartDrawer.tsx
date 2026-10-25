@@ -3,7 +3,7 @@
 // halftone shading lifts as it opens). Dialog semantics: aria-modal, focus trap, Esc, scroll lock
 // (Lenis stop), focus restored to the header door-cart. Owner: CHECKOUT (was P2).
 // Mounted lazily by Providers (default export, no props). Opens via useCart().setOpen(true).
-// window.dispatchEvent(new Event('ted:cart-checkout')) → login gate → /checkout (the old details step is gone).
+// window.dispatchEvent(new Event('ted:cart-checkout')) → /checkout (no login needed; guest checkout).
 import { useCallback, useEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { AnimatePresence, motion } from 'motion/react'
@@ -34,7 +34,7 @@ export default function CartDrawer() {
 
   const close = useCallback(() => setOpen(false), [setOpen])
 
-  // "Buy now" elsewhere → straight to checkout (login first)
+  // "Buy now" elsewhere → straight to checkout
   useEffect(() => {
     const onCheckout = () => goRef.current({ where: 'event' })
     const onNav = () => setOpen(false)

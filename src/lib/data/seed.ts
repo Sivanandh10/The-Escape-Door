@@ -147,7 +147,7 @@ function make(b: Base, s: Shape): Product {
   }
 }
 
-const SIZE_LINE = 'Sizes XS–XXL — ask us on WhatsApp for the size chart before you order.'
+const SIZE_LINE = 'Sizes XS–XXL — open the size chart on this page, or tell us your usual size on WhatsApp and we’ll match the fit.'
 
 const oversizedTee = (b: Base) => make(b, {
   type: 'tshirt', noun: 'Oversized T-Shirt', altNoun: 'oversized t-shirt', apparel: true, customizable: true, stock: 'made-to-order',
@@ -206,7 +206,7 @@ const sticker = (b: Base) => make(b, {
   extraTags: ['sticker', 'collectible'],
   variants: (id) => [
     variant(id, 'single', 'Single sticker', 30, { pack: 'single' }),
-    variant(id, 'pack', 'Pack (count TBC)', 100, { pack: 'pack' }),
+    variant(id, 'pack', 'Sticker pack', 100, { pack: 'pack' }),
   ],
   description: (x) => `${x.line} ₹30 for a single sticker. The ₹100 pack is also available — message us for how many stickers are in it this week.`,
 })

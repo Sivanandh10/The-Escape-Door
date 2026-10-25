@@ -21,7 +21,7 @@ export async function generateMetadata({ params }: PageProps<'/shop/[category]'>
     title: { absolute: c.title },
     description: c.meta,
     alternates: { canonical: path },
-    openGraph: { title: c.title, description: c.meta, url: path, type: 'website' },
+    openGraph: { title: c.title, description: c.meta, url: path, type: 'website', siteName: 'The Escape Door', locale: 'en_IN' },
     twitter: { card: 'summary_large_image', title: c.title, description: c.meta },
   }
 }
@@ -83,7 +83,7 @@ export default async function CategoryPage({ params }: PageProps<'/shop/[categor
             <SectionHead id="unique-h" before={c.h2[0]} accent={c.h2[1]} after={c.h2[2]} className="mb-4" />
             <p className="max-w-xl text-paper/80">
               {c.kind === 'apparel'
-                ? 'Fit and print details live on each product page. No size chart yet — message us on WhatsApp and we’ll share measurements before you order.'
+                ? 'Fit and print details live on each product page, with a size chart. Not sure? Tell us your usual size on WhatsApp and we’ll match the fit.'
                 : c.kind === 'collectible'
                   ? 'Bundle prices apply automatically in the cart, and you can mix designs and arcs in one set.'
                   : 'Props are display and cosplay items. We confirm the exact piece, finish and price with you on WhatsApp before anything is made.'}

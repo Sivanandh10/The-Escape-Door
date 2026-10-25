@@ -6,7 +6,8 @@ import { z } from 'zod'
 import { supabaseAdmin } from '@/lib/supabase/admin'
 import { contactEmail, isSyntheticEmail } from './shared'
 import { getAuthUser } from './customer-server'
-import { MalError, importMal, isMalConfigured, refreshTokens } from './mal'
+import { MalError, isMalConfigured, refreshTokens } from './mal'
+import { importMalRich } from './mal-import'
 
 export type ActionResult<T = null> = { ok: true; data: T } | { ok: false; error: string; field?: string }
 
@@ -53,7 +54,7 @@ export async function clearRecentViews(): Promise<ActionResult> {
 export async function syncMal(): Promise<ActionResult<{ syncedAt: string; total: number }>> {
   const auth = await getAuthUser()
   if (!auth) return SIGNED_OUT
-  if (!isMalConfigured()) return { ok: false, error: 'MyAnimeList sync isn’t switched on yet.' }
+  if (!(await isMalConfigured())) return { ok: false, error: 'MyAnimeList sync isn’t switched on yet.' }
   const sa = supabaseAdmin()
   if (!sa) return { ok: false, error: 'Server isn’t configured.' }
   const { data: row } = await sa.from('mal_accounts').select('refresh_token, synced_at').eq('user_id', auth.user.id).maybeSingle()
@@ -64,7 +65,7 @@ export async function syncMal(): Promise<ActionResult<{ syncedAt: string; total:
   if (!row.refresh_token) return { ok: false, error: 'Reconnect MyAnimeList to sync again.' }
   try {
     const tokens = await refreshTokens(row.refresh_token as string)
-    const { me, list, stats, suggestions } = await importMal(tokens.access_token)
+    const { me, list, stats, suggestions } = await importMalRich(tokens.access_token) // keeps rewatch / episode-total / media fields the affinity ranking uses
     const syncedAt = new Date().toISOString()
     const { error } = await sa
       .from('mal_accounts')

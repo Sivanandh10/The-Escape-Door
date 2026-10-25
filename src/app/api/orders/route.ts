@@ -2,9 +2,11 @@
 // ONE pipeline for everyone: the order is saved here FIRST (status 'placed', items, address snapshot, gift, voucher,
 // totals, contact, attribution) and only then does the browser open WhatsApp with the text this route returns.
 //   signed in → address = one of the customer's saved addresses (by id); user_id set
-//   guest     → allowed only while NO customer login method is live (owner rule: once login works it's mandatory);
-//               contact (name, +91 mobile, optional email) + a typed address; user_id null, linked to the account
-//               later by claim_guest_orders() (0010) when they log in through an email link / Google with that email
+//   guest     → always allowed (login is OPTIONAL — src/lib/auth/policy.ts; NEXT_PUBLIC_LOGIN_REQUIRED=1 refuses guests
+//               again). Required: contact (name + +91 WhatsApp number; email optional). The delivery address is
+//               OPTIONAL — skipped = "Address: will share here" in the WhatsApp text and "Address: on WhatsApp" in
+//               Admin → Orders. user_id null, linked to the account later by claim_guest_orders() (0010) when they log
+//               in through an email link / Google with that email
 // The server decides every number: the cart is re-priced from the database (products + bundle rules), the voucher is
 // re-validated (and re-checked under a row lock in place_checkout_order()), the gift-wrap fee comes from Admin
 // settings. If the total differs from what the shopper saw (expectedPayable) → 409 price-changed, nothing saved.
@@ -14,13 +16,13 @@ import { LOGIN_ALWAYS_REQUIRED } from '@/lib/auth/policy'
 import { buildCheckoutMessage } from '@/lib/checkout/message'
 import { addressFromRow, orderRequestSchema, type AddressSnapshot } from '@/lib/checkout/schema'
 import {
-  CheckoutError, GUEST_VOUCHERS_OFF, applyVoucherFor, customerLoginLive, getBuyer, guestSchemaReady, loadCheckoutSettings,
+  CheckoutError, GUEST_VOUCHERS_OFF, applyVoucherFor, getBuyer, guestSchemaReady, loadCheckoutSettings,
   orderTotals, priceLines, type AppliedVoucher, type VoucherIdentity,
 } from '@/lib/checkout/server'
 import { orderSnapshotFromRow, type OrderSnapshot } from '@/lib/checkout/types'
 import { VOUCHER_MESSAGES, type VoucherProblem } from '@/lib/checkout/voucher'
 import { supabaseAdmin } from '@/lib/supabase/admin'
-import { allow, clientKey, json, readJson, sameOrigin } from '../_lib/guard'
+import { allow, clientKey, json, readJson, sameOrigin, stableClientHash } from '../_lib/guard'
 
 const HINT_TO_PROBLEM: Record<string, VoucherProblem> = {
   voucher_invalid: 'not-found',
@@ -65,9 +67,9 @@ export async function POST(req: Request): Promise<Response> {
   const buyer = await getBuyer()
   const guest = !buyer
   if (guest) {
-    if (LOGIN_ALWAYS_REQUIRED || (await customerLoginLive())) return json({ ok: false, error: 'login', message: 'Log in to place your order.' }, 401)
-    if (!reqBody.contact) return json({ ok: false, error: 'contact', message: 'Add your name and mobile number so we can confirm the order.' }, 400)
-    if (!reqBody.address) return json({ ok: false, error: 'address', message: 'Add the delivery address.' }, 400)
+    // owner switch back to "login required" (env) — the default is guest checkout for everyone
+    if (LOGIN_ALWAYS_REQUIRED) return json({ ok: false, error: 'login', message: 'Log in to place your order.' }, 401)
+    if (!reqBody.contact) return json({ ok: false, error: 'contact', message: 'Add your name and WhatsApp number so we can confirm the order.' }, 400)
   } else if (!reqBody.addressId) {
     return json({ ok: false, error: 'address', message: 'Pick a delivery address (or add one).' }, 400)
   }
@@ -81,19 +83,38 @@ export async function POST(req: Request): Promise<Response> {
     const q = sb.from('orders').select('*').eq('nonce', reqBody.nonce).order('created_at', { ascending: true }).limit(1)
     const { data: found } = uid ? await q.eq('user_id', uid) : await q.is('user_id', null)
     const existing = Array.isArray(found) ? found[0] : null
-    if (existing) return respond(orderSnapshotFromRow(existing as Record<string, unknown>), src ?? undefined, true)
+    if (existing) {
+      // a guest replay only gets the stored order (name, phone, address) back when it carries the same phone
+      const last10 = (v: unknown) => String(v ?? '').replace(/\D/g, '').slice(-10)
+      if (guest && last10((existing as Record<string, unknown>).contact_phone) !== last10(contactPhone)) {
+        return json({ ok: false, error: 'duplicate', message: 'This order was already sent. Start a fresh checkout to order again.' }, 409)
+      }
+      return respond(orderSnapshotFromRow(existing as Record<string, unknown>), src ?? undefined, true)
+    }
   }
 
   if (!allow(guest ? `order:g:${contactPhone}` : `order:u:${uid}`, 8, 10 * 60_000)) {
     return json({ ok: false, error: 'rate-limited', message: 'That’s a lot of orders in a few minutes — message us on WhatsApp if you need more.' }, 429, { 'retry-after': '600' })
   }
+  // guests: limit shared by every serverless instance (0015 guest_order_gate, keyed by a salted daily IP HMAC) so a
+  // script can't fill the site-wide guest cap in place_checkout_order(). Fails open until 0015 is applied.
+  if (guest) {
+    const key = stableClientHash(req)
+    if (key) {
+      const { data: allowed, error: gateErr } = await sb.rpc('guest_order_gate', { p_key: key })
+      if (!gateErr && allowed === false) {
+        return json({ ok: false, error: 'rate-limited', message: 'Too many orders from here — wait a few minutes, or message us on WhatsApp.' }, 429, { 'retry-after': '600' })
+      }
+    }
+  }
 
   try {
     // ---------------------------------------------------------------- address
-    let address: AddressSnapshot
+    // guests may skip it ("I'll share it on WhatsApp") → null; members always pick a saved address
+    let address: AddressSnapshot | null = null
     if (guest) {
-      const a = reqBody.address!
-      address = { kind: a.kind, name: a.name, phone: a.phone, line1: a.line1, line2: a.line2, landmark: a.landmark, city: a.city, state: a.state, pin: a.pin }
+      const a = reqBody.address
+      if (a) address = { kind: a.kind, name: a.name, phone: a.phone, line1: a.line1, line2: a.line2, landmark: a.landmark, city: a.city, state: a.state, pin: a.pin }
     } else {
       // must be one of the buyer's own saved addresses
       const { data: addrRow, error: addrErr } = await sb.from('addresses').select('*').eq('id', reqBody.addressId!).eq('user_id', uid!).maybeSingle()
@@ -150,10 +171,10 @@ export async function POST(req: Request): Promise<Response> {
       nonce: reqBody.nonce,
       email: orderEmail,
       contact_email: orderEmail,
-      contact_phone: guest ? contactPhone : address.phone,
-      name: guest ? c!.name : address.name,
-      city: address.city,
-      contact: guest ? contactPhone : address.phone,
+      contact_phone: guest ? contactPhone : address!.phone,
+      name: guest ? c!.name : address!.name,
+      city: address?.city ?? null,
+      contact: guest ? contactPhone : address!.phone,
       note: reqBody.note || null,
       src,
       items: final.lines,
@@ -168,7 +189,7 @@ export async function POST(req: Request): Promise<Response> {
     }
     const lead = {
       name: orderRow.name,
-      city: address.city,
+      city: address?.city ?? null,
       contact: orderRow.contact,
       message: reqBody.note || null,
       src,
@@ -180,6 +201,7 @@ export async function POST(req: Request): Promise<Response> {
         totals: { subtotal: final.totals.subtotal, savings: final.totals.savings, discount, giftFee, total: final.totals.payable, hasPriceOnRequest: final.totals.hasPriceOnRequest },
         voucher: voucher?.voucher.code ?? null,
         gift: !!gift,
+        address: address ? 'given' : 'on_whatsapp',
         ...(orderEmail ? { email: orderEmail } : {}),
       },
     }

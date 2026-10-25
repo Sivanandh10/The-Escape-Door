@@ -1,6 +1,7 @@
 // /fests — The Fandom Partner arc (SITEMAP §2.7). Owner: P5.
 // Static: every read is a 'use cache' repo function. Event JSON-LD only for confirmed + dated events.
 import Link from 'next/link'
+import { cacheLife } from 'next/cache'
 import { ArrowDown, ArrowRight, Camera } from 'lucide-react'
 import { Ticker } from '@/components/fx/Ticker'
 import { Panel } from '@/components/fx/Panel'
@@ -10,6 +11,7 @@ import { PageHero } from '@/components/content/PageHero'
 import { SectionHead } from '@/components/content/SectionHead'
 import { InkTimeline } from '@/components/content/InkTimeline'
 import { EventStub } from '@/components/content/EventStub'
+import { isoDay, splitUpcoming } from '@/components/content/events'
 import { RemindMeButton } from '@/components/auth/RemindMeButton'
 import { LeadForm } from '@/components/content/LeadForm'
 import { CountUp } from '@/components/content/CountUp'
@@ -27,6 +29,13 @@ export const metadata = pageMeta({
   ogImage: false,
 })
 
+/** Today's date, cached for an hour so the page stays static (dated stalls drop off once they end). */
+async function today() {
+  'use cache'
+  cacheLife('hours')
+  return isoDay()
+}
+
 const CUSTOM_LABEL: Partial<Record<string, string>> = { polaroid: 'Polaroids', bookmark: 'Bookmarks', sticker: 'Stickers', badge: 'Badges' }
 
 export default async function FestsPage() {
@@ -39,8 +48,8 @@ export default async function FestsPage() {
     getTeeFits(),
     getProducts({ type: 'katana' }),
   ])
+  const { dated, nextSeason } = splitUpcoming(events, await today())
   const sorted = [...partnerships].sort((a, b) => a.order - b.order)
-  const upcoming = events.filter((e) => e.status === 'upcoming')
   const popups = events.filter((e) => e.kind === 'popup')
   const thomso = sorted.find((p) => /thomso/i.test(p.fest))
   const minTier = tiers.reduce((m, t) => Math.min(m, t.price), Infinity)
@@ -60,7 +69,8 @@ export default async function FestsPage() {
     { t: 'Cosplay katanas', p: basicKatana ? productPriceLabel(basicKatana) : '', d: 'Display and cosplay props, never real blades.', tone: 'lav' as const },
   ]
 
-  const tickerItems = sorted.map((p) => `${p.fest}${p.years ? ` ${p.years}` : ''}`.toUpperCase())
+  // skip the year when the fest name already carries it ("IGNUS'25" + "2025" → "IGNUS'25")
+  const tickerItems = sorted.map((p) => `${p.fest}${p.years && !/['’]\d{2}$/.test(p.fest.trim()) ? ` ${p.years}` : ''}`.toUpperCase())
 
   return (
     <>
@@ -174,26 +184,63 @@ export default async function FestsPage() {
             tone="paper"
             intro={
               <p>
-                These dates come from our stall list. Years are still being confirmed, so check Instagram before you travel.
+                {dated.length
+                  ? 'Confirmed stalls with their dates first. The rest are lined up for next season: tap Remind me and we message you the moment dates are fixed.'
+                  : 'Next season is being lined up. Tap Remind me on a campus and we message you the moment its dates are fixed.'}
               </p>
             }
           >
             Catch us <em>live</em>: upcoming stalls
           </SectionHead>
-          {upcoming.length ? (
+          {dated.length > 0 && (
             <Reveal as="ul" stagger={0.1} className="mt-12 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
-              {upcoming.map((e, i) => (
+              {dated.map((e, i) => (
                 <li key={e.id}>
                   <EventStub event={e} index={i} />
                   <RemindMeButton event={e} />
                 </li>
               ))}
             </Reveal>
-          ) : (
+          )}
+          {nextSeason.length > 0 && (
+            <div className={dated.length ? 'mt-14' : 'mt-12'}>
+              <p className="label flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                <span className="bg-ink px-2 py-1 text-volt">Next season</span>
+                Dates announced soon
+              </p>
+              <Reveal as="ul" stagger={0.1} className="mt-5 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {nextSeason.map((e, i) => (
+                  <li key={e.id}>
+                    <EventStub event={e} index={i} />
+                    <RemindMeButton event={e} />
+                  </li>
+                ))}
+              </Reveal>
+            </div>
+          )}
+          {!dated.length && !nextSeason.length && (
             <p className="mt-10 border-4 border-ink bg-paper p-6 text-[17px] shadow-hard">
               No stalls are announced right now. New dates land on Instagram first.
             </p>
           )}
+          <div className="mt-10 grid gap-5 border-4 border-ink bg-ink p-6 text-paper shadow-hard sm:p-8 lg:grid-cols-[1fr_auto] lg:items-center">
+            <div>
+              <p className="font-display text-[clamp(30px,3.6vw,48px)] uppercase leading-[0.9]">
+                Bring The Escape Door to <em className="accent">your fest</em>
+              </p>
+              <p className="mt-3 max-w-[52ch] text-[16px] text-tone-4">
+                Want your campus on next season&apos;s list? Tell us your fest and rough dates, and we plan the stall with your team.
+              </p>
+            </div>
+            <Link
+              href="#partner"
+              data-cursor="OPEN"
+              className="press focus-ring label inline-flex min-h-13 items-center justify-center gap-2 border-[3px] border-paper bg-volt px-5 py-3.5 text-[13px] font-bold text-ink shadow-[5px_5px_0_0_var(--color-paper)] hover:bg-volt-hot"
+            >
+              Book us for your fest
+              <ArrowRight aria-hidden="true" className="size-4" />
+            </Link>
+          </div>
           <div className="mt-10 flex flex-wrap items-center gap-x-6 gap-y-4">
             {popups.length > 0 && (
               <p className="flex flex-wrap items-center gap-2">
@@ -346,7 +393,7 @@ export default async function FestsPage() {
             path: '/fests',
             description: 'Anime merch stalls and custom fest merchandise for college fests in India.',
           }),
-          ...upcoming.map(eventJsonLd),
+          ...dated.map(eventJsonLd),
         ]}
       />
     </>

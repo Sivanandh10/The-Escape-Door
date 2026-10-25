@@ -83,7 +83,7 @@ const TILT = [-1.6, 1.2, -0.8, 1.8, -1.2, 0.9]
 
 function WishCard({ product: p, index }: { product: WishProduct; index: number }) {
   const add = useCart((s) => s.add)
-  const requireLogin = useRequireLogin() // adding to the cart needs login, same as every other add path
+  const requireLogin = useRequireLogin() // pass-through while login is optional (policy.ts); gates only with NEXT_PUBLIC_LOGIN_REQUIRED=1
   const setOpen = useCart((s) => s.setOpen)
   const toggle = useWishlist((s) => s.toggle)
   const reduced = useReducedMotion()

@@ -5,12 +5,11 @@ import Link from 'next/link'
 import gsap from 'gsap'
 import type { Product } from '@/lib/types'
 import { variantPriceLabel } from '@/lib/pricing'
-import { waLink } from '@/lib/whatsapp'
-import { useWhatsappNumber } from '@/components/SiteSettingsProvider'
 import { useCart } from '@/lib/cart'
 import { prefersReducedMotion } from '@/lib/motion'
 import { cn } from '@/lib/utils'
 import { AddToCartButton } from '@/components/shop/AddToCartButton'
+import { SizeChart } from '@/components/shop/SizeChart'
 
 function Chips({
   label,
@@ -79,7 +78,6 @@ function Chips({
 }
 
 export function DropBuy({ product }: { product: Product }) {
-  const waNumber = useWhatsappNumber()
   const variants = product.variants
   const [variantId, setVariantId] = useState(variants[0]?.id ?? '')
   const [size, setSize] = useState<string | null>(null)
@@ -101,8 +99,6 @@ export function DropBuy({ product }: { product: Product }) {
     sizesRef.current?.querySelector<HTMLButtonElement>('[role="radio"]')?.focus()
     return false
   }
-
-  const chartMsg = `Hi Escape Door! Could you send the size chart for ${product.name}?`
 
   return (
     <div className="flex flex-col gap-5">
@@ -133,14 +129,7 @@ export function DropBuy({ product }: { product: Product }) {
             {needSize ? (
               <span className="inline-block -rotate-1 bg-ink px-2 py-0.5 text-volt">Pick a size first — then it&rsquo;s yours.</span>
             ) : (
-              <a
-                href={waLink(chartMsg, waNumber)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="focus-ring text-ink/75 underline decoration-2 underline-offset-4 can-hover:hover:text-door"
-              >
-                Size chart? Ask us on WhatsApp
-              </a>
+              <SizeChart product={product} variant={variant} size={size} className="min-h-0 text-ink/75 hover:text-door" />
             )}
           </p>
         </div>

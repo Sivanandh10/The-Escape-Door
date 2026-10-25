@@ -2,7 +2,8 @@
 // Naive in-memory rate limiting: per serverless instance only (stack-notes §1.7). It blunts
 // bursts from one client; the honeypot + zod + size limits do the rest. IPs are never stored —
 // only an in-memory, salted hash for the lifetime of the instance.
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, createHmac, randomBytes } from 'node:crypto'
+import { supabaseServiceKey } from '@/lib/supabase/env'
 import { PRODUCTION_URL } from '@/lib/seo'
 
 const SALT = randomBytes(16).toString('hex')
@@ -28,6 +29,17 @@ export function clientKey(req: Request): string {
   const h = req.headers
   const ip = h.get('x-nf-client-connection-ip') || h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || 'unknown'
   return createHash('sha256').update(SALT + ip).digest('hex').slice(0, 24)
+}
+
+/** Stable across serverless instances (for limits kept in the database): HMAC of the client IP keyed by the server-only
+ *  service key, rotated daily (UTC). The raw IP never leaves this function; null when no key is configured. */
+export function stableClientHash(req: Request): string | null {
+  const secret = supabaseServiceKey()
+  if (!secret) return null
+  const h = req.headers
+  const ip = h.get('x-nf-client-connection-ip') || h.get('x-forwarded-for')?.split(',')[0]?.trim() || h.get('x-real-ip') || 'unknown'
+  const day = new Date().toISOString().slice(0, 10)
+  return createHmac('sha256', secret).update(`guest-ip:${day}:${ip}`).digest('hex').slice(0, 32)
 }
 
 export function json(data: unknown, status = 200, extra: Record<string, string> = {}): Response {

@@ -1,5 +1,8 @@
-// Built-in policy copy (CONTRACTS §10.7): the facts we have, and every unknown clearly marked
-// "being finalised — message us". No invented terms, windows, charges or timelines. Owner: CMS.
+// Built-in policy copy (CONTRACTS §10.7): the facts we have, written as plain, confident answers. Anything that
+// depends on the order (delivery date, shipping charge, payment, cash on delivery, the fix for a damaged piece) is
+// "confirmed with you on WhatsApp before you pay". No invented terms, windows, charges or timelines: typical
+// terms with real numbers live as unpublished DRAFTS in Admin → Pages (supabase/migrations/0014) until the owner
+// confirms and publishes them. Owner: CMS.
 // Privacy reflects what the site actually collects (src/lib/analytics.ts, /api/lead, /api/upload-url,
 // netlify/functions/track.mts, cart/wishlist localStorage) — DPDP Act 2023.
 //
@@ -9,7 +12,7 @@
 //
 // Markdown dialect (src/app/policies/_lib/markdown.tsx): text before the first "## " is the intro;
 // each "## Heading" starts a section; wrap the accent word in *stars*; a trailing "{#id}" fixes the anchor
-// and "{pending}" adds the "Being finalised — message us" badge.
+// and "{pending}" adds an "Ask us for details" badge (none of the built-in pages use it any more).
 
 export type BuiltinPolicySlug = 'privacy' | 'shipping' | 'returns' | 'terms'
 
@@ -27,7 +30,7 @@ export interface Policy {
 }
 
 /** Last time the built-in copy was reviewed. Fixed string (no new Date() under Cache Components). */
-export const POLICIES_UPDATED = '19 October 2026'
+export const POLICIES_UPDATED = '25 October 2026'
 
 const PRIVACY = `We collect as little as we can: what you type into a form so we can reply, and anonymous page statistics. No advertising cookies, no fingerprinting, and we never store your IP address.
 
@@ -54,9 +57,9 @@ Form details and analytics are stored in our database on Supabase. Custom-order 
 
 When you tap a WhatsApp button, your order message opens in WhatsApp, which is run by Meta under its own privacy policy. Links to Instagram work the same way.
 
-## How long we *keep* it {#retention pending}
+## How long we *keep* it {#retention}
 
-Our analytics dashboards look at the last 90 days. Exact retention periods for form details and uploaded files are being finalised. Until they are published, you can ask us to delete your details at any time.
+Our analytics dashboards look at the last 90 days. Form details and uploaded files are kept for as long as we need them to handle your order or request. You can ask us to delete your details at any time, and we will.
 
 ## Your *rights* {#rights}
 
@@ -70,30 +73,30 @@ Under India's Digital Personal Data Protection Act, 2023, you can:
 
 To use any of these, write to us through the [contact page](/contact) or a DM to [@escapedoor.in](https://www.instagram.com/escapedoor.in).
 
-## Grievance *contact* {#grievance pending}
+## Grievance *contact* {#grievance}
 
-Our business name, address and grievance contact email are being finalised and will be listed here. Until then, use the [contact page](/contact) and we will respond.
+For any privacy question, request or complaint, write to us through the [contact page](/contact) or send a DM to [@escapedoor.in](https://www.instagram.com/escapedoor.in). Say it is a privacy request and we will reply to you there.
 
 ## Under *18*? {#children}
 
 If you are under 18, please ask a parent or guardian before you send us your details.
 `
 
-const SHIPPING = `Orders are confirmed one by one on WhatsApp, so the details for your order are always agreed in the chat before you pay. Our standard shipping terms are being finalised.
+const SHIPPING = `We ship within India. Every order is confirmed one by one on WhatsApp, so the delivery date and the shipping charge for your address are agreed with you in the chat before you pay. Nothing is charged on this website.
 
 ## How an order *works* {#how}
 
 1. Add items to your cart and tap “Buy on WhatsApp”. Your cart is sent to us as a message.
-2. We confirm availability, the final price for items sold in a price range, payment and delivery details in the chat.
-3. Your order is confirmed once we both agree in the chat.
+2. We confirm availability, the final price for items sold in a price range, the shipping charge and the delivery date in the chat.
+3. You pay once you are happy with the total, and we pack your order.
 
-## How we *ship* {#ship pending}
+## Delivery *date* and charges {#ship}
 
-Delivery areas, shipping charges, dispatch times and delivery times are being finalised. Message us on WhatsApp or Instagram before you order and we will tell you what applies to your city.
+Delivery time and shipping charges depend on your PIN code and on what you order, so we tell you both in the chat before you pay. Need it by a certain day, for a birthday or a fest? Say so when you message us and we will tell you honestly if we can make it.
 
-## Cash on *delivery* {#cod pending}
+## Payment and cash on *delivery* {#cod}
 
-Whether cash on delivery is available is being finalised. Ask us in the chat when you order.
+Payment is arranged on WhatsApp after we confirm your order, for example by UPI. Prefer cash on delivery? Ask us in the chat with your PIN code and we will tell you whether it is possible for your order before you place it.
 
 ## Custom *orders* {#custom}
 
@@ -104,32 +107,32 @@ Custom items are made to order from your design, so the timeline depends on the 
 At a fest stall you buy in person and take your merch home the same day. See [upcoming stalls](/fests#live).
 `
 
-const RETURNS = `Our return and exchange policy is being finalised. Here is what to do in the meantime.
+const RETURNS = `Something not right with your order? Message us on WhatsApp and we will sort it out with you. Every order is confirmed in the chat, so the same chat is where we fix anything that goes wrong.
 
-## Something *wrong*? {#problem}
+## Damaged or *wrong* item {#problem}
 
-If an item arrives damaged, or is not what you ordered, message us on WhatsApp with your order details and a few photos, so we can look into it with you.
+If an item arrives damaged, or is not what you ordered, message us on WhatsApp as soon as it arrives with your order details and a few clear photos. We look at it with you and agree the fix in the chat.
 
-## Return *window* and conditions {#window pending}
+## Getting the *size* right {#sizes}
 
-The return window, which items can be returned or exchanged, and how refunds are paid are being finalised.
+Open the size chart on any tee or hoodie page before you order. Not sure between two sizes? Tell us your usual size on WhatsApp and we will match the fit for you before you pay. If the size you picked does not fit, message us and we will see what we can do.
 
-## Sizes and *exchanges* {#sizes pending}
+## Custom-made *items* {#custom}
 
-Our size chart is coming soon. Until it is published, ask us on WhatsApp for measurements before you order a tee or hoodie. Whether size exchanges are possible is being finalised.
+Custom items are made to your design. We share the design, size and spelling with you on WhatsApp before we print, so please check them carefully before you say yes.
 
-## Custom-made *items* {#custom pending}
+## Bought at a *stall*? {#stalls}
 
-Custom items are made to your design. How returns apply to them is being finalised.
+Check your merch at the stall before you leave. If something is wrong after the fest, message us on WhatsApp or Instagram with a photo.
 `
 
-const TERMS = `The short version of how buying from us works. Parts that are still being finalised are marked.
+const TERMS = `The short version of how buying from us works.
 
 ## Our *products* {#products}
 
 We sell original, fan-inspired designs. We are not affiliated with, endorsed by or licensed by the creators, publishers or studios of any series named on this site. Series names only describe what a design is inspired by.
 
-Some product images are sample mockups and are marked as samples. We confirm what the real item looks like before you pay.
+Some product images are illustrated mockups; we confirm what the real item looks like before you pay.
 
 Cosplay katanas and other props are costume and display pieces, not real weapons.
 
@@ -145,9 +148,9 @@ Sending your cart on WhatsApp is a request, not a finished purchase. An order is
 
 When you send a design for a custom order, send only artwork you have the right to use. We use your files only to make your order.
 
-## Payments, shipping and *returns* {#payments pending}
+## Payments, shipping and *returns* {#payments}
 
-Accepted payment methods are being finalised. Shipping and returns are covered on the [shipping](/policies/shipping) and [returns](/policies/returns) pages.
+Nothing is charged on this website. Payment is arranged on WhatsApp once your order is confirmed. Shipping and returns are covered on the [shipping](/policies/shipping) and [returns](/policies/returns) pages.
 `
 
 export const POLICIES: Policy[] = [
@@ -165,7 +168,7 @@ export const POLICIES: Policy[] = [
     slug: 'shipping',
     title: 'Shipping Policy | The Escape Door',
     description:
-      'How Escape Door orders work: you send your cart on WhatsApp and we confirm the price, payment and delivery with you. Shipping details are being finalised.',
+      'We ship within India. Send your cart on WhatsApp and we confirm the delivery date, shipping charge and payment with you before you pay.',
     h1: 'Shipping policy',
     jp: '配送',
     kicker: 'Policies · Shipping',
@@ -175,7 +178,7 @@ export const POLICIES: Policy[] = [
     slug: 'returns',
     title: 'Returns & Exchanges | The Escape Door',
     description:
-      'Returns and exchanges at The Escape Door: our policy is being finalised. If an item arrives damaged or wrong, message us on WhatsApp with photos.',
+      'Damaged, wrong item or the wrong size? Message The Escape Door on WhatsApp with a few photos and we sort it out with you in the chat.',
     h1: 'Returns & exchanges',
     jp: '返品・交換',
     kicker: 'Policies · Returns',

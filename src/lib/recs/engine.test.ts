@@ -1,6 +1,7 @@
 // Recommendation engine unit tests (pure functions). Run from the repo root (Node >= 22.15, no deps):
 //   node --test src/lib/recs/engine.test.ts
-// Covers: feature helpers, scoring, penalties, collaborative graph, diversity (MMR caps), reasons, determinism.
+// Covers: feature helpers, scoring, penalties, collaborative graph, diversity (MMR caps), reasons, determinism,
+// and the MyAnimeList affinity model (status / episodes / score / recency / rewatch, franchise grouping, MAL lead).
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import '../data/node-ts-hook.mjs'
@@ -297,4 +298,133 @@ test('stored search terms → affinity: an arc NAME typed in search ("one piece"
     stored: [{ kind: 'search', value: 'one piece', at: NOW - 60 * D }, { kind: 'search', value: 'demon slayer', at: NOW - H }, { kind: 'search', value: 'demon slayer', at: NOW - 2 * H }],
   })
   assert.equal(mixed.picks[0].collection, 'ds', 'recent + repeated search wins')
+})
+
+// ---------------------------------------------------------------- MyAnimeList affinity model (affinity.ts)
+type Mal = Parameters<typeof E.animeAffinity>[0]
+const ISO = (daysAgo: number) => new Date(NOW - daysAgo * D).toISOString()
+function anime(id: number, title: string, extra: Partial<Mal> = {}): Mal {
+  return { id, title, en: null, synonyms: [], genres: ['Action'], mean: 8, picture: null, status: 'completed', score: 0, episodes: 12, updatedAt: ISO(10), ...extra }
+}
+
+test('affinity: watching > completed > on hold > plan to watch > dropped (same episodes, same day)', () => {
+  const at = (status: Mal['status']) => E.animeAffinity(anime(1, 'X', { status }), NOW)
+  assert.ok(at('watching') > at('completed'))
+  assert.ok(at('completed') > at('on_hold'))
+  assert.ok(at('on_hold') > at('plan_to_watch'))
+  assert.equal(at('dropped'), 0)
+})
+
+test('affinity: more episodes → higher, log-scaled (1000 eps is not 80× a 12-ep show)', () => {
+  const eps = (n: number) => E.animeAffinity(anime(1, 'X', { episodes: n }), NOW)
+  assert.ok(eps(24) > eps(12) && eps(12) > eps(1) && eps(1) > eps(0))
+  assert.ok(eps(1000) > eps(100))
+  assert.ok(eps(1000) / eps(12) < 3, 'log-scaled')
+})
+
+test('affinity: own score (centred on 6), recency (half-life 120 d) and rewatching', () => {
+  const a = (x: Partial<Mal>) => E.animeAffinity(anime(1, 'X', x), NOW)
+  assert.ok(a({ score: 10 }) > a({ score: 0 }), 'a 10 beats unscored')
+  assert.ok(a({ score: 0 }) > a({ score: 3 }), 'a 3 is below neutral')
+  assert.equal(a({ score: 6 }), a({ score: 0 }), '6 = neutral')
+  assert.ok(a({ updatedAt: ISO(1) }) > a({ updatedAt: ISO(120) }) && a({ updatedAt: ISO(120) }) > a({ updatedAt: ISO(720) }), 'recent list activity counts more')
+  const fresh = a({ updatedAt: ISO(0) }), half = a({ updatedAt: ISO(120) })
+  assert.ok(Math.abs(half / fresh - 0.65) < 0.01, 'recency term halves (0.3 floor + 0.7 x 1/2) after 120 days')
+  assert.ok(a({ rewatching: true }) > a({}) && a({ rewatches: 2 }) > a({}))
+})
+
+test('franchiseBase strips seasons, parts, films and subtitles but keeps short prefixes like Re:Zero', () => {
+  assert.equal(E.franchiseBase('Shingeki no Kyojin: The Final Season Part 2'), 'shingeki no kyojin')
+  assert.equal(E.franchiseBase('Jujutsu Kaisen 2nd Season'), 'jujutsu kaisen')
+  assert.equal(E.franchiseBase('Jujutsu Kaisen 0 Movie'), 'jujutsu kaisen')
+  assert.equal(E.franchiseBase('Kimetsu no Yaiba: Yuukaku-hen'), 'kimetsu no yaiba')
+  assert.equal(E.franchiseBase('Steins;Gate 0'), 'steins gate')
+  assert.equal(E.franchiseBase('Re:Zero kara Hajimeru Isekai Seikatsu'), 're zero kara hajimeru isekai seikatsu')
+  assert.equal(E.franchiseBase('86'), '86')
+})
+
+test('franchise grouping: seasons + films + alias + alternative titles + genre-checked prefixes', () => {
+  const list: Mal[] = [
+    anime(1, 'Jujutsu Kaisen', { episodes: 24 }),
+    anime(2, 'Jujutsu Kaisen 2nd Season', { episodes: 23 }),
+    anime(3, 'Jujutsu Kaisen 0 Movie', { episodes: 1 }),
+    anime(4, 'Boruto: Naruto Next Generations', { episodes: 50, status: 'on_hold' }),
+    anime(5, 'Naruto: Shippuuden', { episodes: 500, en: 'Naruto Shippuden' }),
+    anime(6, 'Haikyuu!!', { genres: ['Sports'], episodes: 25 }),
+    anime(7, 'Haikyuu!! To the Top', { genres: ['Sports'], episodes: 25 }),
+    anime(8, 'Monster', { genres: ['Mystery', 'Drama'], episodes: 74 }),
+    anime(9, 'Monster Musume no Iru Nichijou', { genres: ['Comedy'], episodes: 12 }),
+    anime(10, 'Shingeki no Kyojin', { en: 'Attack on Titan', episodes: 25 }),
+    anime(11, 'Attack on Titan Final Season THE FINAL CHAPTERS', { episodes: 2 }),
+  ]
+  const fr = E.animeFranchises(list, S.collections, NOW)
+  const of = (id: number) => fr.find((f) => f.members.some((m) => m.id === id))
+  assert.equal(of(1), of(2))
+  assert.equal(of(1), of(3))
+  assert.equal(of(1)?.episodes, 48)
+  assert.equal(of(1)?.collection, 'jujutsu-kaisen')
+  assert.equal(of(4), of(5), 'Boruto groups with Naruto (alias table)')
+  assert.equal(of(4)?.collection, 'naruto')
+  assert.equal(of(6), of(7), 'Haikyuu seasons share a genre → one franchise')
+  assert.notEqual(of(8), of(9), '"Monster" is not "Monster Musume" (no shared genre)')
+  assert.equal(of(10), of(11), 'English alternative title joins the AoT entries')
+  assert.equal(of(10)?.collection, 'attack-on-titan')
+  assert.equal(fr[0], of(5), 'Naruto (550 eps) is the most-watched franchise')
+  assert.equal(fr[0].affinity, 1)
+})
+
+test('franchise ordering: watching + recent beats an old completed show of the same size; dropped-only = none', () => {
+  const fr = E.animeFranchises([
+    anime(1, 'One Piece', { status: 'watching', episodes: 60, updatedAt: ISO(2) }),
+    anime(2, 'Kimetsu no Yaiba', { en: 'Demon Slayer', status: 'completed', episodes: 60, updatedAt: ISO(400) }),
+    anime(3, 'Bleach', { status: 'dropped', episodes: 200 }),
+  ], S.collections, NOW)
+  assert.deepEqual(fr.map((f) => f.collection), ['one-piece', 'demon-slayer'])
+})
+
+test('MAL lead: the most-watched STOCKED franchise comes first in Picked for you; unstocked → request list', () => {
+  const list: Mal[] = [
+    anime(1, 'Unstocked Show', { status: 'watching', episodes: 300, score: 10, updatedAt: ISO(1) }),
+    anime(2, 'Kimetsu no Yaiba', { en: 'Demon Slayer', status: 'watching', episodes: 40, score: 9, updatedAt: ISO(3) }),
+    anime(3, 'One Piece', { status: 'completed', episodes: 30, updatedAt: ISO(300) }),
+  ]
+  // the shopper also viewed One Piece pieces — MAL still leads the first row
+  const viewsOp = S.products.filter((p) => p.collection === 'one-piece').slice(0, 2)
+  const out = buildRecs({
+    products: S.products, collections: S.collections,
+    views: viewsOp.map((p) => ({ slug: p.slug, viewedAt: new Date(NOW - H).toISOString(), count: 3 })),
+    mal: { username: 'x', syncedAt: null, list, suggestions: [], stats: null }, now: NOW, limits: { picks: 8 },
+  })
+  const lead = out.malLead
+  assert.ok(lead, 'a lead franchise')
+  assert.equal(lead.collection, 'demon-slayer')
+  assert.equal(lead.episodes, 40)
+  assert.ok(lead.count >= 1)
+  for (const p of out.picks.slice(0, lead.count)) assert.equal(p.collection, 'demon-slayer')
+  assert.equal(out.pickReason, 'Because you watched Demon Slayer (40 eps)')
+  assert.equal(out.pickReasons?.[out.picks[0].id]?.kind, 'watched')
+  const top = out.topAnime ?? []
+  assert.equal(top[0].title, 'Unstocked Show')
+  assert.equal(top[0].stocked, false)
+  assert.equal(top[1].collection, 'demon-slayer')
+  assert.equal(top[1].stocked, true)
+  assert.ok(out.unmapped.some((a) => a.title === 'Unstocked Show'))
+  assert.ok(out.picks.slice(lead.count).some((p) => p.collection !== 'demon-slayer'), 'diversity after the lead')
+})
+
+test('MAL lead on every surface: home leads with it, product page ≤ 2 lead slots; fandom tags reach Beyond Anime', () => {
+  const sig = E.malSignalSet([anime(1, 'Initial D First Stage', { genres: ['Racing'], status: 'watching', episodes: 26, updatedAt: ISO(1) })], S.collections, NOW)
+  assert.ok((sig.malTags ?? []).some((t) => t.tag === 'f1'))
+  const home = rankRecs({ context: 'home', products: S.products, collections: S.collections, signals: sig, limit: 6, now: NOW })
+  assert.ok(home[0].product.tags.includes('f1'), 'an F1 piece leads for an Initial D fan')
+  assert.equal(home[0].reason.label, 'Because you watched Initial D First Stage')
+  assert.ok(home[0].lead)
+  const anchor = S.products.find((p) => p.collection === 'naruto')?.slug
+  const prod = rankRecs({ context: 'product', products: S.products, collections: S.collections, signals: sig, anchor, limit: 6, now: NOW })
+  assert.ok(prod.filter((r) => r.lead).length <= 2)
+})
+
+test('MAL affinity model is deterministic (list order does not matter)', () => {
+  const list = [anime(1, 'Jujutsu Kaisen', { status: 'watching', episodes: 20 }), anime(2, 'One Piece', { episodes: 100 })]
+  assert.deepEqual(E.malModel(list, S.collections, NOW).malLead, E.malModel([...list].reverse(), S.collections, NOW).malLead)
 })

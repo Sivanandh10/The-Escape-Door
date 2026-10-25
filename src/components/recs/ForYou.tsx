@@ -6,6 +6,8 @@
 //   <ForYou exclude={slug} />            product page: "You may also like" (similar + bought together, everyone)
 //                                        + signed-in extras ("Because you watched", recently viewed) / login nudge
 //   <ForYou variant="account" />         /account: picks (with reasons) + MAL rows + suggestions + "Request merch"
+// MyAnimeList users: "Your most-watched anime" (top 5, affinity model) sits on top of every "Picked for you", and the
+// first row is "Because you watched <most-watched stocked anime> (N eps)" — the engine puts those pieces first.
 //   <ForYou variant="shop" />            top of /shop: "Recommended for you" — only when the visitor has signals
 //   <ForYou variant="home" />            "Picked for you" row (same rule)
 //   <ForYou variant="cart" onNavigate /> cart drawer: "Complete the look"
@@ -15,6 +17,7 @@ import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNod
 import { clearSignals, SIGNALS_EVENT, TRAIL_KEY } from '@/lib/recs/signals'
 import { clearLocalViews } from '@/lib/recs/local'
 import { CompleteTheLook } from './CompleteTheLook'
+import { MostWatched, epsLabel } from './MostWatched'
 import { RecsRow, RecsSkeleton as RowSkeleton } from './RecsRow'
 import { useHasSignals, useRecs, type RecItem } from './useRecs'
 import Link from 'next/link'
@@ -117,13 +120,16 @@ function TasteRow({ context, className }: { context: 'shop' | 'home'; className?
     })
   }
 
+  const lead = r.mal?.lead ?? null
   return (
     <section aria-labelledby={`${context}-recs-h`} className={cn('container-x pt-10 md:pt-14', className)} data-recs={context}>
+      {r.mal?.top?.length ? <MostWatched top={r.mal.top} compact /> : null}
       <RecsRow
         id={`${context}-recs-h`}
-        kicker={r.items[0]?.reason.label ?? 'Picked from your trail'}
-        before={context === 'shop' ? 'Recommended for ' : 'Picked for '}
-        accent="you"
+        kicker={lead ? (context === 'shop' ? 'Recommended for you · from your MyAnimeList' : 'Picked for you · from your MyAnimeList') : r.items[0]?.reason.label ?? 'Picked from your trail'}
+        before={lead ? 'Because you watched ' : context === 'shop' ? 'Recommended for ' : 'Picked for '}
+        accent={lead ? lead.title : 'you'}
+        after={lead?.episodes ? <EpsTag n={lead.episodes} /> : undefined}
         jp="あなたへのおすすめ"
         items={r.items}
         cols={6}
@@ -215,11 +221,11 @@ function SignedInRecs({ exclude, variant, className }: { exclude?: string; varia
   }
 
   const d = state.data
-  const nothing = !d.recent.length && !d.picks.length && !d.watched.length && !d.suggestions.length && !d.unmapped.length
+  const nothing = !d.recent.length && !d.picks.length && !d.watched.length && !d.suggestions.length && !d.unmapped.length && !d.topAnime?.length
 
   if (!full) {
     if (nothing) return null
-    const firstWatched = d.watched[0]
+    const firstWatched = d.watched.find((w) => !!d.malLead?.collection && w.collection.slug === d.malLead.collection) ?? d.watched[0]
     if (!firstWatched && !d.recent.length) return null
     return (
       <section aria-labelledby="foryou-h" className={cn('container-x pb-20 md:pb-28', className)}>
@@ -229,6 +235,7 @@ function SignedInRecs({ exclude, variant, className }: { exclude?: string; varia
             kicker={`From your MyAnimeList`}
             before="Because you watched "
             accent={firstWatched.anime.title}
+            after={firstWatched.anime.episodes ? <EpsTag n={firstWatched.anime.episodes} /> : undefined}
             jp={firstWatched.collection.jp}
             products={firstWatched.products}
             more={{ href: `/arc/${firstWatched.collection.slug}`, label: `All ${firstWatched.collection.name}` }}
@@ -241,7 +248,14 @@ function SignedInRecs({ exclude, variant, className }: { exclude?: string; varia
     )
   }
 
-  // ---- account: everything
+  // ---- account: everything. MAL users: most-watched → "Because you watched X (N eps)" (lead picks) → the rest
+  const allItems: RecItem[] = d.picks.map((p) => ({ product: p, score: 0, reason: (d.pickReasons?.[p.id] as RecItem['reason'] | undefined) ?? { kind: 'similar', label: d.pickReason ?? 'Picked for you' } }))
+  const lead = d.malLead ?? null
+  const leadItems = lead ? allItems.slice(0, lead.count) : []
+  const restItems = lead ? allItems.slice(lead.count) : allItems
+  // anime already offered "Request it" in the most-watched list aren't repeated below
+  const topIds = new Set((d.topAnime ?? []).filter((a) => !a.stocked).map((a) => a.id))
+  const unmapped = d.unmapped.filter((a) => !topIds.has(a.id))
   return (
     <div className={cn('space-y-14', className)}>
       {nothing && (
@@ -253,40 +267,51 @@ function SignedInRecs({ exclude, variant, className }: { exclude?: string; varia
           </Link>
         </div>
       )}
-      {d.picks.length > 0 && (
+      {!!d.topAnime?.length && <MostWatched top={d.topAnime} />}
+      {lead && leadItems.length > 0 && (
+        <RecsRow kicker="From your MyAnimeList" before="Because you watched " accent={lead.title} after={lead.episodes ? <EpsTag n={lead.episodes} /> : undefined} jp="あなたへ" items={leadItems} />
+      )}
+      {restItems.length > 0 && (
         <RecsRow
-          kicker={d.pickReason ?? 'Picked for you'}
+          kicker={lead ? 'Picked from everything you do here' : d.pickReason ?? 'Picked for you'}
           before="Picked for "
           accent="you"
           jp="あなたへ"
-          items={d.picks.map((p) => ({ product: p, score: 0, reason: (d.pickReasons?.[p.id] as RecItem['reason'] | undefined) ?? { kind: 'similar', label: d.pickReason ?? 'Picked for you' } }))}
+          items={restItems}
         />
       )}
-      {d.watched.map((w) => (
+      {d.watched.filter((w) => w.collection.slug !== lead?.collection).map((w) => (
         <Row
           key={w.collection.slug}
           kicker="From your MyAnimeList"
           before="Because you watched "
           accent={w.anime.title}
+          after={w.anime.episodes ? <EpsTag n={w.anime.episodes} /> : undefined}
           jp={w.collection.jp}
           products={w.products}
           more={{ href: `/arc/${w.collection.slug}`, label: `All ${w.collection.name}` }}
         />
       ))}
-      {d.unmapped.length > 0 && <Unmapped items={d.unmapped} beyond={d.beyond} />}
+      {unmapped.length > 0 && <Unmapped items={unmapped} beyond={d.beyond} />}
       {d.suggestions.length > 0 && <Suggestions items={d.suggestions} />}
       {d.recent.length > 0 && <RecentRow products={d.recent} onCleared={retry} />}
     </div>
   )
 }
 
-function Head({ id, kicker, before, accent, jp }: { id?: string; kicker?: string; before: string; accent: string; jp?: string }) {
+/** "(40 eps)" next to a "Because you watched …" heading */
+function EpsTag({ n }: { n: number }) {
+  return <span className="ml-2 inline-block align-middle font-mono text-[0.32em] font-bold normal-case tracking-normal text-paper/70">({epsLabel(n)})</span>
+}
+
+function Head({ id, kicker, before, accent, jp, after }: { id?: string; kicker?: string; before: string; accent: string; jp?: string; after?: ReactNode }) {
   return (
     <div className="flex flex-col gap-1.5">
       {kicker && <p className="label text-[0.6875rem] text-volt">{kicker}</p>}
       <h2 id={id} className="h-display text-[clamp(2rem,4.6vw,3.75rem)] text-paper">
         {before}
         <em>{accent}</em>
+        {after}
       </h2>
       {jp && (
         <p lang="ja" className="jp-sub text-paper">
@@ -297,11 +322,11 @@ function Head({ id, kicker, before, accent, jp }: { id?: string; kicker?: string
   )
 }
 
-function Row({ id, kicker, before, accent, jp, products, more, small }: { id?: string; kicker?: string; before: string; accent: string; jp?: string; products: Product[]; more?: { href: string; label: string }; small?: boolean }) {
+function Row({ id, kicker, before, accent, jp, after, products, more, small }: { id?: string; kicker?: string; before: string; accent: string; jp?: string; after?: ReactNode; products: Product[]; more?: { href: string; label: string }; small?: boolean }) {
   return (
     <div className="mt-12 first:mt-0">
       <div className="mb-6 flex flex-wrap items-end justify-between gap-4">
-        <Head id={id} kicker={kicker} before={before} accent={accent} jp={jp} />
+        <Head id={id} kicker={kicker} before={before} accent={accent} jp={jp} after={after} />
         {more && (
           <Link href={more.href} className="label focus-ring inline-flex min-h-11 items-center gap-1.5 text-[0.6875rem] text-paper/85 underline decoration-2 underline-offset-4 hover:text-volt">
             {more.label} <ArrowUpRight aria-hidden="true" className="size-4" />

@@ -103,15 +103,14 @@ Conventions:
 - **Title:** `Anime Merch India: Tees, Hoodies & Props | The Escape Door`
 - **Meta:** `Fan-inspired anime merch: oversized tees ₹800, hoodies from ₹1200, polaroids ₹50, posters, badges and cosplay katanas. Custom orders open.`
 - **H1:** Anime merch, drawn like a living manga volume
+- **Sections (short home, review 2026-10-25 — 8.3 phone screens / 6.2 desktop screens, was 29 / 30):** hero door → fast shop → fest credibility → drop of the week (+ back-print flip) → 4 FAQs → Instagram row (≥ 768 px). Cut sections live on their own pages: squad grid → /shop · polaroid wall → /shop/polaroids · GSM power levels → /shop/hoodies · cosplay stage → /cosplay · custom forge → /custom · beyond anime → /arc/beyond-anime · partner timeline + stalls → /fests.
 - **H2s:**
-  - Pick your **arc**: Jujutsu Kaisen, One Piece, Naruto and more
-  - Oversized tees that own the **frame**
-  - Every **panel** of the shop: tees to katanas
-  - Bring your own design to the Custom **Forge**
-  - Catch us **live** at your college fest
-  - Beyond anime: K-pop, F1, films and **more**
-  - Questions fans ask us **first**
-- **Schema:** Organization · WebSite + SearchAction · ItemList (featured arcs + categories) · FAQPage (3 Qs, linking to /faq)
+  - Just here for a **hoodie?** (category tiles, arc chips, "2,000+ designs in our library · 60+ online · ask on WhatsApp for the full library")
+  - Trusted by fests: Thomso **3×** (only confirmed + dated stalls appear here; next-season stalls are on /fests)
+  - Drop of the **week**
+  - Asked **first**
+  - Fresh panels on **Instagram**
+- **Schema:** Organization · WebSite + SearchAction (layout) · FAQPage (the 4 visible Qs: oversized tee price, hoodie GSM, own design, official merch; linking to /faq)
 - **Links out:** the 5 arcs + `/arc/beyond-anime` · `/shop/oversized-t-shirts` · `/shop/hoodies` · `/shop/polaroids` · `/shop/cosplay-props` · `/custom` · `/fests` · `/faq`
 
 ### 2.2 Catalogue `/shop`
@@ -292,7 +291,7 @@ Future content gaps (post-launch, Phase 2): "how to choose hoodie GSM" (→ hood
 Each block is an H2 question followed by a 40–60-word answer that stands on its own. The accent word is marked. Every answer uses notebook or brief facts only. Use these on `/faq`, and reuse the relevant 2–3 on category pages, `/custom` and `/fests` with different wording.
 
 **1. How much does an anime oversized t-shirt **cost**?** `#prices`
-> At The Escape Door, an anime oversized t-shirt costs ₹800, which keeps it under ₹1000. Regular-fit anime t-shirts cost ₹600 and baby tees cost ₹400. Every design is fan-inspired and original, chosen from a library of around 2000 t-shirt designs spanning anime, shows, movies, games, sports and more.
+> At The Escape Door, an anime oversized t-shirt costs ₹800, which keeps it under ₹1000. Regular-fit anime t-shirts cost ₹600 and baby tees cost ₹400. Every design is fan-inspired and original. Our library holds 2,000+ t-shirt designs across anime, shows, movies, games and sports; around 60 pieces are in the online shop, and we share the full library on WhatsApp.
 
 **2. How are hoodies priced by **GSM**?** `#prices`
 > Hoodies at The Escape Door are priced by fabric weight. A 280–330 GSM hoodie costs ₹1200, 330–380 GSM costs ₹1500, 380–430 GSM costs ₹1800, and the heaviest 430–600 GSM hoodie costs ₹2500. Higher GSM means a thicker, warmer hoodie. Any hoodie design can also be printed with your own artwork.
@@ -325,7 +324,7 @@ Each block is an H2 question followed by a 40–60-word answer that stands on it
 > Fest teams can make The Escape Door their Fandom Partner: a stall for your fest and custom merch for your committee or attendees. Custom minimums are low, with polaroids from 20 pieces, bookmarks from 14 and stickers from 15, plus bulk badges. [CONFIRM: booking contact and what a partnership includes.]
 
 **12. Do you only make anime **merch**?** `#about`
-> Anime comes first, but not only anime. Beyond Anime covers shows, series, movies, K-pop, K-drama, F1, sports, games, paintings, spiritual themes, coffee and book quotes. The libraries run to about 2000 t-shirt designs, 1500 polaroids, 1800 plain bookmarks, 450 magnetic bookmarks, 750 posters and 400-plus badges.
+> Anime comes first, but not only anime. Beyond Anime covers shows, series, movies, K-pop, K-drama, F1, sports, games, paintings, spiritual themes, coffee and book quotes. Our offline libraries run to about 2,000 t-shirt designs, 1,500 polaroids, 1,800 plain bookmarks, 450 magnetic bookmarks, 750 posters and 400-plus badges. Around 60 pieces are in the online shop; ask us on WhatsApp for the full library.
 
 **Held back until confirmed (do not render):** "How long does **delivery** take?" [CONFIRM: dispatch and transit times, shipping charges, serviceable PIN codes]. "Can I **return** or exchange?" [CONFIRM: return window and conditions]. "Do you offer cash on **delivery**?" [CONFIRM].
 

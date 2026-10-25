@@ -2,7 +2,8 @@
 // Customer auth — CLIENT side (owner: AUTH). Implements the CONTRACT:
 //   <CustomerProvider initial?>  (mounted once in src/components/Providers.tsx)
 //   useCustomer() → { customer, loading, openLogin(reason?, then?, replay?), signOut(), refresh() }
-//   useRequireLogin() → gate(reason, action, replay?) — runs `action` now when signed in, otherwise opens the login
+//   useRequireLogin() → gate(reason, action, replay?) — LOGIN IS OPTIONAL (policy.ts): runs `action` straight away for
+//   everyone. Only with NEXT_PUBLIC_LOGIN_REQUIRED=1: runs `action` now when signed in, otherwise opens the login
 //   modal with `reason` and runs `action` right after a successful in-page login. Google / MyAnimeList / magic-link
 //   logins leave the page: pass a serialisable `replay` ({type:'cart-add', item} | {type:'wishlist', productId}) and it is
 //   performed when the shopper comes back signed in.
@@ -27,7 +28,7 @@ import { clearLocalViews, readLocalViews } from '@/lib/recs/local'
 import { syncTrail } from '@/lib/recs/signals'
 import type { Customer, CustomerContextValue, CustomerProviderProps, LoginReplay, RequireLogin } from './contract'
 import { firstName, toCustomer } from './shared'
-import { loadAuthProviders, peekAuthProviders } from './providers'
+import { loadAuthProviders } from './providers'
 import { LOGIN_ALWAYS_REQUIRED, loginGateOn } from './policy'
 
 export type { Customer, LoginReplay } from './contract'
@@ -65,11 +66,11 @@ export function useRequireLogin(): RequireLogin {
   const internal = useContext(InternalContext)
   return useCallback<RequireLogin>(
     (reason, action, replay) => {
+      // login is optional (owner rule, policy.ts): every action runs straight away for guests — no pop-up
+      if (!LOGIN_ALWAYS_REQUIRED) return action()
       if (!internal || !internal.configured) return action()
       if (internal.ref.current) return action()
-      // no login method works yet (Google off, MAL not configured, no email delivery) → no gate, the shop keeps working
-      if (!LOGIN_ALWAYS_REQUIRED && peekAuthProviders()?.any === false) return action()
-      // session / provider check still running (first ~100 ms of a page): decide once both land
+      // NEXT_PUBLIC_LOGIN_REQUIRED=1: wait for the session check (first ~100 ms of a page), then gate
       void Promise.all([internal.ready(), loadAuthProviders()]).then(([c, p]) => (c || !loginGateOn(p) ? action() : openLogin(reason, action, replay)))
     },
     [internal, openLogin],
@@ -293,6 +294,7 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
     [configured],
   )
 
+  // Login optional (default): this interceptor is OFF. With NEXT_PUBLIC_LOGIN_REQUIRED=1 the old rule returns:
   // Owner rule: BROWSING never needs a login — product pages, the cart page, Design Your Own and search are open to
   // everyone. Only ACTIONS are gated (add to cart / buy now / wishlist ♥ / remind me / send a custom design … each runs
   // its own useRequireLogin gate). The only LINKS intercepted while signed out are the two pages that are actions in
@@ -300,7 +302,8 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
   // once logged in, the shopper continues to where they clicked. Ctrl/⌘/middle-click (new tab) and anything inside
   // [data-share] or [data-no-login] are left alone.
   useEffect(() => {
-    if (!configured) return
+    // login optional (default): no link is ever intercepted — /wishlist and /checkout open for everyone
+    if (!configured || !LOGIN_ALWAYS_REQUIRED) return
     const GATED = /^\/(wishlist(\/|$)|checkout(\/|$))/
     const onClick = (e: MouseEvent) => {
       if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
@@ -318,8 +321,6 @@ export function CustomerProvider({ initial, children }: CustomerProviderProps) {
         return
       }
       if (url.origin !== window.location.origin || !GATED.test(url.pathname)) return
-      const p = peekAuthProviders()
-      if (!LOGIN_ALWAYS_REQUIRED && (!p || !p.any)) return // login optional mode: unknown / no login method live → don't block
       e.preventDefault()
       e.stopPropagation()
       const href = url.pathname + url.search + url.hash

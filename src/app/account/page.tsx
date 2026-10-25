@@ -5,6 +5,7 @@ import { Suspense } from 'react'
 import { getAuthUser, getCustomer } from '@/lib/auth/customer-server'
 import { isSyntheticEmail } from '@/lib/auth/shared'
 import { loadMal } from '@/lib/recs/server'
+import { animeFranchises } from '@/lib/recs/affinity'
 import { getMyOrders } from '@/lib/checkout/orders-server'
 import { AddressBook } from '@/components/checkout/AddressBook'
 import { ForYou } from '@/components/recs/ForYou'
@@ -39,9 +40,13 @@ const SECTIONS = [
 ]
 const SECTION_IDS = SECTIONS.map((s) => s.id)
 
+/** "Your top shows": one card per franchise (seasons + films grouped), ranked by the anime-affinity model
+ *  (status · episodes · own score · recency · rewatch — src/lib/recs/affinity.ts). Episodes = the whole franchise. */
 function topAnime(list: MalAnime[]): MalAnime[] {
-  const rank = (a: MalAnime) => (a.status === 'watching' ? 20 : 0) + a.score * 2 + (a.status === 'completed' ? 3 : 0)
-  return [...list].filter((a) => a.status !== 'dropped' && a.status !== 'plan_to_watch').sort((a, b) => rank(b) - rank(a)).slice(0, 8)
+  return animeFranchises(list, [])
+    .filter((f) => f.status !== 'plan_to_watch')
+    .slice(0, 8)
+    .map((f) => ({ ...f.lead, en: f.title, score: f.score, status: f.status, episodes: f.episodes }))
 }
 
 async function AccountContent() {

@@ -12,12 +12,16 @@
 //   &g=slug,…                                  collection (arc) pages browsed, newest first (≤ 6)
 //   &t=type,…                                  shop categories / product types browsed, newest first (≤ 6)
 //   &x=slug,…                                  extra slugs to leave out (≤ 12)
-// → { context, items: [{ product, reason: {kind,label}, score }], personal, signedIn, cold }
+// → { context, items: [{ product, reason: {kind,label}, score, lead? }], personal, signedIn, cold,
+//     mal: { top: TopAnime[5], lead: MalLead | null } | null }   ← MyAnimeList users: "Your most-watched anime" + the
+//     franchise whose pieces lead the row ("Because you watched X (N eps)"), see src/lib/recs/affinity.ts
 // The item→item graph (co-purchase + co-view + popularity) is cached for an hour (src/lib/recs/graph.ts, tag 'recs').
 import { cookies } from 'next/headers'
 import { getCollections, getProducts, getRelatedProducts } from '@/lib/data/repo'
 import { getAuthUser } from '@/lib/auth/customer-server'
-import { malSignals, mergeSignals, rankRecs, RECS_CONTEXTS, storedToSignals, withNames, type RecSignals, type RecsContext } from '@/lib/recs/engine'
+import { malModel, mergeSignals, rankRecs, RECS_CONTEXTS, storedToSignals, topAnime, withNames, type RecSignals, type RecsContext } from '@/lib/recs/engine'
+import type { Franchise } from '@/lib/recs/affinity'
+import type { MalLead, TopAnime } from '@/lib/recs/types'
 import { getItemGraph } from '@/lib/recs/graph'
 import { loadMal, loadOrderRefs, loadSignals, loadViews } from '@/lib/recs/server'
 import { allow, clientKey, json } from '../_lib/guard'
@@ -91,6 +95,7 @@ export async function GET(req: Request) {
 
     // signed-in: merge the shopper's own DB signals (never trusted beyond ranking)
     let signedIn = false
+    let franchises: Franchise[] | null = null
     if (await maybeSignedIn()) {
       const auth = await getAuthUser()
       if (auth) {
@@ -107,7 +112,13 @@ export async function GET(req: Request) {
           if (!seen.has(v.slug) && Number.isFinite(at)) views.push({ slug: v.slug, at, count: v.count })
         }
         signals.orders = orders
-        if (mal && Array.isArray(mal.anime_snapshot)) signals.mal = malSignals(mal.anime_snapshot, cols)
+        if (mal && Array.isArray(mal.anime_snapshot) && mal.anime_snapshot.length) {
+          const m = malModel(mal.anime_snapshot, cols, now)
+          signals.mal = m.mal
+          signals.malTags = m.malTags
+          signals.malLead = m.malLead
+          franchises = m.franchises
+        }
         // the account's stored trail (searches, arcs, categories, past cart adds, saves) — this browser's first
         if (stored.length) signals = mergeSignals(signals, withNames(storedToSignals(stored, now), cols))
       }
@@ -131,12 +142,22 @@ export async function GET(req: Request) {
       !!signals.types?.length ||
       !!signals.added?.length
     const cold = !Object.keys(graph.coBuy).length && !Object.keys(graph.coView).length
+    let malOut: { top: TopAnime[]; lead: MalLead | null } | null = null
+    if (franchises?.length) {
+      const leadKey = ranked[0]?.lead
+      const f = leadKey ? franchises.find((x) => x.key === leadKey) : undefined
+      malOut = {
+        top: topAnime(franchises, products, 5),
+        lead: f ? { key: f.key, title: f.title, episodes: f.episodes, collection: f.collection, count: ranked.filter((r) => r.lead === leadKey).length } : null,
+      }
+    }
     return json({
       context,
-      items: ranked.map((r) => ({ product: r.product, reason: r.reason, score: r.score })),
+      items: ranked.map((r) => ({ product: r.product, reason: r.reason, score: r.score, ...(r.lead ? { lead: true } : {}) })),
       personal,
       signedIn,
       cold,
+      mal: malOut,
     })
   } catch {
     return json({ context, items: [], personal: false, signedIn: false, cold: true, error: 'server' }, 500)

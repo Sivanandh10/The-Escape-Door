@@ -1,5 +1,6 @@
 // /faq — Questions fans ask us (SITEMAP §2.10 + §4 GEO answer blocks). Owner: P5.
-// Question H2s with self-contained 40–60-word answers, grouped under #prices #custom #cosplay #fests #about.
+// Question H2s with self-contained 40–60-word answers, grouped under #prices #orders #custom #cosplay #fests #about
+// (#orders = shipping / COD / sizes / damaged items, from ./orderFaq — owner feedback #8).
 // FAQPage JSON-LD mirrors the visible text exactly. Held-back [CONFIRM] questions are not rendered.
 import Link from 'next/link'
 import { MessageCircle } from 'lucide-react'
@@ -11,6 +12,7 @@ import { Accordion } from '@/components/content/Accordion'
 import { CtaPanel } from '@/components/content/CtaPanel'
 import { pageMeta } from '@/components/content/meta'
 import { FAQ, FAQ_GROUPS } from '@/components/content/faq'
+import { ORDER_FAQ, ORDERS_GROUP } from './orderFaq'
 import { faqJsonLd, INSTAGRAM_URL } from '@/lib/seo'
 import { cn } from '@/lib/utils'
 
@@ -24,17 +26,20 @@ export const metadata = pageMeta({
 const GROUP_TONE = ['bg-volt', 'bg-lav', 'bg-pink', 'bg-paper', 'bg-volt'] as const
 
 export default function FaqPage() {
+  // "Orders & delivery" sits right after Prices — what someone who just wants a hoodie asks next
+  const ordered = [
+    ...FAQ_GROUPS.slice(0, 1).map((g) => ({ ...g, items: FAQ.filter((f) => f.group === g.id) })),
+    { ...ORDERS_GROUP, items: ORDER_FAQ },
+    ...FAQ_GROUPS.slice(1).map((g) => ({ ...g, items: FAQ.filter((f) => f.group === g.id) })),
+  ].filter((g) => g.items.length)
   // running question number per group (pure: count everything in the groups before this one)
-  const groups = FAQ_GROUPS.map((g, gi) => {
-    const items = FAQ.filter((f) => f.group === g.id)
-    const before = FAQ_GROUPS.slice(0, gi).reduce((sum, p) => sum + FAQ.filter((f) => f.group === p.id).length, 0)
-    return { ...g, items, startAt: before + 1 }
-  }).filter((g) => g.items.length)
+  const groups = ordered.map((g, gi) => ({ ...g, startAt: ordered.slice(0, gi).reduce((sum, p) => sum + p.items.length, 0) + 1 }))
+  const all = groups.flatMap((g) => g.items)
 
   return (
     <>
       <PageHero
-        kicker={`FAQ · ${FAQ.length} answers`}
+        kicker={`FAQ · ${all.length} answers`}
         title={
           <>
             Questions fans <em>ask</em> us
@@ -46,8 +51,8 @@ export default function FaqPage() {
         focus={{ x: 0.85, y: 0.5 }}
         intro={
           <p>
-            Prices, custom orders, cosplay props and fest stalls, answered in plain words. Every price here comes from our
-            current price list. Something missing? Ask us directly.
+            Prices, shipping and sizes, custom orders, cosplay props and fest stalls, answered in plain words. Every price here
+            comes from our current price list. Something missing? Ask us directly.
           </p>
         }
         aside={
@@ -58,7 +63,7 @@ export default function FaqPage() {
       />
 
       <div className="relative border-t-4 border-ink bg-paper text-ink grain">
-        <div className="container-x grid gap-10 py-12 sm:py-16 lg:grid-cols-12 lg:gap-12 lg:py-24">
+        <div className="container-x grid grid-cols-1 gap-10 py-12 sm:py-16 lg:grid-cols-12 lg:gap-12 lg:py-24">
           {/* group index — sticky on desktop, a scrollable chip row on mobile */}
           <nav aria-label="FAQ topics" className="lg:col-span-3">
             <div className="lg:sticky lg:top-28">
@@ -106,8 +111,8 @@ export default function FaqPage() {
                 Still stuck at the <span className="accent">door</span>?
               </p>
               <p className="mt-3 max-w-[52ch] text-[16px] text-tone-4">
-                Shipping times, returns and cash on delivery are being finalised. Until they are published, message us and we will
-                answer for your order.
+                Delivery date, shipping charge and payment are confirmed for your order on WhatsApp before you pay. Message us and
+                we will answer for your order.
               </p>
               <div className="mt-6 flex flex-wrap gap-3">
                 <Link href="/contact" className="press focus-ring label inline-flex min-h-12 items-center gap-2 border-[3px] border-paper bg-volt px-4 py-3 font-bold text-ink hover:bg-volt-hot">
@@ -135,7 +140,7 @@ export default function FaqPage() {
         ]}
       />
 
-      <JsonLd data={faqJsonLd(FAQ.map(({ q, a }) => ({ q, a })))} />
+      <JsonLd data={faqJsonLd(all.map(({ q, a }) => ({ q, a })))} />
     </>
   )
 }

@@ -1,27 +1,42 @@
 // MyAnimeList OAuth2 + API v2 — SERVER ONLY (owner: AUTH). MAL is not a Supabase provider, so the site runs the
 // OAuth dance itself: PKCE with code_challenge_method=plain (the only method MAL supports).
-// Env: MAL_CLIENT_ID, MAL_CLIENT_SECRET (Netlify env). Optional MAL_REDIRECT_URI (must equal the URL registered at
-// https://myanimelist.net/apiconfig; default `${origin}/api/auth/mal/callback`).
+// Config: MAL_CLIENT_ID, MAL_CLIENT_SECRET, optional MAL_REDIRECT_URI — read through getServerSecret() (Netlify env
+// var first, else the service-role-only public.app_secrets table, migration 0013). MAL_REDIRECT_URI must equal the URL
+// registered at https://myanimelist.net/apiconfig; default DEFAULT_MAL_REDIRECT_URI (the live site).
 import { randomBytes } from 'node:crypto'
 import type { MalAnime, MalSnapshotStats, MalSuggestion } from '@/lib/recs/types'
+import { getServerSecrets } from '@/lib/server-secrets'
 
 const AUTH_URL = 'https://myanimelist.net/v1/oauth2/authorize'
 const TOKEN_URL = 'https://myanimelist.net/v1/oauth2/token'
 const API = 'https://api.myanimelist.net/v2'
+export const DEFAULT_MAL_REDIRECT_URI = 'https://the-escape-door.netlify.app/api/auth/mal/callback'
+
+/** Callback on the public site URL once a custom domain is set (NEXT_PUBLIC_SITE_URL, https, not localhost), so the
+ *  MAL session lands on the host the shopper uses. Domain move: register that URL at myanimelist.net/apiconfig. */
+function siteRedirectUri(): string {
+  const raw = (process.env.NEXT_PUBLIC_SITE_URL ?? '').trim().replace(/\/+$/, '')
+  if (!/^https:\/\/[^/]+$/i.test(raw) || /localhost|127\.0\.0\.1/i.test(raw)) return DEFAULT_MAL_REDIRECT_URI
+  return `${raw}/api/auth/mal/callback`
+}
 
 export const MAL_COOKIE = { verifier: 'ted_mal_v', state: 'ted_mal_s', next: 'ted_mal_n' } as const
 export const MAL_COOKIE_PATH = '/api/auth/mal'
 
-export function malConfig(): { clientId: string; clientSecret: string } | null {
-  const clientId = (process.env.MAL_CLIENT_ID ?? '').trim()
-  const clientSecret = (process.env.MAL_CLIENT_SECRET ?? '').trim()
-  return clientId ? { clientId, clientSecret } : null
+export interface MalConfig {
+  clientId: string
+  clientSecret: string
+  redirectUri: string
 }
-export const isMalConfigured = () => malConfig() !== null
 
-export function malRedirectUri(origin: string): string {
-  return (process.env.MAL_REDIRECT_URI ?? '').trim() || `${origin}/api/auth/mal/callback`
+/** null when no client id is configured (env or app_secrets). Never log the result. */
+export async function malConfig(): Promise<MalConfig | null> {
+  const s = await getServerSecrets(['MAL_CLIENT_ID', 'MAL_CLIENT_SECRET', 'MAL_REDIRECT_URI'] as const)
+  const clientId = (s.MAL_CLIENT_ID ?? '').trim()
+  if (!clientId) return null
+  return { clientId, clientSecret: (s.MAL_CLIENT_SECRET ?? '').trim(), redirectUri: (s.MAL_REDIRECT_URI ?? '').trim() || siteRedirectUri() }
 }
+export const isMalConfigured = async (): Promise<boolean> => (await malConfig()) !== null
 
 /** 86-char verifier from the unreserved set [A-Za-z0-9-_] (RFC 7636: 43–128). */
 export const newVerifier = () => randomBytes(64).toString('base64url')
@@ -46,7 +61,7 @@ export interface MalTokens {
 }
 
 async function tokenRequest(body: Record<string, string>): Promise<MalTokens> {
-  const cfg = malConfig()
+  const cfg = await malConfig()
   if (!cfg) throw new MalError('not-configured')
   const form = new URLSearchParams({ client_id: cfg.clientId, ...(cfg.clientSecret ? { client_secret: cfg.clientSecret } : {}), ...body })
   const res = await fetch(TOKEN_URL, {

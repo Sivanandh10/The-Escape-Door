@@ -11,7 +11,8 @@ import { supabaseAdmin } from '@/lib/supabase/admin'
 import { supabaseServer } from '@/lib/supabase/server'
 import { ensureProfile, getAuthUser, isStaff, requestOrigin } from '@/lib/auth/customer-server'
 import { malSyntheticEmail, safeNext } from '@/lib/auth/shared'
-import { MAL_COOKIE, MAL_COOKIE_PATH, MalError, exchangeCode, importMal, malConfig, malRedirectUri } from '@/lib/auth/mal'
+import { MAL_COOKIE, MAL_COOKIE_PATH, MalError, exchangeCode, importMal, malConfig } from '@/lib/auth/mal'
+import { importMalRich } from '@/lib/auth/mal-import'
 
 export async function GET(req: Request) {
   const origin = requestOrigin(req)
@@ -31,7 +32,8 @@ export async function GET(req: Request) {
   }
   const fail = (code: string) => done(`/login?error=mal-${code}&next=${encodeURIComponent(next)}`)
 
-  if (!malConfig()) return fail('unavailable')
+  const cfg = await malConfig()
+  if (!cfg) return fail('unavailable')
   if (url.searchParams.get('error')) return fail('denied')
   const code = url.searchParams.get('code')
   const state = url.searchParams.get('state')
@@ -45,10 +47,11 @@ export async function GET(req: Request) {
   let refreshToken = ''
   let expiresIn = 0
   try {
-    const tokens = await exchangeCode(code, verifier, malRedirectUri(origin))
+    const tokens = await exchangeCode(code, verifier, cfg.redirectUri)
     refreshToken = tokens.refresh_token
     expiresIn = tokens.expires_in
-    imported = await importMal(tokens.access_token)
+    // + rewatch / total episodes / media type for the anime-affinity model (falls back to the plain import)
+    imported = await importMalRich(tokens.access_token)
   } catch (e) {
     const c = e instanceof MalError ? e.code : 'api'
     return fail(c.startsWith('token') ? 'token' : 'api')

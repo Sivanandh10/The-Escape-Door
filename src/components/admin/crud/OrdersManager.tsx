@@ -60,7 +60,8 @@ const pipelineCfg: CrudConfig<PipelineOrder> = {
   fromRow: (r: Row) => {
     const base = orderCfg.fromRow(r)
     const snap = orderSnapshotFromRow(r)
-    const isCheckout = !!r.user_id || !!r.address
+    // guest orders may have no address ("I'll share it on WhatsApp") — still checkout orders (nonce / guest flag)
+    const isCheckout = !!r.user_id || !!r.address || r.guest === true || (typeof r.nonce === 'string' && r.nonce !== '')
     return {
       ...base,
       status: isOrderStatus(r.status) ? r.status : 'new',
@@ -275,7 +276,7 @@ export function OrdersManager({ initialOrders, initialLeads }: { initialOrders: 
             {o.gift?.enabled && <Gift aria-label="Gift" className="size-3.5 shrink-0 text-pink" />}
             {o.voucherCode && <TicketPercent aria-label={`Voucher ${o.voucherCode}`} className="size-3.5 shrink-0 text-volt" />}
           </span>
-          <span className="block truncate text-[12.5px] text-paper/55">{[o.city, o.address?.pin, o.src && `src: ${o.src}`].filter(Boolean).join(' · ')}</span>
+          <span className="block truncate text-[12.5px] text-paper/55">{[o.city || (o.checkout && !o.address ? 'Address: on WhatsApp' : ''), o.address?.pin, o.src && `src: ${o.src}`].filter(Boolean).join(' · ')}</span>
         </span>
       ),
     },
@@ -642,7 +643,7 @@ function OrderDrawer({
                   </button>
                 </>
               ) : (
-                <p className="text-[14px] text-paper/55">{o.city ? `City: ${o.city}` : 'No address stored (hand-added or older order).'}</p>
+                <p className="text-[14px] text-paper/55">{o.checkout ? <><strong className="text-volt">Address: on WhatsApp</strong> — the customer chose to share it in the chat.</> : o.city ? `City: ${o.city}` : 'No address stored (hand-added or older order).'}</p>
               )}
             </section>
           </div>

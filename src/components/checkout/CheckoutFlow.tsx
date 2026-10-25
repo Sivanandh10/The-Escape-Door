@@ -1,8 +1,9 @@
 'use client'
 // /checkout — the whole pipeline on one page, as manga panels (one open at a time on phones). ONE flow for everyone:
 //   member: 01 Deliver to (saved addresses / add + save new) → 02 Gift → 03 Voucher → 04 Review & place
-//   guest:  01 Who's ordering (name, +91 mobile, email?) → 02 Deliver to (full address form) → 03 Gift → 04 Voucher
-//           → 05 Review & place   (guests only while no login method is live — see /checkout page)
+//   guest:  01 Your details (name + WhatsApp number; "I'll share the address on WhatsApp" [default] / "Add address
+//           now") → straight to 05 Review & place. 02 Deliver to (only when adding the address now), 03 Gift and
+//           04 Voucher stay optional — collapsed panels the guest can open. Login is optional (policy.ts).
 // "Place order on WhatsApp": a tab opens inside the click → POST /api/orders FIRST (server re-prices everything,
 // dedupes on the nonce, stores the order + contact + address + voucher redemption → admin desk + the customer's
 // orders) → only then that tab goes to wa.me with the order text → /checkout-success?order=<id>. Popup blocked →
@@ -45,7 +46,7 @@ const nowMs = () => Date.now()
 
 type Step = 'contact' | 'address' | 'gift' | 'voucher' | 'review'
 const ALL_STEPS: Array<{ id: Step; title: string; jp: string }> = [
-  { id: 'contact', title: 'Who’s ordering', jp: '連絡先' },
+  { id: 'contact', title: 'Your details', jp: '連絡先' },
   { id: 'address', title: 'Deliver to', jp: 'お届け先' },
   { id: 'gift', title: 'Gift it?', jp: 'ギフト' },
   { id: 'voucher', title: 'Voucher', jp: 'クーポン' },
@@ -91,6 +92,9 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
   }, [guestMode])
   const [contact, setContact] = useState<ContactValues | null>(remembered?.contact ?? null)
   const [guestAddress, setGuestAddress] = useState<AddressValues | null>(remembered?.address ?? null)
+  /** guest: give the address now, or share it in the WhatsApp chat (default — fastest) */
+  const [addressMode, setAddressMode] = useState<'whatsapp' | 'now'>(() => (remembered?.address ? 'now' : 'whatsapp'))
+  const addressOnWhatsApp = guestMode && addressMode === 'whatsapp'
   const [editingGuestAddress, setEditingGuestAddress] = useState(false)
   const [contactError, setContactError] = useState<string | null>(null)
   /** after a price-changed answer: the server total, valid only for the exact cart + gift + voucher it was quoted for */
@@ -109,9 +113,9 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
 
   // the selected address must still exist (deleted / not loaded yet → fall back to the default)
   const saved = book.addresses.find((a) => a.id === addressId) ?? null
-  const address: (AddressValues & { id?: string }) | null = guestMode ? guestAddress : saved
+  const address: (AddressValues & { id?: string }) | null = guestMode ? (addressOnWhatsApp ? null : guestAddress) : saved
   /** everything needed before gift / voucher / review can open */
-  const ready = guestMode ? !!contact && !!guestAddress : !!saved
+  const ready = guestMode ? !!contact && (addressOnWhatsApp || !!guestAddress) : !!saved
   useEffect(() => {
     if (guestMode || saved || !book.addresses.length) return
     // eslint-disable-next-line react-hooks/set-state-in-effect -- keep a valid selection after deletes
@@ -170,7 +174,13 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
       submitForm(CONTACT_FORM)
       return
     }
-    if (step === 'address' && guestMode && (!guestAddress || editingGuestAddress) && submitForm(GUEST_ADDRESS_FORM)) return
+    if (step === 'address' && guestMode && !addressOnWhatsApp && (!guestAddress || editingGuestAddress) && submitForm(GUEST_ADDRESS_FORM)) return
+    // guests: address (or "on WhatsApp") → straight to review; gift + voucher stay optional panels
+    if (step === 'address' && addressOnWhatsApp) {
+      setAddressError(null)
+      goto('review')
+      return
+    }
     if (step === 'address') {
       if (!address) {
         setAddressError('Pick an address — or add one — so we know where to send it.')
@@ -179,6 +189,10 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
       setAddressError(null)
     }
     if (step === 'gift' && !validateGift()) return
+    if (step === 'address' && guestMode) {
+      goto('review')
+      return
+    }
     if (idx < order.length - 1) goto(order[idx + 1])
   }
 
@@ -190,8 +204,8 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
       goto('contact')
       return
     }
-    if (!address) {
-      setAddressError('Pick an address — or add one — so we know where to send it.')
+    if (!address && !addressOnWhatsApp) {
+      setAddressError(guestMode ? 'Add the address — or choose “I’ll share it on WhatsApp”.' : 'Pick an address — or add one — so we know where to send it.')
       goto('address')
       return
     }
@@ -203,13 +217,13 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
     setVoucherError(null)
     const tab = openPendingTab() // inside the click: popup blockers allow it, WhatsApp feels instant
     setPhase('saving')
-    const who = guestMode ? `${contact!.phone}#${address.pin}#${address.line1}` : address.id ?? ''
+    const who = guestMode ? `${contact!.phone}#${address ? `${address.pin}#${address.line1}` : 'wa'}` : address?.id ?? ''
     const nonce = checkoutNonce(`${cartSignature(items)}#${who}#${gift.enabled ? 'g' : ''}#${voucher?.code ?? ''}`)
     const attribution = getAttribution()
     const r = await placeOrder({
       nonce,
       items,
-      ...(guestMode ? { address: guestAddress, contact, website: contactMeta.current.hp || undefined } : { addressId: address.id }),
+      ...(guestMode ? { address: addressOnWhatsApp ? null : guestAddress, contact, website: contactMeta.current.hp || undefined } : { addressId: address?.id }),
       expectedPayable: payable,
       gift,
       voucherCode: voucher?.code ?? null,
@@ -223,6 +237,11 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
       if (r.error === 'login') {
         // member: session expired · guest: a login method just went live (then login is mandatory)
         openLogin(guestMode ? 'Log in to place your order' : 'Your login expired — log in again to place the order.', () => (guestMode ? router.refresh() : void doPlace()))
+        return
+      }
+      if (r.error === 'contact' && !guestMode) {
+        // member whose session ran out mid-checkout: the server saw a guest without contact details
+        openLogin('Your login expired — log in again to place the order.', () => void doPlace())
         return
       }
       if (r.error === 'contact') {
@@ -255,7 +274,7 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
 
     // saved → WhatsApp with the server's order text, then the success moment
     if (guestMode && contact) {
-      if (contactMeta.current.remember) saveGuestDetails({ contact, address: guestAddress })
+      if (contactMeta.current.remember) saveGuestDetails({ contact, address: addressOnWhatsApp ? null : guestAddress })
       else clearGuestDetails()
     }
     setPlaced(true)
@@ -313,7 +332,7 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
 
   const summaryOf = (s: Step): ReactNode => {
     if (s === 'contact') return contact ? `${contact.name} · ${formatPhone(contact.phone)}${contact.email ? ` · ${contact.email}` : ''}` : 'Name and mobile number'
-    if (s === 'address') return address ? `${address.name} · ${address.line1}, ${address.city} ${address.pin}` : 'No address yet'
+    if (s === 'address') return addressOnWhatsApp ? 'You’ll share it on WhatsApp' : address ? `${address.name} · ${address.line1}, ${address.city} ${address.pin}` : 'No address yet'
     if (s === 'gift') return gift.enabled ? `Packed as a gift${giftFee ? ` (+${formatINR(giftFee)})` : ''}${gift.note ? ` · “${gift.note.slice(0, 40)}${gift.note.length > 40 ? '…' : ''}”` : ''}` : 'No gift wrap'
     if (s === 'voucher') return voucher ? `${voucher.code} · −${formatINR(voucher.discount)}` : 'No voucher'
     return ''
@@ -378,7 +397,8 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
                           <ContactForm
                             formId={CONTACT_FORM}
                             initial={contact}
-                            submitLabel="Continue to address"
+                            submitLabel={addressMode === 'now' && !guestAddress ? 'Continue to address' : 'Review order'}
+                            extra={<AddressChoice value={addressMode} onChange={setAddressMode} />}
                             remembered={!!remembered}
                             onForget={() => {
                               clearGuestDetails()
@@ -390,14 +410,38 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
                               contactMeta.current = meta
                               setContact(c)
                               setContactError(null)
-                              goto('address')
+                              goto(addressMode === 'now' && !guestAddress ? 'address' : 'review')
                             }}
                           />
                           {contactError && <Problem className="mt-3">{contactError}</Problem>}
                         </>
                       )}
-                      {s.id === 'address' && guestMode && (
+                      {s.id === 'address' && guestMode && addressOnWhatsApp && (
+                        <div className="flex flex-col gap-3">
+                          <p className="flex items-start gap-2 border-[3px] border-ink bg-volt/40 p-4 text-[14px] leading-snug">
+                            <MessageCircle aria-hidden className="mt-0.5 size-4 shrink-0" />
+                            <span>
+                              <strong>You’ll share the address on WhatsApp.</strong> The order message says “Address: will share here” — just reply with it in the same chat.
+                            </span>
+                          </p>
+                          <button type="button" onClick={() => setAddressMode('now')} className="label inline-flex min-h-11 items-center gap-1.5 self-start text-[10.5px] text-door focus-ring">
+                            <Pencil aria-hidden className="size-3.5" /> Add the address now instead
+                          </button>
+                        </div>
+                      )}
+                      {s.id === 'address' && guestMode && !addressOnWhatsApp && (
                         <>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setAddressMode('whatsapp')
+                              setEditingGuestAddress(false)
+                              setAddressError(null)
+                            }}
+                            className="label mb-3 inline-flex min-h-11 items-center gap-1.5 text-[10.5px] text-door focus-ring"
+                          >
+                            <MessageCircle aria-hidden className="size-3.5" /> Skip — I’ll share it on WhatsApp
+                          </button>
                           {guestAddress && !editingGuestAddress ? (
                             <div className="border-[3px] border-ink bg-paper p-4 shadow-[5px_5px_0_0_var(--color-door)]">
                               <p className="font-bold leading-tight">{guestAddress.name}</p>
@@ -423,7 +467,7 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
                                 setGuestAddress(r.data)
                                 setEditingGuestAddress(false)
                                 setAddressError(null)
-                                goto('gift')
+                                goto('review')
                                 return true
                               }}
                             />
@@ -477,7 +521,9 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
                               </ReviewBlock>
                             )}
                             <ReviewBlock label="Deliver to" onEdit={() => goto('address')}>
-                              {address ? (
+                              {addressOnWhatsApp ? (
+                                <span className="flex items-center gap-1.5 font-bold"><MessageCircle aria-hidden className="size-3.5" /> You’ll share it on WhatsApp</span>
+                              ) : address ? (
                                 <>
                                   <span className="block font-bold">{address.name}</span>
                                   {addressLines(address).map((l) => <span key={l} className="block">{l}</span>)}
@@ -518,10 +564,10 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
                           <PayNote />
                         </div>
                       )}
-                      {s.id !== 'review' && s.id !== 'contact' && !(s.id === 'address' && guestMode && (!guestAddress || editingGuestAddress)) && (
+                      {s.id !== 'review' && s.id !== 'contact' && !(s.id === 'address' && guestMode && !addressOnWhatsApp && (!guestAddress || editingGuestAddress)) && (
                         <div className="mt-5 flex flex-wrap items-center gap-3">
                           <button type="button" onClick={next} className="press inline-flex min-h-12 items-center gap-2 border-[3px] border-ink bg-ink px-5 font-display text-[20px] uppercase leading-none text-paper shadow-[4px_4px_0_0_var(--color-door)]">
-                            {s.id === 'voucher' ? (voucher ? 'Continue' : 'Skip — review order') : s.id === 'gift' ? (gift.enabled ? 'Continue' : 'No gift — continue') : 'Deliver here'}
+                            {s.id === 'voucher' ? (voucher ? 'Continue' : 'Skip — review order') : s.id === 'gift' ? (gift.enabled ? 'Continue' : 'No gift — continue') : addressOnWhatsApp ? 'Continue — review order' : guestMode ? 'Deliver here — review' : 'Deliver here'}
                             <ArrowRight aria-hidden className="size-5 text-volt" />
                           </button>
                         </div>
@@ -577,6 +623,39 @@ export function CheckoutFlow({ mode = 'member', initialAddresses, giftWrapFee, s
         {phase === 'saving' ? 'Saving your order.' : phase === 'opening' ? 'Order saved. Opening WhatsApp.' : ''}
       </p>
     </div>
+  )
+}
+
+/** Guest checkout: share the delivery address now, or later in the WhatsApp chat (default — the fastest way). */
+function AddressChoice({ value, onChange }: { value: 'whatsapp' | 'now'; onChange: (v: 'whatsapp' | 'now') => void }) {
+  const opts = [
+    { id: 'whatsapp' as const, title: 'I’ll share it on WhatsApp', sub: 'Fastest — send the address in the order chat.' },
+    { id: 'now' as const, title: 'Add address now', sub: 'Type it here so we can pack straight away.' },
+  ]
+  return (
+    <fieldset className="m-0 min-w-0 border-0 p-0">
+      <legend className="label mb-2 text-[10.5px] text-tone-2">Delivery address</legend>
+      <div className="grid gap-2 sm:grid-cols-2">
+        {opts.map((o) => {
+          const on = value === o.id
+          return (
+            <label
+              key={o.id}
+              className={cn(
+                'flex min-h-14 cursor-pointer items-start gap-3 border-[3px] border-ink px-3 py-2.5 transition-[background-color,box-shadow] duration-150',
+                on ? 'bg-volt shadow-hard-sm' : 'bg-paper can-hover:hover:bg-lav/50',
+              )}
+            >
+              <input type="radio" name="checkout-address-mode" value={o.id} checked={on} onChange={() => onChange(o.id)} className="mt-1 size-4 shrink-0 accent-ink" />
+              <span className="min-w-0">
+                <span className="block font-bold leading-tight">{o.title}</span>
+                <span className="block text-[12.5px] leading-snug text-tone-2">{o.sub}</span>
+              </span>
+            </label>
+          )
+        })}
+      </div>
+    </fieldset>
   )
 }
 
