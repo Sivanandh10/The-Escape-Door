@@ -163,18 +163,20 @@ export function AddToCartButton({
   function onClick() {
     if (isDisabled) return
     if (phase === 'flying') return
-    if (needsSize && !size) {
+    const missingSize = needsSize && !size
+    const askSize = () => {
       setPhase('need')
       setStatus('Pick a size first.')
       onNeedSize?.()
       later(() => setPhase((p) => (p === 'need' ? 'idle' : p)), 1400)
-      return
     }
-    // login optional → runs now; only with NEXT_PUBLIC_LOGIN_REQUIRED=1: login modal, then the add/buy continues
+    // Owner rule: ANY click while logged out opens the login pop-up first (even before a size is picked). After login
+    // the add/buy continues — or, if no size was chosen yet, the button asks for one. Redirect logins (Google / MAL)
+    // replay the add only when the size was already picked.
     requireLogin(
       mode === 'buy' ? 'Log in to buy this' : 'Log in to add to your cart',
-      proceed,
-      { type: 'cart-add', item: buildItem(), ...(replayThen ? { then: replayThen } : {}) },
+      () => (missingSize ? askSize() : proceed()),
+      missingSize ? undefined : { type: 'cart-add', item: buildItem(), ...(replayThen ? { then: replayThen } : {}) },
     )
   }
 
