@@ -120,7 +120,7 @@ export function CartPanel({ variant = 'page', onNavigate }: CartPanelProps) {
           </div>
           <div className="p-4 sm:p-5">
             <TotalsStack totals={totals} size="lg" />
-            <p className="mt-3 text-[13px] leading-snug text-tone-2">Next: your name and WhatsApp number — that’s it. Address, gift wrap and vouchers are optional.</p>
+            <p className="mt-3 text-[13px] leading-snug text-tone-2">Next: log in and pick your delivery address. Gift wrap and vouchers are optional.</p>
             <div className="my-5 h-0 border-t-[3px] border-dashed border-ink/40" />
             <CheckoutCta where="page" pieces={pieces} total={totals.total} />
             <LoginHint where="cart" className="mt-3" />

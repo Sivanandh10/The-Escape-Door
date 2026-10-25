@@ -12,7 +12,7 @@ import { getCheckoutSettings, getMyAddresses } from '@/lib/checkout/orders-serve
 
 export const metadata: Metadata = {
   title: 'Checkout',
-  description: 'Your name and WhatsApp number — then place your Escape Door order on WhatsApp. No account needed.',
+  description: 'Log in, pick your delivery address and place your Escape Door order on WhatsApp.',
   alternates: { canonical: '/checkout' },
   robots: { index: false, follow: false },
 }

@@ -174,7 +174,7 @@ export function ProductView({ product: p, collectionName, collectionJp, accent =
             }}
             onNeedSize={() => { setNeedSize(true); sizeGroup.current?.querySelector('button')?.focus() }}
           />
-          <p className="label text-[0.625rem] text-paper/60">No account needed — just your name and WhatsApp number. We confirm stock, size, address and payment in the chat.</p>
+          <p className="label text-[0.625rem] text-paper/60">Log in to order (Google, MyAnimeList or email). We confirm stock, size, address and payment with you on WhatsApp.</p>
         </div>
 
         {p.customizable && (

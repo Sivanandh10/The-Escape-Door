@@ -249,7 +249,7 @@ export function LoginPanel({ reason, next, success, onBeforeRedirect, errorCode,
         </p>
         {mode !== 'sent' && !success && (
           <p className="text-[15px] leading-snug text-tone-2">
-            Optional — you can shop and order without an account. Logging in saves your cart and addresses, tracks your orders{mal ? ' and, with MyAnimeList, puts merch from the anime you watch most first' : ''}.
+            Log in to add to cart, save favourites and check out. Your cart and addresses are saved, your orders are tracked{mal ? ' and, with MyAnimeList, puts merch from the anime you watch most first' : ''}.
           </p>
         )}
 

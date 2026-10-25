@@ -77,7 +77,7 @@ export function LoginHint({ tone = 'paper', where, className }: LoginHintProps) 
             >
               Log in
             </button>{' '}
-            to save your cart, track orders and get anime picks. Optional — you can order as a guest.
+            to add to cart, save favourites, track orders and get anime picks.
           </p>
           <button
             type="button"
