@@ -57,3 +57,7 @@ node --test src/lib/pricing.test.ts    # bundle/pricing tests
 node scripts/generate-mockups.mjs      # regenerate sample mockups (dev server running)
 ```
 Docs: `BRIEF.md`, `DESIGN.md`, `SITEMAP.md`, `docs/API.md` (as-built APIs), `docs/CONTRACTS.md`, `ASSETS.md`, `OPEN_QUESTIONS.md`.
+
+## Published defaults (2026-10-25, owner: "add all by yourself, I'll edit later")
+- Policies live from the drafts: shipping (₹79, free above ₹999, COD up to ₹2,000 with ₹50 fee, dispatch 2–4 days / custom 7–10), returns (damage within 48 h, size exchange within 7 days, refunds 5–7 working days), terms (contact via WhatsApp/Instagram; no postal address listed yet). Edit anytime in Admin → Pages.
+- Size charts saved with typical measurements (oversized, regular, baby tee, hoodie; inches, ±1"). Edit in Admin → Pricing → Size charts.
